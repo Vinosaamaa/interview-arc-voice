@@ -32,4 +32,11 @@ public struct RecordingStore: Sendable {
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
         return recordingsDirectory.appending(path: "\(timestamp)-\(safeActivity)-\(UUID().uuidString.lowercased()).m4a")
     }
+
+    public func nextTemporaryRecordingURL(now: Date = Date()) -> URL {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let timestamp = formatter.string(from: now).replacingOccurrences(of: ":", with: "-")
+        return temporaryDirectory.appending(path: "\(timestamp)-general-dictation-\(UUID().uuidString.lowercased()).m4a")
+    }
 }

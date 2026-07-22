@@ -1,9 +1,9 @@
 # Interview Arc Voice
 
-Interview Arc Voice is the native macOS companion for Interview Arc. It records
-one spoken practice answer, transcribes it through Groq, sends the transcript to
-the focused Codex specialist, preserves the original recording locally and in
-private R2 storage, and starts an asynchronous delivery review.
+Interview Arc Voice is a native macOS dictation tool and Interview Arc
+companion. It records speech, transcribes through Groq, and either inserts the
+text directly at the active editor's cursor or links the same visible practice
+answer to D1, private R2 audio, and asynchronous delivery review.
 
 This repository intentionally lives beside, rather than inside, the main
 `interview-arc` repository:
@@ -17,20 +17,34 @@ Interview Prep/
 The repositories remain part of the same Codex project. They communicate only
 through the versioned Interview Arc API contract.
 
-## What one click does
+## Two capture modes
+
+**Link to Interview Arc** is on by default. Immediately before recording, Voice
+refreshes the focused dashboard activity. When an activity and specialist are
+available, one click:
 
 1. Reads the activity currently focused on Interview Arc Today.
 2. Records one uninterrupted M4A under Application Support.
 3. Selects a compact technical vocabulary prompt from the activity metadata.
 4. Transcribes with Groq `whisper-large-v3`, chunking only when required.
 5. Persists the exact user transcript turn in D1.
-6. Resumes the registered Codex specialist task with that verbatim answer.
+6. Inserts the verbatim answer at the focused text cursor without using the
+   clipboard; the user reviews it and presses Send.
 7. Uploads the original M4A to private R2 and links it to the answer.
 8. Starts an ephemeral Delivery Coach task for observable speaking feedback.
 
-R2 upload and visible specialist delivery run concurrently. A failed stage is
+R2 upload and delivery-analysis setup run in the background. A failed stage is
 saved in a private local retry queue and automatically retried after relaunch;
 the recording itself is never discarded.
+
+When linking is off—or when no usable Interview Arc activity is focused—Voice
+works as **general dictation**. It records to a temporary file, transcribes with
+Groq, inserts into the app that was active when recording began, and deletes the
+temporary audio. Voice never uses the clipboard. Direct insertion requires
+macOS Accessibility access; without it, Voice keeps the transcript available
+for **Insert again** and explains how to enable access.
+General dictation never writes transcript, audio, or coaching data to Interview
+Arc, D1, or R2.
 
 ## Product decisions
 
@@ -42,7 +56,15 @@ the recording itself is never discarded.
 - Vocabulary selection is deterministic. The bridge does not run an LLM to
   choose words.
 - Groq and Interview Arc credentials are stored in macOS Keychain, never files.
-- Stopping a recording sends immediately; there is no mandatory review step.
+- Stopping a recording inserts immediately but never presses Send. The visible
+  editor remains the review boundary.
+- The always-on-top recorder and menu-bar panel expose the same record/stop and
+  link controls.
+- The global shortcut defaults to `Control-Option-Space` and is configurable in
+  Settings.
+- The menu panel is fixed at 260 points wide. The always-on-top recorder is a
+  fixed 250-by-40-point capsule and replaces its activity label with a live
+  microphone waveform while recording.
 
 ## First-time setup
 
@@ -58,13 +80,23 @@ your Interview Arc personal connection token.
    - Interview Arc repository: `/Users/wenkxu/Projects/Interview Prep/interview-arc`
    - Codex executable: `/Applications/ChatGPT.app/Contents/Resources/codex`
 5. Save. macOS stores both secrets in Keychain.
-6. Focus an activity on Today and make sure its long-lived specialist task is
-   connected. The activity title and task name will appear in the panel.
-7. Select **Record answer**. Voice refreshes the focused activity immediately
-   before recording, so switching problem timers never requires a manual
-   refresh. Speak, then select **Stop and send**.
+6. Allow Accessibility when prompted so Voice can insert at the focused cursor
+   without using the clipboard.
 
-The local originals live at:
+The packaged app carries a stable local designated requirement for
+`app.interviewarc.voice`. After the first Accessibility grant, replacing the
+app with a newer package from this repository preserves the same macOS privacy
+identity instead of requiring permission again after every build.
+7. For interview practice, focus an activity on Today. Keep **Link to Interview Arc** on.
+   The activity title appears in the floating recorder.
+8. Select the microphone or press `Control-Option-Space`. Voice refreshes the
+   focused activity immediately before recording, so switching problem timers
+   never requires a manual refresh. Speak, then select stop or press the
+   shortcut again. The transcript appears at the cursor; press Send yourself.
+9. For ordinary dictation, turn **Link to Interview Arc** off. The resulting
+   text is inserted into the active app and the temporary recording is deleted.
+
+Linked practice originals live at:
 
 ```text
 ~/Library/Application Support/InterviewArcVoice/Recordings/

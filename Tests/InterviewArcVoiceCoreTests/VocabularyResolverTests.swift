@@ -106,3 +106,44 @@ import Testing
 
     #expect(result.text == "First we gather requirements and estimate traffic before choosing the storage model")
 }
+
+@Test func linkedRoutingRequiresOnlyAFocusedActivity() {
+    let policy = CaptureRoutingPolicy()
+
+    #expect(policy.route(linkToInterviewArc: true, hasFocusedActivity: true) == .linked)
+    #expect(policy.route(linkToInterviewArc: true, hasFocusedActivity: false) == .general)
+    #expect(policy.route(linkToInterviewArc: false, hasFocusedActivity: true) == .general)
+}
+
+@Test func deliveryProgressMatchesVisibleCursorAndBackgroundStages() {
+    #expect(VoiceDeliveryComponent.allCases == [.insertion, .transcript, .audio, .coach])
+}
+
+@Test func generalDictationDeletesTemporaryRecording() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "interview-arc-general-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let recording = root.appending(path: "answer.m4a")
+    try Data("temporary audio".utf8).write(to: recording)
+    let pipeline = GeneralDictationPipeline(
+        transcriber: StubTranscriber(),
+        temporaryDirectory: root
+    )
+
+    let result = try await pipeline.process(recordingURL: recording)
+
+    #expect(result.text == "verbatim test transcript")
+    #expect(!FileManager.default.fileExists(atPath: recording.path))
+}
+
+private actor StubTranscriber: SpeechTranscribing {
+    func transcribe(fileURL: URL, prompt: String, temporaryDirectory: URL) async throws -> TranscriptionResult {
+        #expect(prompt.contains("general dictation"))
+        return TranscriptionResult(
+            text: "verbatim test transcript",
+            words: [],
+            durationSeconds: 1,
+            chunkCount: 1
+        )
+    }
+}

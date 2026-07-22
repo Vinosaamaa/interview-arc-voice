@@ -21,5 +21,21 @@ for resource_bundle in "$bin_dir"/*.bundle; do
   fi
 done
 
-codesign --force --deep --sign - "$app_dir"
+# An ordinary ad-hoc signature receives a designated requirement containing the
+# build's cdhash. That hash changes on every package and makes macOS forget the
+# Accessibility grant after each update. Keep the local package ad-hoc, but
+# embed one stable designated requirement so subsequent Interview Arc Voice
+# builds retain the same TCC identity without requiring an Apple Developer
+# certificate.
+signing_requirement='=designated => identifier "app.interviewarc.voice"'
+codesign --force --deep --sign - --requirements "$signing_requirement" "$app_dir"
+codesign --verify --deep --strict "$app_dir"
+
+actual_requirement="$(codesign -d -r- "$app_dir" 2>&1)"
+if [[ "$actual_requirement" != *'designated => identifier "app.interviewarc.voice"'* ]]; then
+  echo "Packaged app is missing the stable designated requirement." >&2
+  exit 1
+fi
+
+"$contents_dir/MacOS/InterviewArcVoice" --verify-package
 echo "$app_dir"

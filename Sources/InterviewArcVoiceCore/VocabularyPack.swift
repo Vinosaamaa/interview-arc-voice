@@ -15,6 +15,25 @@ public struct VocabularyCatalog: Codable, Equatable, Sendable {
     public let packs: [VocabularyPack]
 
     public static func bundled() throws -> VocabularyCatalog {
+        let packagedBundleName = "InterviewArcVoice_InterviewArcVoiceCore.bundle"
+        let packagedCandidates = [
+            Bundle.main.resourceURL?.appending(path: packagedBundleName),
+            Bundle.main.bundleURL.appending(path: packagedBundleName),
+            Bundle.main.executableURL?.deletingLastPathComponent().appending(path: packagedBundleName),
+        ].compactMap { $0 }
+        for bundleURL in packagedCandidates {
+            let catalogURL = bundleURL.appending(path: "vocabulary-packs.json")
+            if FileManager.default.fileExists(atPath: catalogURL.path) {
+                return try JSONDecoder().decode(
+                    VocabularyCatalog.self,
+                    from: Data(contentsOf: catalogURL)
+                )
+            }
+        }
+
+        // SwiftPM's generated Bundle.module accessor traps when a hand-built
+        // .app places the resource bundle somewhere it does not expect. Only
+        // reach it after checking the conventional packaged-app locations.
         guard let url = Bundle.module.url(
             forResource: "vocabulary-packs",
             withExtension: "json"

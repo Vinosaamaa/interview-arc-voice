@@ -19,7 +19,8 @@ missing activity or specialist is a normal, user-visible state.
 The client supplies a stable `turnId`, activity ID, specialty, exact transcript,
 and occurrence time. The server verifies that the activity is still focused,
 computes transcript sequence, and inserts the user turn idempotently. The app
-must persist this turn before resuming the specialist task.
+inserts the same text into the visible focused editor but does not submit it or
+resume the specialist task invisibly.
 
 ## Upload private audio
 
@@ -43,7 +44,7 @@ dated attempt and never modify the reusable Problem Bank solution.
 ## Idempotency and retries
 
 - `turnId`, clip ID, and analysis ID are stable per capture stage.
-- A transcript already persisted by `/voice/captures` is marked as such in the
-  prompt sent to the specialist, which must not append it again.
-- Failed specialist delivery, R2 upload, or Delivery Coach work remains in the
+- Failed capture persistence, R2 upload, or Delivery Coach work remains in the
   local retry queue. Credentials are not included in retry files.
+- Legacy `specialistDelivery` retry records from version 0.2 and earlier are
+  discarded without sending so they cannot duplicate a visible user message.

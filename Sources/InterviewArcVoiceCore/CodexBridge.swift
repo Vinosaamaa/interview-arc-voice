@@ -7,40 +7,6 @@ public actor CodexBridge {
         self.executableURL = executableURL
     }
 
-    public func sendToSpecialist(
-        route: SpecialistRoute,
-        activity: FocusedVoiceActivity,
-        turnID: String,
-        transcript: String,
-        audioURL: URL,
-        workspaceURL: URL,
-        interviewArcToken: String
-    ) async throws {
-        let prompt = """
-        Interview Arc Voice capture
-        activityId: \(activity.activityId)
-        turnId: \(turnID)
-        specialty: \(activity.interviewArcSpecialty)
-        localAudioPath: \(audioURL.path)
-        transcriptState: already persisted in D1 by POST /voice/captures
-
-        Do not append this user turn again. Treat the following as my verbatim answer to the current activity and continue the coaching or mock interview normally. The linked recording is being uploaded to private R2 asynchronously.
-
-        --- verbatim transcript ---
-        \(transcript)
-        --- end transcript ---
-        """
-        let result = try await runCodex(
-            arguments: ["exec", "resume", "--all", route.threadId, "-"],
-            prompt: prompt,
-            workspaceURL: workspaceURL,
-            interviewArcToken: interviewArcToken
-        )
-        guard result.exitCode == 0 else {
-            throw VoiceBridgeError.codexUnavailable(result.errorOutput.isEmpty ? result.standardOutput : result.errorOutput)
-        }
-    }
-
     public func runDeliveryCoach(
         analysisID: String,
         activity: FocusedVoiceActivity,

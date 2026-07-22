@@ -13,7 +13,7 @@ public struct VoiceRetryItem: Codable, Equatable, Identifiable, Sendable {
     public let createdAt: Date
     public let occurredAt: Date?
     public let activity: FocusedVoiceActivity
-    public let specialist: SpecialistRoute
+    public let specialist: SpecialistRoute?
     public let turnID: String
     public let transcript: String
     public let audioURL: URL
