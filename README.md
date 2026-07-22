@@ -82,6 +82,11 @@ your Interview Arc personal connection token.
 5. Save. macOS stores both secrets in Keychain.
 6. Allow Accessibility when prompted so Voice can insert at the focused cursor
    without using the clipboard.
+
+The packaged app carries a stable local designated requirement for
+`app.interviewarc.voice`. After the first Accessibility grant, replacing the
+app with a newer package from this repository preserves the same macOS privacy
+identity instead of requiring permission again after every build.
 7. For interview practice, focus an activity on Today. Keep **Link to Interview Arc** on.
    The activity title appears in the floating recorder.
 8. Select the microphone or press `Control-Option-Space`. Voice refreshes the
