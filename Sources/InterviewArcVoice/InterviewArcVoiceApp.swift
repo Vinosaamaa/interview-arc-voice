@@ -75,7 +75,7 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     private enum CaptureDestination {
-        case linked(FocusedVoiceActivity)
+        case linked(FocusedVoiceActivity, startedAt: Date)
         case general
     }
 
@@ -109,6 +109,8 @@ final class VoiceBridgeModel: ObservableObject {
     private var lastInsertionText = ""
     private var shortcutMonitor: Any?
     private var lastInsertionSucceeded = false
+    private var contextPollTask: Task<Void, Never>?
+    private var wakeObserver: NSObjectProtocol?
 
     var isRecording: Bool { phase == .recording }
     var isBusy: Bool { [.refreshing, .transcribing, .sending, .inserting].contains(phase) }
@@ -161,6 +163,14 @@ final class VoiceBridgeModel: ObservableObject {
             FloatingPanelController.shared.show(model: self)
             hotKeyManager.register(shortcut) { [weak self] in self?.toggleRecording() }
             await loadSecureSettings()
+            startContextPolling()
+        }
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.refreshContext(showProgress: false) }
         }
     }
 
@@ -303,6 +313,17 @@ final class VoiceBridgeModel: ObservableObject {
         phase = canRecord ? .idle : .setup
     }
 
+    private func startContextPolling() {
+        contextPollTask?.cancel()
+        contextPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(4))
+                guard let self, self.linkToInterviewArc, !self.isRecording, !self.isBusy else { continue }
+                await self.refreshContext(showProgress: false)
+            }
+        }
+    }
+
     private func prepareAndStartRecording() async {
         guard canRecord else {
             phase = .setup
@@ -327,7 +348,7 @@ final class VoiceBridgeModel: ObservableObject {
         switch route {
         case .linked:
             guard let activity = context?.focusedActivity else { return }
-            captureDestination = .linked(activity)
+            captureDestination = .linked(activity, startedAt: Date())
         case .general:
             captureDestination = .general
         }
@@ -338,7 +359,7 @@ final class VoiceBridgeModel: ObservableObject {
         }
         let destination: URL
         switch captureDestination {
-        case .linked(let activity): destination = recordingStore.nextRecordingURL(activityID: activity.activityId)
+        case .linked(let activity, _): destination = recordingStore.nextRecordingURL(activityID: activity.activityId)
         case .general: destination = recordingStore.nextTemporaryRecordingURL()
         case nil: return
         }
@@ -360,8 +381,8 @@ final class VoiceBridgeModel: ObservableObject {
             phase = .transcribing
             Task {
                 switch captureDestination {
-                case .linked(let activity):
-                    await processLinked(recording: recording, activity: activity)
+                case .linked(let activity, let startedAt):
+                    await processLinked(recording: recording, activity: activity, startedAt: startedAt)
                 case .general:
                     await processGeneral(recording: recording)
                 }
@@ -396,7 +417,8 @@ final class VoiceBridgeModel: ObservableObject {
 
     private func processLinked(
         recording: (url: URL, duration: TimeInterval),
-        activity: FocusedVoiceActivity
+        activity: FocusedVoiceActivity,
+        startedAt: Date
     ) async {
         do {
             lastInsertionSucceeded = false
@@ -406,6 +428,7 @@ final class VoiceBridgeModel: ObservableObject {
                 recordingURL: recording.url,
                 durationSeconds: recording.duration,
                 activity: activity,
+                occurredAt: startedAt,
                 transcriptReady: { capture in
                     _ = await self.insertTranscript(
                         capture.transcript,
