@@ -72,6 +72,7 @@ public actor VoicePipeline {
         recordingURL: URL,
         durationSeconds: Double,
         activity: FocusedVoiceActivity,
+        occurredAt: Date = Date(),
         transcriptReady: @escaping @Sendable (VoiceCaptureEnvelope) async -> Void = { _ in },
         progress: @escaping @Sendable (VoicePipelineUpdate) async -> Void = { _ in }
     ) async throws -> VoicePipelineResult {
@@ -84,7 +85,6 @@ public actor VoicePipeline {
         )
         let turnID = "voice-\(UUID().uuidString.lowercased())"
         let requestedClipID = "clip-\(UUID().uuidString.lowercased())"
-        let occurredAt = Date()
         await transcriptReady(VoiceCaptureEnvelope(
             activityID: activity.activityId,
             turnID: turnID,
