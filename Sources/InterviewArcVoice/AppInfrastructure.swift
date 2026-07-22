@@ -93,10 +93,6 @@ final class GlobalHotKeyManager {
         eventHandler = nil
     }
 
-    deinit {
-        if let hotKey { UnregisterEventHotKey(hotKey) }
-        if let eventHandler { RemoveEventHandler(eventHandler) }
-    }
 }
 
 enum DictationOutput: Equatable {
