@@ -22,4 +22,5 @@ for resource_bundle in "$bin_dir"/*.bundle; do
 done
 
 codesign --force --deep --sign - "$app_dir"
+"$contents_dir/MacOS/InterviewArcVoice" --verify-package
 echo "$app_dir"

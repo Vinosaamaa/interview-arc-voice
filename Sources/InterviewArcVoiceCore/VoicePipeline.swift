@@ -1,5 +1,28 @@
 import Foundation
 
+public enum VoiceDeliveryComponent: String, CaseIterable, Sendable {
+    case transcript
+    case specialist
+    case audio
+    case coach
+}
+
+public enum VoiceDeliveryComponentState: Equatable, Sendable {
+    case working
+    case complete
+    case queued
+}
+
+public struct VoicePipelineUpdate: Equatable, Sendable {
+    public let component: VoiceDeliveryComponent
+    public let state: VoiceDeliveryComponentState
+
+    public init(component: VoiceDeliveryComponent, state: VoiceDeliveryComponentState) {
+        self.component = component
+        self.state = state
+    }
+}
+
 public struct VoicePipelineResult: Equatable, Sendable {
     public let turnID: String
     public let transcript: String
@@ -49,8 +72,10 @@ public actor VoicePipeline {
         recordingURL: URL,
         durationSeconds: Double,
         activity: FocusedVoiceActivity,
-        specialist: SpecialistRoute
+        specialist: SpecialistRoute,
+        progress: @escaping @Sendable (VoicePipelineUpdate) async -> Void = { _ in }
     ) async throws -> VoicePipelineResult {
+        await progress(.init(component: .transcript, state: .working))
         let vocabulary = vocabularyResolver.resolve(activity.vocabularyContext)
         let transcription = try await transcriber.transcribe(
             fileURL: recordingURL,
@@ -67,6 +92,7 @@ public actor VoicePipeline {
                 transcript: transcription.text,
                 occurredAt: occurredAt
             )
+            await progress(.init(component: .transcript, state: .complete))
         } catch {
             try await enqueue(
                 kind: .capturePersistence,
@@ -81,6 +107,7 @@ public actor VoicePipeline {
                 clipID: requestedClipID,
                 error: error
             )
+            await progress(.init(component: .transcript, state: .queued))
             return VoicePipelineResult(
                 turnID: turnID,
                 transcript: transcription.text,
@@ -93,6 +120,7 @@ public actor VoicePipeline {
             )
         }
 
+        await progress(.init(component: .specialist, state: .working))
         let specialistTask = Task {
             try await codex.sendToSpecialist(
                 route: specialist,
@@ -104,6 +132,7 @@ public actor VoicePipeline {
                 interviewArcToken: interviewArcToken
             )
         }
+        await progress(.init(component: .audio, state: .working))
         let audioUploadTask = Task {
             try await api.uploadAudio(
                 fileURL: recordingURL,
@@ -119,6 +148,7 @@ public actor VoicePipeline {
         switch await audioUploadTask.result {
         case .success(let upload):
             clipID = upload.clipId
+            await progress(.init(component: .audio, state: .complete))
         case .failure(let error):
             audioUploaded = false
             try await enqueue(
@@ -133,10 +163,12 @@ public actor VoicePipeline {
                 clipID: requestedClipID,
                 error: error
             )
+            await progress(.init(component: .audio, state: .queued))
         }
 
         var deliveryCoachQueued = false
         if let clipID {
+            await progress(.init(component: .coach, state: .working))
             let analysisID = "delivery-\(UUID().uuidString.lowercased())"
             do {
                 _ = try await api.queueDelivery(
@@ -146,6 +178,7 @@ public actor VoicePipeline {
                     turnID: turnID
                 )
                 deliveryCoachQueued = true
+                await progress(.init(component: .coach, state: .complete))
                 Task {
                     do {
                         try await self.codex.runDeliveryCoach(
@@ -189,11 +222,17 @@ public actor VoicePipeline {
                     analysisID: analysisID,
                     error: error
                 )
+                await progress(.init(component: .coach, state: .queued))
             }
+        } else {
+            await progress(.init(component: .coach, state: .queued))
         }
 
         var specialistSent = true
-        if case .failure(let error) = await specialistTask.result {
+        switch await specialistTask.result {
+        case .success:
+            await progress(.init(component: .specialist, state: .complete))
+        case .failure(let error):
             specialistSent = false
             try await enqueue(
                 kind: .specialistDelivery,
@@ -206,6 +245,7 @@ public actor VoicePipeline {
                 transcription: transcription,
                 error: error
             )
+            await progress(.init(component: .specialist, state: .queued))
         }
 
         return VoicePipelineResult(
