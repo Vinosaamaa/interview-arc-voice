@@ -72,7 +72,7 @@ public actor VoicePipeline {
         recordingURL: URL,
         durationSeconds: Double,
         activity: FocusedVoiceActivity,
-        transcriptReady: @escaping @Sendable (String) async -> Void = { _ in },
+        transcriptReady: @escaping @Sendable (VoiceCaptureEnvelope) async -> Void = { _ in },
         progress: @escaping @Sendable (VoicePipelineUpdate) async -> Void = { _ in }
     ) async throws -> VoicePipelineResult {
         await progress(.init(component: .transcript, state: .working))
@@ -85,7 +85,11 @@ public actor VoicePipeline {
         let turnID = "voice-\(UUID().uuidString.lowercased())"
         let requestedClipID = "clip-\(UUID().uuidString.lowercased())"
         let occurredAt = Date()
-        await transcriptReady(transcription.text)
+        await transcriptReady(VoiceCaptureEnvelope(
+            activityID: activity.activityId,
+            turnID: turnID,
+            transcript: transcription.text
+        ))
         do {
             _ = try await api.persistCapture(
                 activity: activity,

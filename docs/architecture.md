@@ -8,8 +8,9 @@
 3. Record one user answer as a continuous local M4A file.
 4. Produce a speech-optimized transcription derivative.
 5. Send the derivative and vocabulary prompt to Groq Large v3.
-6. Insert the plain transcript into the focused editor through macOS
-   Accessibility without using the clipboard; do not submit it.
+6. Insert the plain transcript plus a Markdown comment envelope containing its
+   activity and turn IDs into the focused editor through macOS Accessibility
+   without using the clipboard; do not submit it.
 7. Upload the original recording to private R2 and link it to the resulting
    user transcript turn.
 8. Start delivery analysis in a background Codex task.
@@ -19,10 +20,13 @@
 R2 upload and delivery analysis continue after visible cursor insertion.
 Failures enter a local retry queue.
 
-The user sends the inserted text through the visible Codex task. Voice does not
-run a hidden specialist-resume command because that would duplicate the visible
-message. The background Codex process is reserved for Delivery Coach analysis;
-R2 remains the canonical website playback copy.
+The user sends the inserted text through the visible Codex task. The rendered
+message shows the answer while the specialist receives the comment envelope and
+reuses the already-persisted D1 turn instead of appending a duplicate. Multiple
+captures may be sent together; every capture keeps its own turn and envelope.
+Voice does not run a hidden specialist-resume command because that would
+duplicate the visible message. The background Codex process is reserved for
+Delivery Coach analysis; R2 remains the canonical website playback copy.
 
 ## General dictation flow
 

@@ -119,6 +119,21 @@ import Testing
     #expect(VoiceDeliveryComponent.allCases == [.insertion, .transcript, .audio, .coach])
 }
 
+@Test func linkedCaptureEnvelopeKeepsTranscriptVisibleAndTurnIdentityMachineReadable() {
+    let envelope = VoiceCaptureEnvelope(
+        activityID: "activity--course-schedule",
+        turnID: "voice-123",
+        transcript: "I would begin with Kahn's algorithm."
+    )
+
+    #expect(envelope.editorText.hasPrefix("I would begin with Kahn's algorithm.\n\n"))
+    #expect(envelope.editorText.contains("<!-- interview-arc-voice:v1"))
+    #expect(envelope.editorText.contains("activityId: activity%2D%2Dcourse-schedule"))
+    #expect(envelope.editorText.contains("turnId: voice-123"))
+    #expect(envelope.editorText.contains("doNotAppendUserTurn: true"))
+    #expect(envelope.editorText.hasSuffix("-->\n"))
+}
+
 @Test func generalDictationDeletesTemporaryRecording() async throws {
     let root = FileManager.default.temporaryDirectory.appending(path: "interview-arc-general-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

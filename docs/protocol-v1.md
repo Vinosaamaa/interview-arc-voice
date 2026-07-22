@@ -19,8 +19,10 @@ missing activity or specialist is a normal, user-visible state.
 The client supplies a stable `turnId`, activity ID, specialty, exact transcript,
 and occurrence time. The server verifies that the activity is still focused,
 computes transcript sequence, and inserts the user turn idempotently. The app
-inserts the same text into the visible focused editor but does not submit it or
-resume the specialist task invisibly.
+inserts the same text into the visible focused editor followed by a Markdown
+comment envelope containing the activity and turn IDs. It does not submit the
+message or resume the specialist task invisibly. The specialist treats every
+enveloped user turn as Voice-managed and must not append it to D1 again.
 
 ## Upload private audio
 

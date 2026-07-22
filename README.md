@@ -28,8 +28,10 @@ available, one click:
 3. Selects a compact technical vocabulary prompt from the activity metadata.
 4. Transcribes with Groq `whisper-large-v3`, chunking only when required.
 5. Persists the exact user transcript turn in D1.
-6. Inserts the verbatim answer at the focused text cursor without using the
-   clipboard; the user reviews it and presses Send.
+6. Inserts the verbatim answer plus a Markdown comment envelope at the focused
+   text cursor without using the clipboard. The envelope identifies the D1 turn
+   so the specialist does not append it twice; the user reviews the answer and
+   presses Send.
 7. Uploads the original M4A to private R2 and links it to the answer.
 8. Starts an ephemeral Delivery Coach task for observable speaking feedback.
 

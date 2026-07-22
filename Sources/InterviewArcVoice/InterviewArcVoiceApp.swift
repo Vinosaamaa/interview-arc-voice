@@ -106,6 +106,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var pipeline: VoicePipeline?
     private var captureDestination: CaptureDestination?
     private var targetApplicationPID: pid_t?
+    private var lastInsertionText = ""
     private var shortcutMonitor: Any?
     private var lastInsertionSucceeded = false
 
@@ -382,7 +383,7 @@ final class VoiceBridgeModel: ObservableObject {
                 temporaryDirectory: recordingStore.temporaryDirectory
             )
             let result = try await generalPipeline.process(recordingURL: recording.url)
-            let inserted = await insertTranscript(result.text, showDeliveryStep: false)
+            let inserted = await insertTranscript(result.text, editorText: result.text, showDeliveryStep: false)
             phase = inserted ? .delivered : .failed("Voice could not find the focused text editor. Click the editor and try again.")
             contextMessage = inserted
                 ? "Dictation inserted at the cursor. Press Send when ready."
@@ -405,8 +406,12 @@ final class VoiceBridgeModel: ObservableObject {
                 recordingURL: recording.url,
                 durationSeconds: recording.duration,
                 activity: activity,
-                transcriptReady: { transcript in
-                    _ = await self.insertTranscript(transcript, showDeliveryStep: true)
+                transcriptReady: { capture in
+                    _ = await self.insertTranscript(
+                        capture.transcript,
+                        editorText: capture.editorText,
+                        showDeliveryStep: true
+                    )
                 },
                 progress: { update in
                     await self.applyDeliveryUpdate(update)
@@ -441,16 +446,21 @@ final class VoiceBridgeModel: ObservableObject {
     func reinsertLastTranscript() {
         guard !lastTranscript.isEmpty else { return }
         Task {
-            let inserted = await insertTranscript(lastTranscript, showDeliveryStep: linkToInterviewArc)
+            let inserted = await insertTranscript(
+                lastTranscript,
+                editorText: lastInsertionText.isEmpty ? lastTranscript : lastInsertionText,
+                showDeliveryStep: linkToInterviewArc
+            )
             phase = inserted ? .delivered : .failed("Click an editable text field, then try Insert again.")
         }
     }
 
-    private func insertTranscript(_ transcript: String, showDeliveryStep: Bool) async -> Bool {
+    private func insertTranscript(_ transcript: String, editorText: String, showDeliveryStep: Bool) async -> Bool {
         lastTranscript = transcript
+        lastInsertionText = editorText
         phase = .inserting
         if showDeliveryStep { deliveryStates[.insertion] = .working }
-        let output = await textInjector.deliver(text: transcript, targetPID: targetApplicationPID)
+        let output = await textInjector.deliver(text: editorText, targetPID: targetApplicationPID)
         switch output {
         case .inserted:
             lastInsertionSucceeded = true

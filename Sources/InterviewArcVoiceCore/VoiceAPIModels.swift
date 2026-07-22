@@ -60,6 +60,39 @@ public struct VoiceCaptureResponse: Codable, Equatable, Sendable {
     public let turn: PersistedVoiceTurn
 }
 
+public struct VoiceCaptureEnvelope: Equatable, Sendable {
+    public let activityID: String
+    public let turnID: String
+    public let transcript: String
+
+    public init(activityID: String, turnID: String, transcript: String) {
+        self.activityID = activityID
+        self.turnID = turnID
+        self.transcript = transcript
+    }
+
+    public var editorText: String {
+        """
+        \(transcript)
+
+        <!-- interview-arc-voice:v1
+        activityId: \(commentSafe(activityID))
+        turnId: \(commentSafe(turnID))
+        voiceManagedTurn: true
+        doNotAppendUserTurn: true
+        -->
+
+        """
+    }
+
+    private func commentSafe(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "--", with: "%2D%2D")
+            .replacingOccurrences(of: "\n", with: "")
+            .replacingOccurrences(of: "\r", with: "")
+    }
+}
+
 public struct AudioUploadResponse: Codable, Equatable, Sendable {
     public let clipId: String
     public let activityId: String
