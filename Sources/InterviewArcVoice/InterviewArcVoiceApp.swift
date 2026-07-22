@@ -159,9 +159,8 @@ final class VoiceBridgeModel: ObservableObject {
 
         // Present visible UI before touching Keychain. A credential prompt or
         // error must never make this agent-style app appear to launch and quit.
-        Task { [weak self] in
+        Task {
             await Task.yield()
-            guard let self else { return }
             FloatingPanelController.shared.show(model: self)
             hotKeyManager.register(shortcut) { [weak self] in self?.toggleRecording() }
             await loadSecureSettings()
@@ -422,11 +421,8 @@ final class VoiceBridgeModel: ObservableObject {
                 durationSeconds: recording.duration,
                 activity: activity,
                 specialist: specialist,
-                progress: { [weak self] update in
-                    await MainActor.run {
-                        self?.deliveryStates[update.component] = update.state
-                        self?.phase = update.component == .transcript ? .transcribing : .sending
-                    }
+                progress: { update in
+                    await self.applyDeliveryUpdate(update)
                 }
             )
             lastTranscript = result.transcript
@@ -444,6 +440,11 @@ final class VoiceBridgeModel: ObservableObject {
         guard let recordingStore else { pendingRetryCount = 0; return }
         let queue = VoiceRetryQueue(directory: recordingStore.queueDirectory)
         pendingRetryCount = (try? await queue.items().count) ?? 0
+    }
+
+    private func applyDeliveryUpdate(_ update: VoicePipelineUpdate) {
+        deliveryStates[update.component] = update.state
+        phase = update.component == .transcript ? .transcribing : .sending
     }
 
     private func makeLinkedPipeline() throws -> VoicePipeline {
