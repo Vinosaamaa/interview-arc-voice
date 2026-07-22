@@ -176,16 +176,25 @@ public actor AudioChunker {
 
 private extension AVAssetExportSession {
     func exportInterviewArcChunk() async throws {
+        let box = ExportSessionBox(self)
         try await withCheckedThrowingContinuation { continuation in
-            exportAsynchronously {
-                switch self.status {
+            box.session.exportAsynchronously {
+                switch box.session.status {
                 case .completed: continuation.resume()
-                case .failed: continuation.resume(throwing: self.error ?? VoiceBridgeError.recordingUnavailable)
+                case .failed: continuation.resume(throwing: box.session.error ?? VoiceBridgeError.recordingUnavailable)
                 case .cancelled: continuation.resume(throwing: CancellationError())
-                default: continuation.resume(throwing: self.error ?? VoiceBridgeError.recordingUnavailable)
+                default: continuation.resume(throwing: box.session.error ?? VoiceBridgeError.recordingUnavailable)
                 }
             }
         }
+    }
+}
+
+private final class ExportSessionBox: @unchecked Sendable {
+    let session: AVAssetExportSession
+
+    init(_ session: AVAssetExportSession) {
+        self.session = session
     }
 }
 
@@ -193,13 +202,18 @@ public enum TranscriptAssembler {
     public static func assemble(_ responses: [(AudioChunk, GroqTranscription)]) -> (text: String, words: [TranscriptWord]) {
         var assembledWords: [TranscriptWord] = []
         for (chunk, response) in responses {
+            let previousChunkEnd = assembledWords.last?.end
             for word in response.words ?? [] {
                 let adjusted = TranscriptWord(
                     word: word.word,
                     start: word.start + chunk.offsetSeconds,
                     end: word.end + chunk.offsetSeconds
                 )
-                if let last = assembledWords.last, adjusted.end <= last.end + 0.2 { continue }
+                if chunk.offsetSeconds > 0,
+                   let previousChunkEnd,
+                   adjusted.end <= previousChunkEnd + 0.2 {
+                    continue
+                }
                 assembledWords.append(adjusted)
             }
         }
