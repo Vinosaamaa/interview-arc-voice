@@ -536,7 +536,10 @@ private struct VoiceBridgeMenu: View {
         VStack(alignment: .leading, spacing: 10) {
             Toggle(
                 "Link to Interview Arc",
-                isOn: Binding(get: { model.linkToInterviewArc }, set: model.setLinkMode)
+                isOn: Binding(
+                    get: { model.linkToInterviewArc },
+                    set: { enabled in model.setLinkMode(enabled) }
+                )
             )
             .toggleStyle(.switch)
             .disabled(model.isRecording || model.isBusy)
@@ -608,7 +611,10 @@ private struct VoiceBridgeMenu: View {
                 }
                 Toggle(
                     "Paste general dictation automatically",
-                    isOn: Binding(get: { model.autoPaste }, set: model.setAutoPaste)
+                    isOn: Binding(
+                        get: { model.autoPaste },
+                        set: { enabled in model.setAutoPaste(enabled) }
+                    )
                 )
                 if model.accessibilityNeeded {
                     Button("Enable Accessibility for auto-paste", action: model.requestAccessibilityPermission)
