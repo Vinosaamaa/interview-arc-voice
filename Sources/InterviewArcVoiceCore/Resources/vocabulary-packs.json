@@ -1,0 +1,279 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "title": "LeetCode Explore",
+      "url": "https://leetcode.com/explore/learn/",
+      "consultedAt": "2026-07-21"
+    },
+    {
+      "title": "AWS Glossary",
+      "url": "https://docs.aws.amazon.com/glossary/latest/reference/glos-chap.html",
+      "consultedAt": "2026-07-21"
+    },
+    {
+      "title": "Google Cloud Architecture Center",
+      "url": "https://docs.cloud.google.com/architecture",
+      "consultedAt": "2026-07-21"
+    },
+    {
+      "title": "Amazon Leadership Principles",
+      "url": "https://www.amazon.jobs/content/en/our-workplace/leadership-principles",
+      "consultedAt": "2026-07-21"
+    }
+  ],
+  "packs": [
+    {
+      "id": "coding-core",
+      "specialty": "coding",
+      "isBase": true,
+      "priority": 10,
+      "triggers": [],
+      "terms": [
+        "LeetCode", "time complexity", "space complexity", "Big O", "edge case",
+        "array", "hash map", "hash set", "linked list", "stack", "queue",
+        "binary search", "recursion", "iteration", "two pointers", "sliding window"
+      ]
+    },
+    {
+      "id": "coding-graphs",
+      "specialty": "coding",
+      "isBase": false,
+      "priority": 90,
+      "triggers": ["graph", "tree", "shortest path", "topological sort", "union find", "bfs", "dfs"],
+      "terms": [
+        "adjacency list", "adjacency matrix", "breadth-first search", "depth-first search",
+        "Dijkstra", "Bellman-Ford", "Floyd-Warshall", "topological sort", "Kahn's algorithm",
+        "disjoint set union", "union-find", "minimum spanning tree", "Kruskal", "Prim",
+        "strongly connected component", "cycle detection", "indegree", "outdegree"
+      ]
+    },
+    {
+      "id": "coding-dynamic-programming",
+      "specialty": "coding",
+      "isBase": false,
+      "priority": 85,
+      "triggers": ["dynamic programming", "memoization", "tabulation", "knapsack", "subsequence"],
+      "terms": [
+        "dynamic programming", "memoization", "tabulation", "state transition",
+        "base case", "overlapping subproblems", "optimal substructure", "knapsack",
+        "longest common subsequence", "longest increasing subsequence", "Kadane's algorithm"
+      ]
+    },
+    {
+      "id": "coding-strings",
+      "specialty": "coding",
+      "isBase": false,
+      "priority": 70,
+      "triggers": ["string", "substring", "prefix", "suffix", "trie", "palindrome"],
+      "terms": [
+        "substring", "subsequence", "prefix", "suffix", "palindrome", "trie",
+        "rolling hash", "Rabin-Karp", "Knuth-Morris-Pratt", "KMP", "Z algorithm"
+      ]
+    },
+    {
+      "id": "coding-trees-heaps",
+      "specialty": "coding",
+      "isBase": false,
+      "priority": 82,
+      "triggers": ["binary tree", "binary search tree", "heap", "priority queue", "segment tree", "fenwick tree"],
+      "terms": [
+        "binary tree", "binary search tree", "BST", "tree traversal", "preorder",
+        "inorder", "postorder", "level order", "lowest common ancestor", "balanced tree",
+        "min heap", "max heap", "priority queue", "heapify", "segment tree", "Fenwick tree"
+      ]
+    },
+    {
+      "id": "coding-backtracking",
+      "specialty": "coding",
+      "isBase": false,
+      "priority": 78,
+      "triggers": ["backtracking", "permutation", "combination", "subset", "n queens", "sudoku"],
+      "terms": [
+        "backtracking", "decision tree", "candidate set", "choose explore unchoose",
+        "pruning", "permutation", "combination", "power set", "N-Queens", "Sudoku solver"
+      ]
+    },
+    {
+      "id": "coding-intervals-greedy",
+      "specialty": "coding",
+      "isBase": false,
+      "priority": 76,
+      "triggers": ["interval", "meeting room", "schedule", "greedy", "sweep line"],
+      "terms": [
+        "interval", "overlap", "merge intervals", "meeting rooms", "greedy algorithm",
+        "exchange argument", "sweep line", "event boundary", "monotonic stack", "monotonic queue"
+      ]
+    },
+    {
+      "id": "coding-bits-math",
+      "specialty": "coding",
+      "isBase": false,
+      "priority": 68,
+      "triggers": ["bit", "xor", "binary representation", "math", "number theory"],
+      "terms": [
+        "bit manipulation", "bitmask", "XOR", "left shift", "right shift", "two's complement",
+        "population count", "greatest common divisor", "Euclidean algorithm", "modular arithmetic"
+      ]
+    },
+    {
+      "id": "system-design-core",
+      "specialty": "system-design",
+      "isBase": true,
+      "priority": 10,
+      "triggers": [],
+      "terms": [
+        "functional requirements", "non-functional requirements", "availability",
+        "reliability", "scalability", "throughput", "latency", "QPS", "p99 latency",
+        "load balancer", "API gateway", "cache", "database", "sharding", "replication",
+        "consistency", "CAP theorem", "rate limiting", "observability"
+      ]
+    },
+    {
+      "id": "system-design-storage",
+      "specialty": "system-design",
+      "isBase": false,
+      "priority": 85,
+      "triggers": ["database", "storage", "data model", "key value", "sql", "nosql", "blob"],
+      "terms": [
+        "PostgreSQL", "MySQL", "DynamoDB", "Cassandra", "Redis", "Elasticsearch",
+        "B-tree", "LSM tree", "write-ahead log", "secondary index", "object storage",
+        "eventual consistency", "strong consistency", "quorum", "read repair", "compaction"
+      ]
+    },
+    {
+      "id": "system-design-streaming",
+      "specialty": "system-design",
+      "isBase": false,
+      "priority": 90,
+      "triggers": ["stream", "event", "feed", "notification", "message", "queue", "real time"],
+      "terms": [
+        "Apache Kafka", "Amazon Kinesis", "message queue", "event stream", "consumer group",
+        "partition key", "offset", "at-least-once delivery", "exactly-once semantics",
+        "dead-letter queue", "backpressure", "fan-out", "WebSocket", "server-sent events"
+      ]
+    },
+    {
+      "id": "system-design-recommendation",
+      "specialty": "system-design",
+      "isBase": false,
+      "priority": 95,
+      "triggers": ["recommendation", "feed", "for you", "ranking", "timeline", "tiktok"],
+      "terms": [
+        "candidate generation", "retrieval", "ranking", "feature store", "embedding",
+        "collaborative filtering", "content-based filtering", "learning to rank",
+        "online inference", "offline training", "engagement signal", "freshness", "diversity",
+        "TikTok", "For You feed", "content delivery network", "CDN"
+      ]
+    },
+    {
+      "id": "system-design-reliability",
+      "specialty": "system-design",
+      "isBase": false,
+      "priority": 88,
+      "triggers": ["reliability", "availability", "resilience", "failover", "disaster recovery", "multi region"],
+      "terms": [
+        "fault tolerance", "redundancy", "failover", "health check", "circuit breaker",
+        "bulkhead", "retry with exponential backoff", "idempotency", "multi-region",
+        "recovery point objective", "RPO", "recovery time objective", "RTO", "disaster recovery"
+      ]
+    },
+    {
+      "id": "system-design-caching-delivery",
+      "specialty": "system-design",
+      "isBase": false,
+      "priority": 84,
+      "triggers": ["cache", "cdn", "content delivery", "hot key", "static asset", "video"],
+      "terms": [
+        "cache-aside", "read-through cache", "write-through cache", "write-back cache",
+        "time to live", "TTL", "cache invalidation", "cache stampede", "hot key",
+        "consistent hashing", "content delivery network", "CDN", "edge location", "origin server"
+      ]
+    },
+    {
+      "id": "system-design-api-security",
+      "specialty": "system-design",
+      "isBase": false,
+      "priority": 80,
+      "triggers": ["api", "authentication", "authorization", "security", "rate limit", "gateway"],
+      "terms": [
+        "REST", "gRPC", "GraphQL", "API gateway", "OAuth 2.0", "OpenID Connect",
+        "authentication", "authorization", "JSON Web Token", "JWT", "rate limiting",
+        "token bucket", "leaky bucket", "transport layer security", "TLS"
+      ]
+    },
+    {
+      "id": "system-design-observability",
+      "specialty": "system-design",
+      "isBase": false,
+      "priority": 72,
+      "triggers": ["observability", "monitoring", "metrics", "logging", "tracing", "alert"],
+      "terms": [
+        "metrics", "logs", "distributed tracing", "OpenTelemetry", "service level indicator",
+        "SLI", "service level objective", "SLO", "error budget", "p50 latency",
+        "p95 latency", "p99 latency", "cardinality", "alerting"
+      ]
+    },
+    {
+      "id": "behavioral-core",
+      "specialty": "behavioral",
+      "isBase": true,
+      "priority": 10,
+      "triggers": [],
+      "terms": [
+        "STAR method", "situation", "task", "action", "result", "reflection",
+        "stakeholder", "tradeoff", "conflict resolution", "ownership", "collaboration",
+        "leadership", "impact", "customer", "deadline", "prioritization"
+      ]
+    },
+    {
+      "id": "behavioral-resume",
+      "specialty": "behavioral",
+      "isBase": false,
+      "priority": 95,
+      "triggers": ["resume", "résumé", "experience", "project", "expedia", "vortex", "chanter"],
+      "terms": [
+        "Expedia", "Vortex", "Chanter", "software engineer", "cross-functional",
+        "architecture", "implementation", "migration", "incident", "root cause",
+        "measurable impact", "lessons learned"
+      ]
+    },
+    {
+      "id": "behavioral-leadership",
+      "specialty": "behavioral",
+      "isBase": false,
+      "priority": 80,
+      "triggers": ["leadership", "influence", "conflict", "disagreement", "mentor", "initiative"],
+      "terms": [
+        "influence without authority", "stakeholder alignment", "constructive disagreement",
+        "mentorship", "initiative", "decision-making", "escalation", "feedback",
+        "accountability", "consensus", "compromise"
+      ]
+    },
+    {
+      "id": "behavioral-amazon",
+      "specialty": "behavioral",
+      "isBase": false,
+      "priority": 92,
+      "triggers": ["amazon", "customer obsession", "ownership", "dive deep", "deliver results", "leadership principle"],
+      "terms": [
+        "Customer Obsession", "Ownership", "Invent and Simplify", "Are Right A Lot",
+        "Learn and Be Curious", "Insist on the Highest Standards", "Think Big",
+        "Bias for Action", "Frugality", "Earn Trust", "Dive Deep",
+        "Have Backbone Disagree and Commit", "Deliver Results"
+      ]
+    },
+    {
+      "id": "behavioral-execution",
+      "specialty": "behavioral",
+      "isBase": false,
+      "priority": 78,
+      "triggers": ["deadline", "failure", "mistake", "incident", "priority", "ambiguity", "challenge"],
+      "terms": [
+        "scope", "constraint", "ambiguity", "prioritization", "calculated risk",
+        "incident response", "root cause analysis", "corrective action", "retrospective",
+        "tradeoff", "measurable result", "follow-up", "lesson learned"
+      ]
+    }
+  ]
+}
