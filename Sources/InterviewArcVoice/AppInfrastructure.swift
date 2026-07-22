@@ -188,7 +188,8 @@ struct FloatingRecorderView: View {
         }
         .padding(.horizontal, 15)
         .padding(.vertical, 12)
-        .frame(width: 390, minHeight: 102)
+        .frame(width: 390)
+        .frame(minHeight: 102)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(.ultraThickMaterial)
