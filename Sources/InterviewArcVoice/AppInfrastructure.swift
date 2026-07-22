@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import Carbon
 import SwiftUI
+import InterviewArcVoiceCore
 
 struct HotKeyShortcut: Codable, Equatable, Sendable {
     let keyCode: UInt32
@@ -108,7 +109,7 @@ final class DictationTextInjector {
     var accessibilityTrusted: Bool { AXIsProcessTrusted() }
 
     func requestAccessibilityPermission() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
@@ -182,58 +183,8 @@ struct FloatingRecorderView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            HStack(spacing: 11) {
-                Button(action: model.toggleLinkMode) {
-                    Image(systemName: model.linkToInterviewArc ? "link.circle.fill" : "link.circle")
-                        .font(.system(size: 23, weight: .semibold))
-                        .foregroundStyle(model.linkToInterviewArc ? Color(red: 0.40, green: 0.84, blue: 0.79) : .secondary)
-                }
-                .buttonStyle(.plain)
-                .disabled(model.isRecording || model.isBusy)
-                .accessibilityLabel(model.linkToInterviewArc ? "Disconnect from Interview Arc activity" : "Connect to Interview Arc activity")
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(model.floatingEyebrow)
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .tracking(1.1)
-                        .foregroundStyle(.secondary)
-                    Text(model.floatingTitle)
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                if model.isRecording { RecordingClock(recorder: model.recorder) }
-                Button(action: model.toggleRecording) {
-                    ZStack {
-                        Circle().fill(model.isRecording ? Color(red: 0.91, green: 0.24, blue: 0.20) : Color(red: 0.40, green: 0.84, blue: 0.79))
-                        Image(systemName: model.isRecording ? "stop.fill" : "mic.fill")
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundStyle(Color(red: 0.04, green: 0.16, blue: 0.15))
-                    }
-                    .frame(width: 46, height: 46)
-                }
-                .buttonStyle(.plain)
-                .disabled(!model.isRecording && !model.canRecord)
-                .accessibilityLabel(model.isRecording ? "Stop recording" : "Start recording")
-            }
-
-            if model.showsDeliverySteps {
-                HStack(spacing: 8) {
-                    ForEach(VoiceDeliveryComponent.allCases, id: \.self) { component in
-                        DeliveryStepView(component: component, state: model.deliveryStates[component])
-                    }
-                }
-            } else {
-                HStack(spacing: 7) {
-                    Image(systemName: model.phase.symbol)
-                    Text(model.compactStatus)
-                        .lineLimit(1)
-                    Spacer()
-                    Text(model.shortcut.displayName).foregroundStyle(.secondary)
-                }
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-            }
+            primaryControls
+            progressRow
         }
         .padding(.horizontal, 15)
         .padding(.vertical, 12)
@@ -244,6 +195,73 @@ struct FloatingRecorderView: View {
                 .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.18)))
         )
         .padding(8)
+    }
+
+    private var primaryControls: some View {
+        HStack(spacing: 11) {
+            linkButton
+            activityLabel
+            if model.isRecording { RecordingClock(recorder: model.recorder) }
+            recordButton
+        }
+    }
+
+    private var linkButton: some View {
+        Button(action: model.toggleLinkMode) {
+            Image(systemName: model.linkToInterviewArc ? "link.circle.fill" : "link.circle")
+                .font(.system(size: 23, weight: .semibold))
+                .foregroundStyle(model.linkToInterviewArc ? Color(red: 0.40, green: 0.84, blue: 0.79) : Color.secondary)
+        }
+        .buttonStyle(.plain)
+        .disabled(model.isRecording || model.isBusy)
+        .accessibilityLabel(model.linkToInterviewArc ? "Disconnect from Interview Arc activity" : "Connect to Interview Arc activity")
+    }
+
+    private var activityLabel: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(model.floatingEyebrow)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(1.1)
+                .foregroundStyle(.secondary)
+            Text(model.floatingTitle)
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var recordButton: some View {
+        Button(action: model.toggleRecording) {
+            ZStack {
+                Circle().fill(model.isRecording ? Color(red: 0.91, green: 0.24, blue: 0.20) : Color(red: 0.40, green: 0.84, blue: 0.79))
+                Image(systemName: model.isRecording ? "stop.fill" : "mic.fill")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Color(red: 0.04, green: 0.16, blue: 0.15))
+            }
+            .frame(width: 46, height: 46)
+        }
+        .buttonStyle(.plain)
+        .disabled(!model.isRecording && !model.canRecord)
+        .accessibilityLabel(model.isRecording ? "Stop recording" : "Start recording")
+    }
+
+    @ViewBuilder
+    private var progressRow: some View {
+        if model.showsDeliverySteps {
+            HStack(spacing: 8) {
+                ForEach(VoiceDeliveryComponent.allCases, id: \.self) { component in
+                    DeliveryStepView(component: component, state: model.deliveryStates[component])
+                }
+            }
+        } else {
+            HStack(spacing: 7) {
+                Image(systemName: model.phase.symbol)
+                Text(model.compactStatus).lineLimit(1)
+                Spacer()
+                Text(model.shortcut.displayName).foregroundStyle(.secondary)
+            }
+            .font(.system(size: 11, weight: .medium, design: .rounded))
+        }
     }
 }
 

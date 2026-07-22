@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import SwiftUI
 import InterviewArcVoiceCore
 
