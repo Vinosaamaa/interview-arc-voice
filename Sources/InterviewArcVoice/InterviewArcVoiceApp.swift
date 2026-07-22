@@ -41,9 +41,8 @@ final class VoiceBridgeModel: ObservableObject {
         case recording
         case transcribing
         case sending
-        case pasting
+        case inserting
         case delivered
-        case copied
         case queued
         case failed(String)
 
@@ -54,10 +53,9 @@ final class VoiceBridgeModel: ObservableObject {
             case .idle: "Ready"
             case .recording: "Recording"
             case .transcribing: "Transcribing with Groq"
-            case .sending: "Syncing interview answer"
-            case .pasting: "Pasting dictation"
+            case .sending: "Saving interview answer"
+            case .inserting: "Inserting at the cursor"
             case .delivered: "Complete"
-            case .copied: "Copied to clipboard"
             case .queued: "Complete with retry queued"
             case .failed: "Needs attention"
             }
@@ -66,9 +64,8 @@ final class VoiceBridgeModel: ObservableObject {
         var symbol: String {
             switch self {
             case .recording: "waveform.circle.fill"
-            case .transcribing, .sending, .refreshing, .pasting: "arrow.triangle.2.circlepath"
+            case .transcribing, .sending, .refreshing, .inserting: "arrow.triangle.2.circlepath"
             case .delivered: "checkmark.circle.fill"
-            case .copied: "doc.on.clipboard.fill"
             case .queued: "clock.arrow.circlepath"
             case .failed: "exclamationmark.triangle.fill"
             case .setup: "key.fill"
@@ -78,7 +75,7 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     private enum CaptureDestination {
-        case linked(FocusedVoiceActivity, SpecialistRoute)
+        case linked(FocusedVoiceActivity)
         case general
     }
 
@@ -94,7 +91,6 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var codexPath: String
     @Published var pendingRetryCount = 0
     @Published var linkToInterviewArc: Bool
-    @Published var autoPaste: Bool
     @Published var shortcut: HotKeyShortcut
     @Published var shortcutCapturing = false
     @Published var accessibilityNeeded = false
@@ -111,16 +107,17 @@ final class VoiceBridgeModel: ObservableObject {
     private var captureDestination: CaptureDestination?
     private var targetApplicationPID: pid_t?
     private var shortcutMonitor: Any?
+    private var lastInsertionSucceeded = false
 
     var isRecording: Bool { phase == .recording }
-    var isBusy: Bool { [.refreshing, .transcribing, .sending, .pasting].contains(phase) }
+    var isBusy: Bool { [.refreshing, .transcribing, .sending, .inserting].contains(phase) }
     var canRecord: Bool {
         !groqKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isBusy
     }
     var menuBarSymbol: String {
         switch phase {
         case .recording: "waveform.circle.fill"
-        case .transcribing, .sending, .pasting: "arrow.triangle.2.circlepath.circle.fill"
+        case .transcribing, .sending, .inserting: "arrow.triangle.2.circlepath.circle.fill"
         case .queued: "clock.badge.exclamationmark.fill"
         case .failed: "exclamationmark.triangle.fill"
         default: "waveform.circle"
@@ -148,7 +145,6 @@ final class VoiceBridgeModel: ObservableObject {
         workspacePath = defaults.string(forKey: "voice.workspacePath") ?? "/Users/wenkxu/Projects/Interview Prep/interview-arc"
         codexPath = defaults.string(forKey: "voice.codexPath") ?? "/Applications/ChatGPT.app/Contents/Resources/codex"
         linkToInterviewArc = defaults.object(forKey: "voice.linkToInterviewArc") as? Bool ?? true
-        autoPaste = defaults.object(forKey: "voice.autoPaste") as? Bool ?? true
         if let data = defaults.data(forKey: "voice.shortcut"),
            let saved = try? JSONDecoder().decode(HotKeyShortcut.self, from: data) {
             shortcut = saved
@@ -204,18 +200,11 @@ final class VoiceBridgeModel: ObservableObject {
             UserDefaults.standard.set(apiBaseURL, forKey: "voice.apiBaseURL")
             UserDefaults.standard.set(workspacePath, forKey: "voice.workspacePath")
             UserDefaults.standard.set(codexPath, forKey: "voice.codexPath")
-            UserDefaults.standard.set(autoPaste, forKey: "voice.autoPaste")
             settingsExpanded = false
             Task { await refreshContext(showProgress: false) }
         } catch {
             phase = .failed("Secure settings could not be saved: \(error.localizedDescription)")
         }
-    }
-
-    func setAutoPaste(_ enabled: Bool) {
-        autoPaste = enabled
-        UserDefaults.standard.set(enabled, forKey: "voice.autoPaste")
-        accessibilityNeeded = enabled && !textInjector.accessibilityTrusted
     }
 
     func requestAccessibilityPermission() {
@@ -268,7 +257,7 @@ final class VoiceBridgeModel: ObservableObject {
         } catch {
             contextMessage = "Keychain access failed. Open Connection settings to enter the keys again."
         }
-        accessibilityNeeded = autoPaste && !textInjector.accessibilityTrusted
+        accessibilityNeeded = !textInjector.accessibilityTrusted
         phase = canRecord ? .idle : .setup
         await refreshContext(showProgress: false)
     }
@@ -296,10 +285,8 @@ final class VoiceBridgeModel: ObservableObject {
         do {
             let loaded = try await InterviewArcAPIClient(baseURL: baseURL, token: token).context()
             context = loaded
-            if let activity = loaded.focusedActivity, loaded.specialist != nil {
+            if let activity = loaded.focusedActivity {
                 contextMessage = "Linked to \(activity.title)"
-            } else if loaded.focusedActivity != nil {
-                contextMessage = "The focused activity has no specialist — using general dictation."
             } else {
                 contextMessage = "No focused activity — using general dictation."
             }
@@ -321,6 +308,12 @@ final class VoiceBridgeModel: ObservableObject {
             contextMessage = "Add your Groq API key in Connection settings."
             return
         }
+        guard textInjector.accessibilityTrusted else {
+            accessibilityNeeded = true
+            textInjector.requestAccessibilityPermission()
+            phase = .failed("Enable Accessibility so Voice can insert text at the focused cursor.")
+            return
+        }
         let frontmost = NSWorkspace.shared.frontmostApplication
         targetApplicationPID = frontmost?.bundleIdentifier == Bundle.main.bundleIdentifier ? nil : frontmost?.processIdentifier
         deliveryStates = [:]
@@ -328,13 +321,12 @@ final class VoiceBridgeModel: ObservableObject {
         if linkToInterviewArc { await refreshContext(showProgress: true) }
         let route = routingPolicy.route(
             linkToInterviewArc: linkToInterviewArc,
-            hasFocusedActivity: context?.focusedActivity != nil,
-            hasSpecialist: context?.specialist != nil
+            hasFocusedActivity: context?.focusedActivity != nil
         )
         switch route {
         case .linked:
-            guard let activity = context?.focusedActivity, let specialist = context?.specialist else { return }
-            captureDestination = .linked(activity, specialist)
+            guard let activity = context?.focusedActivity else { return }
+            captureDestination = .linked(activity)
         case .general:
             captureDestination = .general
         }
@@ -345,7 +337,7 @@ final class VoiceBridgeModel: ObservableObject {
         }
         let destination: URL
         switch captureDestination {
-        case .linked(let activity, _): destination = recordingStore.nextRecordingURL(activityID: activity.activityId)
+        case .linked(let activity): destination = recordingStore.nextRecordingURL(activityID: activity.activityId)
         case .general: destination = recordingStore.nextTemporaryRecordingURL()
         case nil: return
         }
@@ -367,8 +359,8 @@ final class VoiceBridgeModel: ObservableObject {
             phase = .transcribing
             Task {
                 switch captureDestination {
-                case .linked(let activity, let specialist):
-                    await processLinked(recording: recording, activity: activity, specialist: specialist)
+                case .linked(let activity):
+                    await processLinked(recording: recording, activity: activity)
                 case .general:
                     await processGeneral(recording: recording)
                 }
@@ -390,18 +382,11 @@ final class VoiceBridgeModel: ObservableObject {
                 temporaryDirectory: recordingStore.temporaryDirectory
             )
             let result = try await generalPipeline.process(recordingURL: recording.url)
-            lastTranscript = result.text
-            phase = .pasting
-            let output = await textInjector.deliver(
-                text: result.text,
-                targetPID: targetApplicationPID,
-                autoPaste: autoPaste
-            )
-            accessibilityNeeded = autoPaste && output == .copied
-            phase = output == .pasted ? .delivered : .copied
-            contextMessage = output == .pasted
-                ? "Dictation pasted into the active app."
-                : "Dictation copied. Enable Accessibility to paste automatically."
+            let inserted = await insertTranscript(result.text, showDeliveryStep: false)
+            phase = inserted ? .delivered : .failed("Voice could not find the focused text editor. Click the editor and try again.")
+            contextMessage = inserted
+                ? "Dictation inserted at the cursor. Press Send when ready."
+                : "No editable cursor was available."
         } catch {
             try? FileManager.default.removeItem(at: recording.url)
             phase = .failed(error.localizedDescription)
@@ -410,27 +395,33 @@ final class VoiceBridgeModel: ObservableObject {
 
     private func processLinked(
         recording: (url: URL, duration: TimeInterval),
-        activity: FocusedVoiceActivity,
-        specialist: SpecialistRoute
+        activity: FocusedVoiceActivity
     ) async {
         do {
+            lastInsertionSucceeded = false
             let builtPipeline = try makeLinkedPipeline()
             pipeline = builtPipeline
             let result = try await builtPipeline.process(
                 recordingURL: recording.url,
                 durationSeconds: recording.duration,
                 activity: activity,
-                specialist: specialist,
+                transcriptReady: { transcript in
+                    _ = await self.insertTranscript(transcript, showDeliveryStep: true)
+                },
                 progress: { update in
                     await self.applyDeliveryUpdate(update)
                 }
             )
-            lastTranscript = result.transcript
             await updateRetryCount()
-            phase = result.hasQueuedRetry ? .queued : .delivered
-            contextMessage = result.hasQueuedRetry
-                ? "The answer is safe; one background step will retry."
-                : "Transcript, specialist, audio, and coach are connected."
+            if !lastInsertionSucceeded {
+                phase = .failed("The answer was saved, but Voice could not find the focused text editor.")
+                contextMessage = "Click the editor, then use Insert again from Last transcript."
+            } else {
+                phase = result.hasQueuedRetry ? .queued : .delivered
+                contextMessage = result.hasQueuedRetry
+                    ? "Inserted at the cursor; one background step will retry."
+                    : "Inserted at the cursor. Press Send when ready."
+            }
         } catch {
             phase = .failed(error.localizedDescription)
         }
@@ -445,6 +436,37 @@ final class VoiceBridgeModel: ObservableObject {
     private func applyDeliveryUpdate(_ update: VoicePipelineUpdate) {
         deliveryStates[update.component] = update.state
         phase = update.component == .transcript ? .transcribing : .sending
+    }
+
+    func reinsertLastTranscript() {
+        guard !lastTranscript.isEmpty else { return }
+        Task {
+            let inserted = await insertTranscript(lastTranscript, showDeliveryStep: linkToInterviewArc)
+            phase = inserted ? .delivered : .failed("Click an editable text field, then try Insert again.")
+        }
+    }
+
+    private func insertTranscript(_ transcript: String, showDeliveryStep: Bool) async -> Bool {
+        lastTranscript = transcript
+        phase = .inserting
+        if showDeliveryStep { deliveryStates[.insertion] = .working }
+        let output = await textInjector.deliver(text: transcript, targetPID: targetApplicationPID)
+        switch output {
+        case .inserted:
+            lastInsertionSucceeded = true
+            accessibilityNeeded = false
+            if showDeliveryStep { deliveryStates[.insertion] = .complete }
+            return true
+        case .accessibilityRequired:
+            lastInsertionSucceeded = false
+            accessibilityNeeded = true
+            if showDeliveryStep { deliveryStates[.insertion] = .needsAttention }
+            return false
+        case .noFocusedEditor:
+            lastInsertionSucceeded = false
+            if showDeliveryStep { deliveryStates[.insertion] = .needsAttention }
+            return false
+        }
     }
 
     private func makeLinkedPipeline() throws -> VoicePipeline {
@@ -494,7 +516,7 @@ private struct VoiceBridgeMenu: View {
     @ObservedObject var model: VoiceBridgeModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
+        VStack(alignment: .leading, spacing: 10) {
             statusHeader
             modeCard
             recordingControl
@@ -504,36 +526,39 @@ private struct VoiceBridgeMenu: View {
             settings
             providerFooter
         }
-        .padding(18)
-        .frame(width: 390)
+        .padding(12)
+        .frame(width: 260)
     }
 
     private var statusHeader: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             ZStack {
                 Circle().fill(statusColor.opacity(0.14))
                 Image(systemName: model.phase.symbol).foregroundStyle(statusColor)
             }
-            .frame(width: 40, height: 40)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(model.phase.label).font(.headline)
-                Text(model.compactStatus).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+            .frame(width: 32, height: 32)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(model.phase.label).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Text(model.linkToInterviewArc ? "Interview Arc" : "General dictation")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             Spacer()
             Button(action: model.toggleFloatingPanel) { Image(systemName: "macwindow.on.rectangle") }
                 .buttonStyle(.borderless)
-                .frame(width: 34, height: 34)
+                .frame(width: 26, height: 26)
                 .accessibilityLabel("Show or hide floating recorder")
             Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }
                 .buttonStyle(.borderless)
-                .frame(width: 34, height: 34)
+                .frame(width: 26, height: 26)
                 .disabled(model.isRecording || model.isBusy)
                 .accessibilityLabel("Refresh focused activity")
         }
     }
 
     private var modeCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 7) {
             Toggle(
                 "Link to Interview Arc",
                 isOn: Binding(
@@ -543,48 +568,60 @@ private struct VoiceBridgeMenu: View {
             )
             .toggleStyle(.switch)
             .disabled(model.isRecording || model.isBusy)
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .center, spacing: 7) {
                 Image(systemName: model.linkToInterviewArc && model.context?.focusedActivity != nil ? "link.circle.fill" : "text.cursor")
                     .foregroundStyle(model.linkToInterviewArc && model.context?.focusedActivity != nil ? .teal : .secondary)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(model.floatingTitle).font(.subheadline.weight(.semibold)).lineLimit(2)
-                    Text(model.contextMessage).font(.caption).foregroundStyle(.secondary).lineLimit(3)
-                }
+                Text(model.linkToInterviewArc && model.context?.focusedActivity != nil
+                     ? model.floatingTitle
+                     : "Inserts at the cursor")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
-        .padding(13)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var recordingControl: some View {
-        HStack(spacing: 10) {
-            Button(action: model.toggleRecording) {
-                Label(model.isRecording ? "Stop" : "Record", systemImage: model.isRecording ? "stop.fill" : "mic.fill")
-                    .frame(maxWidth: .infinity, minHeight: 32)
+        Button(action: model.toggleRecording) {
+            HStack(spacing: 7) {
+                Image(systemName: model.isRecording ? "stop.fill" : "mic.fill")
+                Text(model.isRecording ? "Stop" : "Record")
+                if model.isRecording {
+                    Spacer()
+                    RecordingClock(recorder: model.recorder, compact: true)
+                }
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .tint(model.isRecording ? .red : Color(red: 0.08, green: 0.34, blue: 0.22))
-            .disabled(!model.isRecording && !model.canRecord)
-            if model.isRecording { RecordingClock(recorder: model.recorder) }
-            Text(model.shortcut.displayName).font(.caption.monospaced()).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 30)
         }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .tint(model.isRecording ? .red : Color(red: 0.08, green: 0.34, blue: 0.22))
+        .disabled(!model.isRecording && !model.canRecord)
     }
 
     private var deliveryProgress: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 4) {
             ForEach(VoiceDeliveryComponent.allCases, id: \.self) { component in
                 DeliveryMenuStep(component: component, state: model.deliveryStates[component])
             }
         }
-        .padding(10)
+        .padding(7)
         .background(Color.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var transcriptPreview: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("LAST VERBATIM TRANSCRIPT").font(.caption2.weight(.bold)).tracking(1.1).foregroundStyle(.secondary)
-            Text(model.lastTranscript).font(.caption).lineLimit(4).textSelection(.enabled)
+            HStack {
+                Text("LAST TRANSCRIPT").font(.caption2.weight(.bold)).tracking(0.8).foregroundStyle(.secondary)
+                Spacer()
+                Button("Insert again", action: model.reinsertLastTranscript)
+                    .buttonStyle(.borderless)
+                    .font(.caption2)
+            }
+            Text(model.lastTranscript).font(.caption).lineLimit(2).textSelection(.enabled)
         }
     }
 
@@ -601,7 +638,7 @@ private struct VoiceBridgeMenu: View {
 
     private var settings: some View {
         DisclosureGroup(isExpanded: $model.settingsExpanded) {
-            VStack(alignment: .leading, spacing: 11) {
+            VStack(alignment: .leading, spacing: 9) {
                 HStack {
                     Text("Global shortcut")
                     Spacer()
@@ -609,16 +646,13 @@ private struct VoiceBridgeMenu: View {
                         model.beginShortcutCapture()
                     }
                 }
-                Toggle(
-                    "Paste general dictation automatically",
-                    isOn: Binding(
-                        get: { model.autoPaste },
-                        set: { enabled in model.setAutoPaste(enabled) }
-                    )
-                )
                 if model.accessibilityNeeded {
-                    Button("Enable Accessibility for auto-paste", action: model.requestAccessibilityPermission)
+                    Button("Enable Accessibility for insertion", action: model.requestAccessibilityPermission)
                         .font(.caption)
+                } else {
+                    Label("Direct insertion enabled", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
                 }
                 Divider()
                 SecureField("Interview Arc token", text: $model.connectionTokenDraft).textFieldStyle(.roundedBorder)
@@ -630,16 +664,20 @@ private struct VoiceBridgeMenu: View {
             }
             .padding(.top, 10)
         } label: {
-            Label("Settings", systemImage: "gearshape")
-                .font(.subheadline.weight(.medium))
+            HStack {
+                Label("Settings", systemImage: "gearshape")
+                    .font(.subheadline.weight(.medium))
+                Spacer()
+                Text(model.shortcut.displayName)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
     private var providerFooter: some View {
         HStack {
             Label("Groq Large v3", systemImage: "cloud")
-            Spacer()
-            Label(model.linkToInterviewArc ? "Auto-link" : "General", systemImage: model.linkToInterviewArc ? "link" : "text.cursor")
             Spacer()
             Label("Private", systemImage: "lock.fill")
         }
@@ -650,7 +688,7 @@ private struct VoiceBridgeMenu: View {
     private var statusColor: Color {
         switch model.phase {
         case .recording, .failed: .red
-        case .queued, .setup, .copied: .orange
+        case .queued, .setup: .orange
         case .delivered, .idle: .green
         default: .blue
         }
@@ -671,8 +709,8 @@ private struct DeliveryMenuStep: View {
 
     private var label: String {
         switch component {
-        case .transcript: "Text"
-        case .specialist: "Codex"
+        case .insertion: "Cursor"
+        case .transcript: "Saved"
         case .audio: "R2"
         case .coach: "Coach"
         }
@@ -683,6 +721,7 @@ private struct DeliveryMenuStep: View {
         case .working: "arrow.triangle.2.circlepath"
         case .complete: "checkmark.circle.fill"
         case .queued: "clock.badge.exclamationmark"
+        case .needsAttention: "exclamationmark.circle.fill"
         case nil: "circle"
         }
     }
@@ -692,6 +731,7 @@ private struct DeliveryMenuStep: View {
         case .working: .blue
         case .complete: .green
         case .queued: .orange
+        case .needsAttention: .red
         case nil: .secondary
         }
     }
@@ -699,11 +739,12 @@ private struct DeliveryMenuStep: View {
 
 struct RecordingClock: View {
     @ObservedObject var recorder: AnswerRecorder
+    var compact = false
 
     var body: some View {
         Text(clock(recorder.elapsedSeconds))
-            .font(.system(.body, design: .monospaced).weight(.semibold))
-            .frame(minWidth: 58)
+            .font(.system(size: compact ? 10 : 14, weight: .semibold, design: .monospaced))
+            .frame(minWidth: compact ? 32 : 58)
             .accessibilityLabel("Recording time \(clock(recorder.elapsedSeconds))")
     }
 

@@ -10,10 +10,9 @@ public struct CaptureRoutingPolicy: Sendable {
 
     public func route(
         linkToInterviewArc: Bool,
-        hasFocusedActivity: Bool,
-        hasSpecialist: Bool
+        hasFocusedActivity: Bool
     ) -> CaptureRouteKind {
-        guard linkToInterviewArc, hasFocusedActivity, hasSpecialist else { return .general }
+        guard linkToInterviewArc, hasFocusedActivity else { return .general }
         return .linked
     }
 }

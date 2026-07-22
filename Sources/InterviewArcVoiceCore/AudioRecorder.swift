@@ -5,6 +5,7 @@ import Foundation
 public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
     @Published public private(set) var isRecording = false
     @Published public private(set) var elapsedSeconds: TimeInterval = 0
+    @Published public private(set) var averagePower: Float = -60
 
     private var recorder: AVAudioRecorder?
     private var ticker: Timer?
@@ -40,12 +41,15 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         self.recorder = recorder
         startedAt = Date()
         elapsedSeconds = 0
+        averagePower = -60
         isRecording = true
         ticker?.invalidate()
-        ticker = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+        ticker = Timer.scheduledTimer(withTimeInterval: 0.10, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, let startedAt = self.startedAt else { return }
+                guard let self, let startedAt = self.startedAt, let recorder = self.recorder else { return }
                 self.elapsedSeconds = Date().timeIntervalSince(startedAt)
+                recorder.updateMeters()
+                self.averagePower = recorder.averagePower(forChannel: 0)
             }
         }
     }
@@ -60,6 +64,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         self.recorder = nil
         startedAt = nil
         isRecording = false
+        averagePower = -60
         elapsedSeconds = duration
         return (url, duration)
     }

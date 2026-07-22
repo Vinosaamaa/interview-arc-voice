@@ -107,13 +107,16 @@ import Testing
     #expect(result.text == "First we gather requirements and estimate traffic before choosing the storage model")
 }
 
-@Test func linkedRoutingRequiresActivityAndSpecialist() {
+@Test func linkedRoutingRequiresOnlyAFocusedActivity() {
     let policy = CaptureRoutingPolicy()
 
-    #expect(policy.route(linkToInterviewArc: true, hasFocusedActivity: true, hasSpecialist: true) == .linked)
-    #expect(policy.route(linkToInterviewArc: true, hasFocusedActivity: true, hasSpecialist: false) == .general)
-    #expect(policy.route(linkToInterviewArc: true, hasFocusedActivity: false, hasSpecialist: false) == .general)
-    #expect(policy.route(linkToInterviewArc: false, hasFocusedActivity: true, hasSpecialist: true) == .general)
+    #expect(policy.route(linkToInterviewArc: true, hasFocusedActivity: true) == .linked)
+    #expect(policy.route(linkToInterviewArc: true, hasFocusedActivity: false) == .general)
+    #expect(policy.route(linkToInterviewArc: false, hasFocusedActivity: true) == .general)
+}
+
+@Test func deliveryProgressMatchesVisibleCursorAndBackgroundStages() {
+    #expect(VoiceDeliveryComponent.allCases == [.insertion, .transcript, .audio, .coach])
 }
 
 @Test func generalDictationDeletesTemporaryRecording() async throws {

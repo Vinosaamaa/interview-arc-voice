@@ -96,8 +96,9 @@ final class GlobalHotKeyManager {
 }
 
 enum DictationOutput: Equatable {
-    case pasted
-    case copied
+    case inserted
+    case accessibilityRequired
+    case noFocusedEditor
 }
 
 @MainActor
@@ -109,28 +110,76 @@ final class DictationTextInjector {
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
-    func deliver(text: String, targetPID: pid_t?, autoPaste: Bool) async -> DictationOutput {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-
-        guard autoPaste, accessibilityTrusted else { return .copied }
-        if let targetPID,
-           let target = NSRunningApplication(processIdentifier: targetPID),
-           target.bundleIdentifier != Bundle.main.bundleIdentifier {
-            target.activate(options: [.activateIgnoringOtherApps])
+    func deliver(text: String, targetPID: pid_t?) async -> DictationOutput {
+        guard accessibilityTrusted else { return .accessibilityRequired }
+        guard let targetPID,
+              let target = NSRunningApplication(processIdentifier: targetPID),
+              target.bundleIdentifier != Bundle.main.bundleIdentifier else {
+            return .noFocusedEditor
         }
+        target.activate(options: [])
         try? await Task.sleep(for: .milliseconds(140))
-        guard let source = CGEventSource(stateID: .hidSystemState),
-              let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false) else {
-            return .copied
+
+        let application = AXUIElementCreateApplication(targetPID)
+        var focusedValue: CFTypeRef?
+        if AXUIElementCopyAttributeValue(
+            application,
+            kAXFocusedUIElementAttribute as CFString,
+            &focusedValue
+        ) == .success,
+           let focusedValue {
+            let focused = focusedValue as! AXUIElement
+            var selectedTextSettable = DarwinBoolean(false)
+            if AXUIElementIsAttributeSettable(
+                focused,
+                kAXSelectedTextAttribute as CFString,
+                &selectedTextSettable
+            ) == .success,
+               selectedTextSettable.boolValue,
+               AXUIElementSetAttributeValue(
+                    focused,
+                    kAXSelectedTextAttribute as CFString,
+                    text as CFTypeRef
+               ) == .success {
+                return .inserted
+            }
         }
-        down.flags = .maskCommand
-        up.flags = .maskCommand
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
-        return .pasted
+
+        return typeWithUnicodeEvents(text) ? .inserted : .noFocusedEditor
+    }
+
+    private func typeWithUnicodeEvents(_ text: String) -> Bool {
+        guard let source = CGEventSource(stateID: .hidSystemState) else { return false }
+        for chunk in unicodeChunks(text) {
+            var characters = Array(chunk.utf16)
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else {
+                return false
+            }
+            characters.withUnsafeBufferPointer { buffer in
+                guard let baseAddress = buffer.baseAddress else { return }
+                down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: baseAddress)
+            }
+            down.post(tap: .cghidEventTap)
+            up.post(tap: .cghidEventTap)
+        }
+        return true
+    }
+
+    private func unicodeChunks(_ text: String) -> [String] {
+        var chunks: [String] = []
+        var current = ""
+        for character in text {
+            let next = current + String(character)
+            if next.utf16.count > 20, !current.isEmpty {
+                chunks.append(current)
+                current = String(character)
+            } else {
+                current = next
+            }
+        }
+        if !current.isEmpty { chunks.append(current) }
+        return chunks
     }
 }
 
@@ -145,7 +194,7 @@ final class FloatingPanelController {
             return
         }
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 390, height: 126),
+            contentRect: NSRect(x: 0, y: 0, width: 250, height: 40),
             styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -164,6 +213,7 @@ final class FloatingPanelController {
         if !panel.setFrameUsingName("InterviewArcVoiceFloatingPanel") {
             panel.center()
         }
+        panel.setContentSize(NSSize(width: 250, height: 40))
         panel.orderFrontRegardless()
         self.panel = panel
     }
@@ -178,29 +228,23 @@ struct FloatingRecorderView: View {
     @ObservedObject var model: VoiceBridgeModel
 
     var body: some View {
-        VStack(spacing: 10) {
-            primaryControls
-            progressRow
-        }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 12)
-        .frame(width: 390)
-        .frame(minHeight: 102)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(.ultraThickMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.18)))
-        )
-        .padding(8)
-    }
-
-    private var primaryControls: some View {
-        HStack(spacing: 11) {
+        HStack(spacing: 6) {
             linkButton
-            activityLabel
-            if model.isRecording { RecordingClock(recorder: model.recorder) }
+            if model.isRecording {
+                LiveVoiceWaveform(recorder: model.recorder)
+                RecordingClock(recorder: model.recorder, compact: true)
+            } else {
+                activityLabel
+            }
             recordButton
         }
+        .padding(.horizontal, 2)
+        .frame(width: 250, height: 40)
+        .background(
+            Capsule(style: .continuous)
+                .fill(.ultraThickMaterial)
+                .overlay(Capsule(style: .continuous).stroke(Color.white.opacity(0.22)))
+        )
     }
 
     private var linkButton: some View {
@@ -210,18 +254,19 @@ struct FloatingRecorderView: View {
                 .foregroundStyle(model.linkToInterviewArc ? Color(red: 0.40, green: 0.84, blue: 0.79) : Color.secondary)
         }
         .buttonStyle(.plain)
+        .frame(width: 28, height: 36)
         .disabled(model.isRecording || model.isBusy)
         .accessibilityLabel(model.linkToInterviewArc ? "Disconnect from Interview Arc activity" : "Connect to Interview Arc activity")
     }
 
     private var activityLabel: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 0) {
             Text(model.floatingEyebrow)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .tracking(1.1)
+                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .tracking(0.8)
                 .foregroundStyle(.secondary)
             Text(model.floatingTitle)
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -230,86 +275,40 @@ struct FloatingRecorderView: View {
     private var recordButton: some View {
         Button(action: model.toggleRecording) {
             ZStack {
-                Circle().fill(model.isRecording ? Color(red: 0.91, green: 0.24, blue: 0.20) : Color(red: 0.40, green: 0.84, blue: 0.79))
+                Circle().fill(model.isRecording ? Color(red: 0.96, green: 0.29, blue: 0.25) : Color(red: 0.40, green: 0.84, blue: 0.79))
                 Image(systemName: model.isRecording ? "stop.fill" : "mic.fill")
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(Color(red: 0.04, green: 0.16, blue: 0.15))
             }
-            .frame(width: 46, height: 46)
+            .frame(width: 36, height: 36)
         }
         .buttonStyle(.plain)
         .disabled(!model.isRecording && !model.canRecord)
         .accessibilityLabel(model.isRecording ? "Stop recording" : "Start recording")
     }
 
-    @ViewBuilder
-    private var progressRow: some View {
-        if model.showsDeliverySteps {
-            HStack(spacing: 8) {
-                ForEach(VoiceDeliveryComponent.allCases, id: \.self) { component in
-                    DeliveryStepView(component: component, state: model.deliveryStates[component])
-                }
-            }
-        } else {
-            HStack(spacing: 7) {
-                Image(systemName: model.phase.symbol)
-                Text(model.compactStatus).lineLimit(1)
-                Spacer()
-                Text(model.shortcut.displayName).foregroundStyle(.secondary)
-            }
-            .font(.system(size: 11, weight: .medium, design: .rounded))
-        }
-    }
 }
 
-private struct DeliveryStepView: View {
-    let component: VoiceDeliveryComponent
-    let state: VoiceDeliveryComponentState?
+private struct LiveVoiceWaveform: View {
+    @ObservedObject var recorder: AnswerRecorder
+    private let shape: [CGFloat] = [0.42, 0.70, 0.52, 0.88, 0.60, 0.78, 1.00, 0.62, 0.84, 0.56, 0.76, 0.48, 0.68, 0.40]
 
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: symbol)
-            Text(label)
+        HStack(spacing: 2) {
+            ForEach(Array(shape.enumerated()), id: \.offset) { index, multiplier in
+                Capsule(style: .continuous)
+                    .fill(Color(red: 0.18, green: 0.58, blue: 0.48))
+                    .frame(width: 2.5, height: barHeight(multiplier, index: index))
+            }
         }
-        .font(.system(size: 10, weight: .semibold, design: .rounded))
-        .foregroundStyle(color)
         .frame(maxWidth: .infinity)
-        .accessibilityLabel("\(label): \(accessibilityState)")
+        .animation(.linear(duration: 0.09), value: recorder.averagePower)
+        .accessibilityLabel("Live microphone level")
     }
 
-    private var label: String {
-        switch component {
-        case .transcript: "Text"
-        case .specialist: "Codex"
-        case .audio: "R2"
-        case .coach: "Coach"
-        }
-    }
-
-    private var symbol: String {
-        switch state {
-        case .working: "arrow.triangle.2.circlepath"
-        case .complete: "checkmark.circle.fill"
-        case .queued: "clock.badge.exclamationmark"
-        case nil: "circle"
-        }
-    }
-
-    private var color: Color {
-        switch state {
-        case .working: .blue
-        case .complete: .green
-        case .queued: .orange
-        case nil: .secondary
-        }
-    }
-
-    private var accessibilityState: String {
-        switch state {
-        case .working: "in progress"
-        case .complete: "complete"
-        case .queued: "retry queued"
-        case nil: "waiting"
-        }
+    private func barHeight(_ multiplier: CGFloat, index: Int) -> CGFloat {
+        let normalized = max(0.08, min(1, CGFloat((recorder.averagePower + 55) / 45)))
+        let pulse = 0.82 + 0.18 * sin(recorder.elapsedSeconds * 11 + Double(index) * 0.72)
+        return max(3, 27 * normalized * multiplier * pulse)
     }
 }
