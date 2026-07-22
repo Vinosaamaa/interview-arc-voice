@@ -133,7 +133,7 @@ final class VoiceBridgeModel: ObservableObject {
     }
     var floatingTitle: String {
         if !linkToInterviewArc { return "Paste speech into the active app" }
-        return context?.focusedActivity?.title ?? "No focused activity — dictation stays local"
+        return context?.focusedActivity?.title ?? "No focused activity — dictation stays unlinked"
     }
     var compactStatus: String {
         if case .failed(let message) = phase { return message }

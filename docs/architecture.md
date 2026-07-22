@@ -1,6 +1,6 @@
 # Interview Arc Voice Architecture
 
-## Runtime flow
+## Linked practice flow
 
 1. Read the focused Interview Arc activity through the authenticated API.
 2. Resolve a deterministic vocabulary prompt from explicit terms, stored pack
@@ -23,6 +23,22 @@ The visible specialist receives the already-persisted verbatim text through
 generic audio attachment. The prompt therefore carries the owner-private local
 audio path while R2 remains the canonical website playback copy. Audio is not
 re-transcribed by Codex.
+
+## General dictation flow
+
+When the link toggle is off, or when current Interview Arc context has no
+focused activity and registered specialist, the same recorder takes the
+general route:
+
+1. Record into the private temporary directory.
+2. Transcribe verbatim through Groq.
+3. Paste into the app that was active when recording began, or copy to the
+   clipboard if macOS Accessibility access is unavailable.
+4. Delete the temporary audio on success or failure.
+
+This route never calls the Interview Arc capture, audio, delivery-analysis, or
+Codex APIs. Automatic context refresh happens again before every recording, so
+the route is based on the current activity rather than stale launch-time state.
 
 ## Vocabulary resolution without runtime AI
 
@@ -47,8 +63,9 @@ then consumes those terms without contacting an LLM during recording.
 
 ## Repository boundary
 
-`interview-arc-voice` owns microphone capture, local files, transcription,
-Keychain secrets, supported Codex CLI task resumption, and retry state.
+`interview-arc-voice` owns microphone capture, linked local files, temporary
+general-dictation files, transcription, Keychain secrets, supported Codex CLI
+task resumption, global shortcut registration, text injection, and retry state.
 
 `interview-arc` owns identity, the focused activity, task registry, transcript
 turn IDs, R2 metadata, delivery-analysis records, publication, and playback.
