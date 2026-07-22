@@ -13,6 +13,7 @@ rm -rf "$app_dir"
 mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources"
 cp "$repo_root/Resources/Info.plist" "$contents_dir/Info.plist"
 cp "$bin_dir/InterviewArcVoice" "$contents_dir/MacOS/InterviewArcVoice"
+cp "$repo_root/Resources/AppIcon.icns" "$contents_dir/Resources/AppIcon.icns"
 
 for resource_bundle in "$bin_dir"/*.bundle; do
   if [[ -d "$resource_bundle" ]]; then

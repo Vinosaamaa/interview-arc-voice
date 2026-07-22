@@ -78,7 +78,11 @@ final class VoiceBridgeModel: ObservableObject {
     var isBusy: Bool { phase == .refreshing || phase == .transcribing || phase == .sending }
     var focusedTitle: String { context?.focusedActivity?.title ?? "No focused activity" }
     var focusedSpecialty: PracticeSpecialty? { context?.focusedActivity?.specialty }
-    var canRecord: Bool { context?.focusedActivity != nil && context?.specialist != nil && !isBusy }
+    var canRecord: Bool {
+        !connectionTokenDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !groqKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !isBusy
+    }
 
     init() {
         let defaults = UserDefaults.standard
@@ -129,8 +133,19 @@ final class VoiceBridgeModel: ObservableObject {
         if isRecording {
             stopAndSend()
         } else {
-            startRecording()
+            Task { await refreshAndStartRecording() }
         }
+    }
+
+    /// Treat the website's focused activity as live state. A user can switch
+    /// timers while this menu-bar app remains open for hours, so cached context
+    /// must never decide where a new recording is attached.
+    private func refreshAndStartRecording() async {
+        await refresh()
+        guard phase == .idle,
+              context?.focusedActivity != nil,
+              context?.specialist != nil else { return }
+        startRecording()
     }
 
     func saveSettings() {
