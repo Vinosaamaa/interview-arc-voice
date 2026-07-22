@@ -60,7 +60,9 @@ your Interview Arc personal connection token.
 5. Save. macOS stores both secrets in Keychain.
 6. Focus an activity on Today and make sure its long-lived specialist task is
    connected. The activity title and task name will appear in the panel.
-7. Select **Record answer**, speak, then select **Stop and send**.
+7. Select **Record answer**. Voice refreshes the focused activity immediately
+   before recording, so switching problem timers never requires a manual
+   refresh. Speak, then select **Stop and send**.
 
 The local originals live at:
 

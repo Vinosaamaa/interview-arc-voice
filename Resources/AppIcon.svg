@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="surface" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#174f49"/>
+      <stop offset="0.58" stop-color="#0f3b38"/>
+      <stop offset="1" stop-color="#152c29"/>
+    </linearGradient>
+    <linearGradient id="voice" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffce8"/>
+      <stop offset="1" stop-color="#e8efdc"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="28" stdDeviation="30" flood-color="#071b19" flood-opacity="0.38"/>
+    </filter>
+  </defs>
+
+  <!-- A roomy macOS squircle keeps the mark legible in Launchpad and Finder. -->
+  <rect x="72" y="72" width="880" height="880" rx="214" fill="url(#surface)" filter="url(#shadow)"/>
+  <rect x="88" y="88" width="848" height="848" rx="198" fill="none" stroke="#ffffff" stroke-opacity="0.1" stroke-width="4"/>
+
+  <!-- Interview Arc's ascending journey lines. -->
+  <path d="M214 665C331 648 393 570 451 451C510 330 594 236 800 207"
+        fill="none" stroke="#65d5c9" stroke-width="72" stroke-linecap="round"/>
+  <path d="M224 760C404 760 573 695 690 557"
+        fill="none" stroke="#f07a50" stroke-width="58" stroke-linecap="round"/>
+
+  <!-- A compact voice waveform makes the companion's purpose unmistakable. -->
+  <g fill="url(#voice)" transform="translate(0 4)">
+    <rect x="372" y="472" width="42" height="118" rx="21"/>
+    <rect x="436" y="419" width="42" height="224" rx="21"/>
+    <rect x="500" y="367" width="42" height="328" rx="21"/>
+    <rect x="564" y="429" width="42" height="204" rx="21"/>
+    <rect x="628" y="482" width="42" height="98" rx="21"/>
+  </g>
+
+  <circle cx="798" cy="208" r="42" fill="#fffce8"/>
+</svg>
