@@ -154,6 +154,10 @@ final class DictationTextInjector {
                 textInjectionLogger.info("Inserted through the focused Accessibility text element")
                 return .inserted
             }
+            if replaceFocusedValue(text, in: focused) {
+                textInjectionLogger.info("Inserted through the focused Accessibility value and selection range")
+                return .inserted
+            }
         }
 
         let inserted = await pasteIntoTarget(text, targetPID: targetPID)
@@ -163,6 +167,71 @@ final class DictationTextInjector {
             textInjectionLogger.error("The global paste fallback could not target the requested editor")
         }
         return inserted ? .inserted : .noFocusedEditor
+    }
+
+    /// Chromium and Electron frequently expose an editable value and cursor
+    /// range while rejecting `AXSelectedText` writes. Replace precisely the
+    /// selected UTF-16 range so dictation lands at the cursor without
+    /// overwriting the rest of the editor.
+    private func replaceFocusedValue(_ text: String, in focused: AXUIElement) -> Bool {
+        var currentValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            focused,
+            kAXValueAttribute as CFString,
+            &currentValue
+        ) == .success,
+        let currentText = currentValue as? String else {
+            return false
+        }
+
+        var selectedRangeValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            focused,
+            kAXSelectedTextRangeAttribute as CFString,
+            &selectedRangeValue
+        ) == .success,
+        let selectedRangeValue else {
+            return false
+        }
+        let selectedRangeAXValue = selectedRangeValue as! AXValue
+        guard AXValueGetType(selectedRangeAXValue) == .cfRange else { return false }
+
+        var selectedRange = CFRange()
+        guard AXValueGetValue(selectedRangeAXValue, .cfRange, &selectedRange) else {
+            return false
+        }
+
+        let currentNSString = currentText as NSString
+        guard selectedRange.location >= 0,
+              selectedRange.length >= 0,
+              selectedRange.location + selectedRange.length <= currentNSString.length else {
+            return false
+        }
+
+        let updatedText = currentNSString.replacingCharacters(
+            in: NSRange(location: selectedRange.location, length: selectedRange.length),
+            with: text
+        )
+        guard AXUIElementSetAttributeValue(
+            focused,
+            kAXValueAttribute as CFString,
+            updatedText as CFTypeRef
+        ) == .success else {
+            return false
+        }
+
+        var updatedRange = CFRange(
+            location: selectedRange.location + (text as NSString).length,
+            length: 0
+        )
+        if let updatedRangeValue = AXValueCreate(.cfRange, &updatedRange) {
+            _ = AXUIElementSetAttributeValue(
+                focused,
+                kAXSelectedTextRangeAttribute as CFString,
+                updatedRangeValue
+            )
+        }
+        return true
     }
 
     /// Web `contenteditable` controls and terminal emulators often reject
@@ -202,6 +271,7 @@ final class DictationTextInjector {
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
         keyDown.post(tap: .cghidEventTap)
+        try? await Task.sleep(for: .milliseconds(35))
         keyUp.post(tap: .cghidEventTap)
 
         // Give Chromium, Electron, and terminal renderers time to consume the
