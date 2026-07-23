@@ -145,41 +145,77 @@ final class DictationTextInjector {
             }
         }
 
-        return typeWithUnicodeEvents(text) ? .inserted : .noFocusedEditor
+        return await pasteIntoTarget(text, targetPID: targetPID) ? .inserted : .noFocusedEditor
     }
 
-    private func typeWithUnicodeEvents(_ text: String) -> Bool {
-        guard let source = CGEventSource(stateID: .hidSystemState) else { return false }
-        for chunk in unicodeChunks(text) {
-            var characters = Array(chunk.utf16)
-            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
-                  let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else {
-                return false
-            }
-            characters.withUnsafeBufferPointer { buffer in
-                guard let baseAddress = buffer.baseAddress else { return }
-                down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: baseAddress)
-            }
-            down.post(tap: .cghidEventTap)
-            up.post(tap: .cghidEventTap)
+    /// Web `contenteditable` controls and terminal emulators often reject
+    /// synthetic Unicode key events even though native AppKit fields accept
+    /// direct AX replacement. A targeted paste is the common denominator
+    /// across those editors. The user's pasteboard is restored immediately
+    /// afterward, unless another app changed it during the insertion.
+    private func pasteIntoTarget(_ text: String, targetPID: pid_t) async -> Bool {
+        guard let source = CGEventSource(stateID: .combinedSessionState),
+              let keyDown = CGEvent(
+                keyboardEventSource: source,
+                virtualKey: CGKeyCode(kVK_ANSI_V),
+                keyDown: true
+              ),
+              let keyUp = CGEvent(
+                keyboardEventSource: source,
+                virtualKey: CGKeyCode(kVK_ANSI_V),
+                keyDown: false
+              ) else {
+            return false
+        }
+
+        let pasteboard = NSPasteboard.general
+        let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
+        pasteboard.clearContents()
+        guard pasteboard.setString(text, forType: .string) else {
+            snapshot.restore(to: pasteboard)
+            return false
+        }
+
+        let transientChangeCount = pasteboard.changeCount
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+        keyDown.postToPid(targetPID)
+        keyUp.postToPid(targetPID)
+
+        // Give Chromium, Electron, and terminal renderers time to consume the
+        // pasteboard before restoring it. Do not overwrite a newer clipboard
+        // value created by the user or another app during this window.
+        try? await Task.sleep(for: .milliseconds(180))
+        if pasteboard.changeCount == transientChangeCount {
+            snapshot.restore(to: pasteboard)
         }
         return true
     }
+}
 
-    private func unicodeChunks(_ text: String) -> [String] {
-        var chunks: [String] = []
-        var current = ""
-        for character in text {
-            let next = current + String(character)
-            if next.utf16.count > 20, !current.isEmpty {
-                chunks.append(current)
-                current = String(character)
-            } else {
-                current = next
-            }
+private struct PasteboardSnapshot {
+    private let items: [[NSPasteboard.PasteboardType: Data]]
+
+    init(pasteboard: NSPasteboard) {
+        items = (pasteboard.pasteboardItems ?? []).map { item in
+            Dictionary(uniqueKeysWithValues: item.types.compactMap { type in
+                item.data(forType: type).map { (type, $0) }
+            })
         }
-        if !current.isEmpty { chunks.append(current) }
-        return chunks
+    }
+
+    func restore(to pasteboard: NSPasteboard) {
+        pasteboard.clearContents()
+        guard !items.isEmpty else { return }
+
+        let restoredItems = items.map { storedItem in
+            let item = NSPasteboardItem()
+            for (type, data) in storedItem {
+                item.setData(data, forType: type)
+            }
+            return item
+        }
+        pasteboard.writeObjects(restoredItems)
     }
 }
 
