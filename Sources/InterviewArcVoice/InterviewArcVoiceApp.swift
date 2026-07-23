@@ -111,11 +111,16 @@ final class VoiceBridgeModel: ObservableObject {
     private var lastInsertionSucceeded = false
     private var contextPollTask: Task<Void, Never>?
     private var wakeObserver: NSObjectProtocol?
+    private var activationObserver: NSObjectProtocol?
+    private var lastExternalApplicationPID: pid_t?
 
     var isRecording: Bool { phase == .recording }
     var isBusy: Bool { [.refreshing, .transcribing, .sending, .inserting].contains(phase) }
+    var hasGroqCredential: Bool {
+        !groqKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
     var canRecord: Bool {
-        !groqKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isBusy
+        hasGroqCredential && !isBusy
     }
     var menuBarSymbol: String {
         switch phase {
@@ -155,6 +160,10 @@ final class VoiceBridgeModel: ObservableObject {
             shortcut = .standard
         }
         recordingStore = try? RecordingStore()
+        if let frontmost = NSWorkspace.shared.frontmostApplication,
+           frontmost.bundleIdentifier != Bundle.main.bundleIdentifier {
+            lastExternalApplicationPID = frontmost.processIdentifier
+        }
 
         // Present visible UI before touching Keychain. A credential prompt or
         // error must never make this agent-style app appear to launch and quit.
@@ -171,6 +180,19 @@ final class VoiceBridgeModel: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in await self?.refreshContext(showProgress: false) }
+        }
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  application.bundleIdentifier != Bundle.main.bundleIdentifier else {
+                return
+            }
+            Task { @MainActor in
+                self?.lastExternalApplicationPID = application.processIdentifier
+            }
         }
     }
 
@@ -200,7 +222,7 @@ final class VoiceBridgeModel: ObservableObject {
             Task { await refreshContext(showProgress: false) }
         } else {
             contextMessage = "General dictation will not touch Interview Arc."
-            phase = canRecord ? .idle : .setup
+            phase = hasGroqCredential ? .idle : .setup
         }
     }
 
@@ -269,27 +291,27 @@ final class VoiceBridgeModel: ObservableObject {
             contextMessage = "Keychain access failed. Open Connection settings to enter the keys again."
         }
         accessibilityNeeded = !textInjector.accessibilityTrusted
-        phase = canRecord ? .idle : .setup
+        phase = hasGroqCredential ? .idle : .setup
         await refreshContext(showProgress: false)
     }
 
     private func refreshContext(showProgress: Bool) async {
         guard linkToInterviewArc else {
             contextMessage = "General dictation will not touch Interview Arc."
-            phase = canRecord ? .idle : .setup
+            settlePhaseAfterContextRefresh(force: showProgress)
             return
         }
         let token = connectionTokenDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else {
             context = nil
             contextMessage = "No Interview Arc token — general dictation is still available."
-            phase = canRecord ? .idle : .setup
+            settlePhaseAfterContextRefresh(force: showProgress)
             return
         }
         guard let baseURL = URL(string: apiBaseURL) else {
             context = nil
             contextMessage = "Interview Arc API address is invalid — using general dictation."
-            phase = canRecord ? .idle : .setup
+            settlePhaseAfterContextRefresh(force: showProgress)
             return
         }
         if showProgress { phase = .refreshing }
@@ -310,7 +332,7 @@ final class VoiceBridgeModel: ObservableObject {
             context = nil
             contextMessage = "Interview Arc is unavailable — using general dictation."
         }
-        phase = canRecord ? .idle : .setup
+        settlePhaseAfterContextRefresh(force: showProgress)
     }
 
     private func startContextPolling() {
@@ -336,8 +358,7 @@ final class VoiceBridgeModel: ObservableObject {
             phase = .failed("Enable Accessibility so Voice can insert text at the focused cursor.")
             return
         }
-        let frontmost = NSWorkspace.shared.frontmostApplication
-        targetApplicationPID = frontmost?.bundleIdentifier == Bundle.main.bundleIdentifier ? nil : frontmost?.processIdentifier
+        targetApplicationPID = currentInsertionTargetPID()
         deliveryStates = [:]
 
         if linkToInterviewArc { await refreshContext(showProgress: true) }
@@ -468,6 +489,7 @@ final class VoiceBridgeModel: ObservableObject {
 
     func reinsertLastTranscript() {
         guard !lastTranscript.isEmpty else { return }
+        targetApplicationPID = currentInsertionTargetPID()
         Task {
             let inserted = await insertTranscript(
                 lastTranscript,
@@ -518,6 +540,22 @@ final class VoiceBridgeModel: ObservableObject {
             workspaceURL: URL(fileURLWithPath: workspacePath, isDirectory: true),
             interviewArcToken: token
         )
+    }
+
+    private func settlePhaseAfterContextRefresh(force: Bool) {
+        guard force || phase == .setup || phase == .idle || phase == .refreshing else {
+            return
+        }
+        phase = hasGroqCredential ? .idle : .setup
+    }
+
+    private func currentInsertionTargetPID() -> pid_t? {
+        if let frontmost = NSWorkspace.shared.frontmostApplication,
+           frontmost.bundleIdentifier != Bundle.main.bundleIdentifier {
+            lastExternalApplicationPID = frontmost.processIdentifier
+            return frontmost.processIdentifier
+        }
+        return lastExternalApplicationPID
     }
 
     private func retryPendingInBackground() async {
