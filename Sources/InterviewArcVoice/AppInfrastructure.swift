@@ -1,8 +1,14 @@
 import AppKit
 import ApplicationServices
 import Carbon
+import os
 import SwiftUI
 import InterviewArcVoiceCore
+
+private let textInjectionLogger = Logger(
+    subsystem: "app.interviewarc.voice",
+    category: "TextInjection"
+)
 
 struct HotKeyShortcut: Codable, Equatable, Sendable {
     let keyCode: UInt32
@@ -111,14 +117,18 @@ final class DictationTextInjector {
     }
 
     func deliver(text: String, targetPID: pid_t?) async -> DictationOutput {
-        guard accessibilityTrusted else { return .accessibilityRequired }
+        guard accessibilityTrusted else {
+            textInjectionLogger.error("Insertion blocked because Accessibility is not trusted")
+            return .accessibilityRequired
+        }
         guard let targetPID,
               let target = NSRunningApplication(processIdentifier: targetPID),
               target.bundleIdentifier != Bundle.main.bundleIdentifier else {
+            textInjectionLogger.error("Insertion has no valid external target")
             return .noFocusedEditor
         }
         target.activate(options: [])
-        try? await Task.sleep(for: .milliseconds(140))
+        try? await Task.sleep(for: .milliseconds(220))
 
         let application = AXUIElementCreateApplication(targetPID)
         var focusedValue: CFTypeRef?
@@ -141,18 +151,28 @@ final class DictationTextInjector {
                     kAXSelectedTextAttribute as CFString,
                     text as CFTypeRef
                ) == .success {
+                textInjectionLogger.info("Inserted through the focused Accessibility text element")
                 return .inserted
             }
         }
 
-        return await pasteIntoTarget(text, targetPID: targetPID) ? .inserted : .noFocusedEditor
+        let inserted = await pasteIntoTarget(text, targetPID: targetPID)
+        if inserted {
+            textInjectionLogger.info("Inserted through the global paste fallback")
+        } else {
+            textInjectionLogger.error("The global paste fallback could not target the requested editor")
+        }
+        return inserted ? .inserted : .noFocusedEditor
     }
 
     /// Web `contenteditable` controls and terminal emulators often reject
     /// synthetic Unicode key events even though native AppKit fields accept
-    /// direct AX replacement. A targeted paste is the common denominator
-    /// across those editors. The user's pasteboard is restored immediately
-    /// afterward, unless another app changed it during the insertion.
+    /// direct AX replacement. A transient paste is the common denominator
+    /// across those editors. Post the shortcut through the active HID event
+    /// stream: Chromium and Electron put their editable controls in renderer
+    /// processes, so posting Command-V only to the parent application's PID
+    /// never reaches the focused editor. The user's pasteboard is restored
+    /// immediately afterward, unless another app changed it during insertion.
     private func pasteIntoTarget(_ text: String, targetPID: pid_t) async -> Bool {
         guard let source = CGEventSource(stateID: .combinedSessionState),
               let keyDown = CGEvent(
@@ -168,6 +188,8 @@ final class DictationTextInjector {
             return false
         }
 
+        guard await activateTarget(targetPID) else { return false }
+
         let pasteboard = NSPasteboard.general
         let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
         pasteboard.clearContents()
@@ -179,17 +201,31 @@ final class DictationTextInjector {
         let transientChangeCount = pasteboard.changeCount
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
-        keyDown.postToPid(targetPID)
-        keyUp.postToPid(targetPID)
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
 
         // Give Chromium, Electron, and terminal renderers time to consume the
         // pasteboard before restoring it. Do not overwrite a newer clipboard
         // value created by the user or another app during this window.
-        try? await Task.sleep(for: .milliseconds(180))
+        try? await Task.sleep(for: .milliseconds(280))
         if pasteboard.changeCount == transientChangeCount {
             snapshot.restore(to: pasteboard)
         }
         return true
+    }
+
+    private func activateTarget(_ targetPID: pid_t) async -> Bool {
+        guard let target = NSRunningApplication(processIdentifier: targetPID) else {
+            return false
+        }
+        target.activate(options: [])
+        for _ in 0..<6 {
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(75))
+        }
+        return NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID
     }
 }
 
