@@ -40,6 +40,7 @@ import Testing
         protocolVersion: 1,
         date: "2026-07-24",
         focusedActivity: nil,
+        timerInstrument: nil,
         specialist: nil,
         message: "No activity is running."
     )
@@ -185,6 +186,7 @@ private func voiceContext(
             id: activityID,
             runningSince: runningSince
         ),
+        timerInstrument: nil,
         specialist: nil,
         message: nil
     )

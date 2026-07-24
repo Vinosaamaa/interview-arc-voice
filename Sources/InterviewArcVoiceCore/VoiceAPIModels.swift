@@ -11,8 +11,72 @@ public struct VoiceContextResponse: Codable, Equatable, Sendable {
     public let protocolVersion: Int
     public let date: String
     public let focusedActivity: FocusedVoiceActivity?
+    public let timerInstrument: VoiceTimerInstrument?
     public let specialist: SpecialistRoute?
     public let message: String?
+}
+
+public struct VoiceTimerState: Codable, Equatable, Sendable {
+    public let accumulatedSeconds: Int
+    public let startedAt: Int64?
+    public let runningSince: Int64?
+    public let completed: Bool
+    public let completedAt: Int64?
+    public let revision: Int
+
+    public var isRunning: Bool {
+        runningSince != nil && !completed
+    }
+
+    public func elapsedSeconds(
+        serverNow: Int64,
+        receivedAt: Date,
+        now: Date
+    ) -> Int {
+        guard let runningSince, !completed else {
+            return accumulatedSeconds
+        }
+        let openInterval = max(0, Int((serverNow - runningSince) / 1_000))
+        let localContinuation = max(0, Int(now.timeIntervalSince(receivedAt)))
+        return accumulatedSeconds + openInterval + localContinuation
+    }
+}
+
+public struct VoiceTimerSession: Codable, Equatable, Sendable, Identifiable {
+    public let id: String
+    public let label: String
+    public let allocatedSeconds: Int
+    public let activityIds: [String]
+    public let timer: VoiceTimerState
+}
+
+public struct VoiceTimerActivity: Codable, Equatable, Sendable, Identifiable {
+    public let id: String
+    public let questionId: String?
+    public let type: String
+    public let title: String
+    public let url: String?
+    public let allocatedSeconds: Int
+    public let timer: VoiceTimerState?
+    public let starred: Bool
+}
+
+public struct VoiceTimerInstrument: Codable, Equatable, Sendable {
+    public let serverNow: Int64
+    public let session: VoiceTimerSession?
+    public let activity: VoiceTimerActivity?
+    public let activities: [VoiceTimerActivity]
+}
+
+public enum VoicePracticeOutcome: String, Codable, CaseIterable, Equatable, Sendable {
+    case solved
+    case solvedAfterReviewingApproach = "solved_after_reviewing_approach"
+    case failed
+}
+
+public struct VoiceTimerMutationResponse: Codable, Equatable, Sendable {
+    public let protocolVersion: Int
+    public let timerInstrument: VoiceTimerInstrument
 }
 
 public struct FocusedVoiceActivity: Codable, Equatable, Sendable {

@@ -129,6 +129,14 @@ final class VoiceBridgeModel: ObservableObject {
 
     @Published var phase: Phase = .setup
     @Published var context: VoiceContextResponse?
+    @Published private(set) var timerInstrument: VoiceTimerInstrument?
+    @Published private(set) var timerMutationInFlight = false
+    @Published private(set) var timerMutationMessage: String?
+    @Published var timerPanelExpanded = false
+    @Published var activityPickerExpanded = false
+    @Published private(set) var finishingActivityID: String?
+    @Published var finishOutcome: VoicePracticeOutcome?
+    @Published var finishStarred = false
     @Published var contextMessage = "Loading secure settings…"
     @Published var lastTranscript = ""
     @Published var connectionTokenDraft = ""
@@ -175,6 +183,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var contextPollTask: Task<Void, Never>?
     private var contextRefreshRequestID = 0
     private var contextLastVerifiedAt: Date?
+    private var timerInstrumentReceivedAt = Date()
     private var wakeObserver: NSObjectProtocol?
     private var activationObserver: NSObjectProtocol?
     private var lastExternalApplicationPID: pid_t?
@@ -217,7 +226,9 @@ final class VoiceBridgeModel: ObservableObject {
     }
     var floatingTitle: String {
         if !linkToInterviewArc { return "Paste speech into the active app" }
-        return context?.focusedActivity?.title ?? "No focused activity — dictation stays unlinked"
+        if let activity = context?.focusedActivity { return activity.title }
+        if let paused = timerInstrument?.activity { return "\(paused.title) · paused" }
+        return "No focused activity — dictation stays unlinked"
     }
     var compactStatus: String {
         if case .failed(let message) = phase { return message }
@@ -266,6 +277,12 @@ final class VoiceBridgeModel: ObservableObject {
     var linkStatusAccessibilityLabel: String {
         if !linkToInterviewArc { return "General dictation. Interview Arc linking is off." }
         if let activity = context?.focusedActivity { return "Linked to \(activity.title)." }
+        if let paused = timerInstrument?.activity {
+            return "Interview Arc is connected. \(paused.title) is paused."
+        }
+        if let session = timerInstrument?.session {
+            return "Interview Arc is connected to \(session.label). No activity is running."
+        }
         return "Auto-link is on. No activity is focused, so recording will use general dictation."
     }
     var isFailurePresented: Bool {
@@ -273,7 +290,32 @@ final class VoiceBridgeModel: ObservableObject {
         return false
     }
     var floatingWidth: CGFloat {
-        isPlaybackExpanded ? 360 : 250
+        if timerPanelExpanded && hasTimerInstrument {
+            return FloatingWidgetWindowPolicy.expandedWidth
+        }
+        return isPlaybackExpanded ? 360 : FloatingWidgetWindowPolicy.collapsedWidth
+    }
+    var floatingHeight: CGFloat {
+        guard timerPanelExpanded && hasTimerInstrument else {
+            return FloatingWidgetWindowPolicy.hostHeight
+        }
+        return finishingActivityID == nil && !activityPickerExpanded
+            ? FloatingWidgetWindowPolicy.expandedHostHeight
+            : FloatingWidgetWindowPolicy.expandedDrawerHostHeight
+    }
+    var hasTimerInstrument: Bool {
+        linkToInterviewArc
+            && (timerInstrument?.session != nil || timerInstrument?.activity != nil)
+    }
+    var isFinishDrawerPresented: Bool {
+        finishingActivityID != nil
+    }
+    var finishingActivity: VoiceTimerActivity? {
+        guard let finishingActivityID else { return nil }
+        return timerInstrument?.activities.first { $0.id == finishingActivityID }
+    }
+    var availableTimerActivities: [VoiceTimerActivity] {
+        timerInstrument?.activities ?? []
     }
 
     init() {
@@ -331,6 +373,99 @@ final class VoiceBridgeModel: ObservableObject {
 
     func refresh() async {
         await refreshContext(showProgress: true)
+    }
+
+    func toggleTimerPanel() {
+        guard hasTimerInstrument else { return }
+        timerPanelExpanded.toggle()
+        if !timerPanelExpanded {
+            cancelFinishDrawer()
+            activityPickerExpanded = false
+        }
+    }
+
+    func toggleActivityPicker() {
+        guard !timerMutationInFlight else { return }
+        activityPickerExpanded.toggle()
+        if activityPickerExpanded {
+            cancelFinishDrawer()
+        }
+    }
+
+    func openFinishDrawer(for activity: VoiceTimerActivity) {
+        guard activity.timer?.startedAt != nil, !timerMutationInFlight else { return }
+        finishingActivityID = activity.id
+        finishOutcome = nil
+        finishStarred = activity.starred
+        activityPickerExpanded = false
+        timerMutationMessage = nil
+    }
+
+    func cancelFinishDrawer() {
+        finishingActivityID = nil
+        finishOutcome = nil
+        finishStarred = false
+    }
+
+    func performTimerAction(
+        subjectID: String,
+        kind: String,
+        action: String
+    ) {
+        guard !timerMutationInFlight else { return }
+        Task {
+            await runTimerMutation {
+                try await self.timerAPIClient().mutateTimer(
+                    subjectID: subjectID,
+                    kind: kind,
+                    action: action
+                )
+            }
+        }
+    }
+
+    func startActivity(_ activity: VoiceTimerActivity, openProblem: Bool) {
+        guard !timerMutationInFlight else { return }
+        Task {
+            let succeeded = await runTimerMutation {
+                try await self.timerAPIClient().mutateTimer(
+                    subjectID: activity.id,
+                    kind: "activity",
+                    action: "start"
+                )
+            }
+            if succeeded, openProblem, let value = activity.url, let url = URL(string: value) {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    func confirmFinishActivity() {
+        guard
+            let activityID = finishingActivityID,
+            let finishOutcome,
+            !timerMutationInFlight
+        else { return }
+        Task {
+            let succeeded = await runTimerMutation {
+                try await self.timerAPIClient().finishActivity(
+                    activityID: activityID,
+                    outcome: finishOutcome,
+                    starred: self.finishStarred
+                )
+            }
+            if succeeded {
+                cancelFinishDrawer()
+            }
+        }
+    }
+
+    func elapsedSeconds(for timer: VoiceTimerState, now: Date) -> Int {
+        timer.elapsedSeconds(
+            serverNow: timerInstrument?.serverNow ?? Int64(Date().timeIntervalSince1970 * 1_000),
+            receivedAt: timerInstrumentReceivedAt,
+            now: now
+        )
     }
 
     func toggleRecording() {
@@ -522,6 +657,9 @@ final class VoiceBridgeModel: ObservableObject {
             }
             Task { await refreshContext(showProgress: false) }
         } else {
+            timerPanelExpanded = false
+            cancelFinishDrawer()
+            activityPickerExpanded = false
             contextMessage = "General dictation will not touch Interview Arc."
             if !isBusy {
                 phase = failureNotice.map { .failed($0.title) }
@@ -836,6 +974,7 @@ final class VoiceBridgeModel: ObservableObject {
         let requestID = contextRefreshRequestID
         guard linkToInterviewArc else {
             contextMessage = "General dictation will not touch Interview Arc."
+            timerPanelExpanded = false
             settlePhaseAfterContextRefresh(force: showProgress)
             return
         }
@@ -860,6 +999,12 @@ final class VoiceBridgeModel: ObservableObject {
                 latestRequestID: contextRefreshRequestID
             ) else { return }
             context = contextRetentionPolicy.context(previous: context, refreshed: loaded)
+            timerInstrument = loaded.timerInstrument
+            timerInstrumentReceivedAt = Date()
+            if !hasTimerInstrument {
+                timerPanelExpanded = false
+                cancelFinishDrawer()
+            }
             contextLastVerifiedAt = Date()
             applyLateCaptureBinding(from: loaded)
             if let activity = loaded.focusedActivity {
@@ -889,12 +1034,53 @@ final class VoiceBridgeModel: ObservableObject {
         settlePhaseAfterContextRefresh(force: showProgress)
     }
 
+    private func timerAPIClient() throws -> InterviewArcAPIClient {
+        let token = connectionTokenDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else {
+            throw VoiceBridgeError.missingCredential("Interview Arc token")
+        }
+        guard let baseURL = URL(string: apiBaseURL) else {
+            throw VoiceBridgeError.invalidResponse(0, "Interview Arc API address is invalid.")
+        }
+        return InterviewArcAPIClient(baseURL: baseURL, token: token)
+    }
+
+    @discardableResult
+    private func runTimerMutation(
+        operation: () async throws -> VoiceTimerMutationResponse
+    ) async -> Bool {
+        timerMutationInFlight = true
+        timerMutationMessage = nil
+        defer { timerMutationInFlight = false }
+        do {
+            let response = try await operation()
+            guard response.protocolVersion == InterviewArcAPIClient.protocolVersion else {
+                throw VoiceBridgeError.protocolMismatch(response.protocolVersion)
+            }
+            timerInstrument = response.timerInstrument
+            timerInstrumentReceivedAt = Date()
+            if !hasTimerInstrument {
+                timerPanelExpanded = false
+                cancelFinishDrawer()
+            }
+            await refreshContext(showProgress: false)
+            return true
+        } catch {
+            timerMutationMessage = error.localizedDescription
+            return false
+        }
+    }
+
     private func startContextPolling() {
         contextPollTask?.cancel()
         contextPollTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
-                guard let self, self.linkToInterviewArc else { continue }
+                guard
+                    let self,
+                    self.linkToInterviewArc,
+                    !self.timerMutationInFlight
+                else { continue }
                 await self.refreshContext(showProgress: false)
             }
         }

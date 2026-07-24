@@ -422,7 +422,7 @@ final class FloatingPanelController {
             contentRect: NSRect(
                 x: 0,
                 y: 0,
-                width: 250,
+                width: FloatingWidgetWindowPolicy.collapsedWidth,
                 height: FloatingWidgetWindowPolicy.hostHeight
             ),
             styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
@@ -450,7 +450,10 @@ final class FloatingPanelController {
             panel.center()
         }
         panel.setContentSize(
-            NSSize(width: 250, height: FloatingWidgetWindowPolicy.hostHeight)
+            NSSize(
+                width: FloatingWidgetWindowPolicy.collapsedWidth,
+                height: FloatingWidgetWindowPolicy.hostHeight
+            )
         )
         panel.invalidateShadow()
         panel.orderFrontRegardless()
@@ -462,13 +465,17 @@ final class FloatingPanelController {
         panel.isVisible ? panel.orderOut(nil) : panel.orderFrontRegardless()
     }
 
-    func setWidth(_ width: CGFloat, reduceMotion: Bool) {
+    func setSize(width: CGFloat, height: CGFloat, reduceMotion: Bool) {
         guard let panel else { return }
-        guard abs(panel.frame.width - width) > 0.5 else { return }
+        guard abs(panel.frame.width - width) > 0.5
+                || abs(panel.frame.height - height) > 0.5 else { return }
         var frame = panel.frame
         let rightEdge = frame.maxX
+        let topEdge = frame.maxY
         frame.size.width = width
+        frame.size.height = height
         frame.origin.x = rightEdge - width
+        frame.origin.y = topEdge - height
         if reduceMotion {
             panel.setFrame(frame, display: true)
         } else {
@@ -576,6 +583,36 @@ struct FloatingRecorderView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        VStack(alignment: .trailing, spacing: FloatingWidgetWindowPolicy.timerGap) {
+            recorderCapsule
+            if model.timerPanelExpanded,
+               model.hasTimerInstrument,
+               let instrument = model.timerInstrument {
+                FloatingTimerInstrumentPanel(
+                    model: model,
+                    instrument: instrument
+                )
+                .frame(width: FloatingWidgetWindowPolicy.expandedWidth)
+                .transition(
+                    reduceMotion
+                        ? .opacity
+                        : .opacity.combined(with: .move(edge: .top))
+                )
+            }
+        }
+        .padding(.vertical, 8)
+        .frame(
+            width: model.floatingWidth,
+            height: model.floatingHeight,
+            alignment: .topTrailing
+        )
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: model.floatingWidth)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: model.floatingHeight)
+        .onChange(of: model.floatingWidth) { _, _ in resizeWindow() }
+        .onChange(of: model.floatingHeight) { _, _ in resizeWindow() }
+    }
+
+    private var recorderCapsule: some View {
         ZStack {
             Capsule(style: .continuous)
                 .fill(Color.black.opacity(0.001))
@@ -634,18 +671,15 @@ struct FloatingRecorderView: View {
         )
         .clipShape(Capsule(style: .continuous))
         .contentShape(Capsule(style: .continuous))
-        .padding(.vertical, 8)
-        .frame(
+        .frame(width: model.floatingWidth, alignment: .trailing)
+    }
+
+    private func resizeWindow() {
+        FloatingPanelController.shared.setSize(
             width: model.floatingWidth,
-            height: FloatingWidgetWindowPolicy.hostHeight
+            height: model.floatingHeight,
+            reduceMotion: reduceMotion
         )
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: model.floatingWidth)
-        .onChange(of: model.floatingWidth) { _, width in
-            FloatingPanelController.shared.setWidth(
-                width,
-                reduceMotion: reduceMotion
-            )
-        }
     }
 
     private var linkButton: some View {
@@ -670,11 +704,31 @@ struct FloatingRecorderView: View {
     }
 
     private var activityLabel: some View {
-        Text(model.floatingTitle)
-            .font(.system(size: 12, weight: .semibold, design: .default))
-            .foregroundStyle(VoiceWidgetPalette.ink)
-            .lineLimit(1)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        Group {
+            if model.hasTimerInstrument, !model.isBusy {
+                Button(action: model.toggleTimerPanel) {
+                    HStack(spacing: 4) {
+                        Text(model.floatingTitle)
+                            .lineLimit(1)
+                        Image(systemName: model.timerPanelExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 9, weight: .bold))
+                    }
+                    .font(.system(size: 12, weight: .semibold, design: .default))
+                    .foregroundStyle(VoiceWidgetPalette.ink)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .voiceHoverFeedback(cornerRadius: 7, tint: VoiceWidgetPalette.teal)
+                .help(model.timerPanelExpanded ? "Hide timers" : "Show timers")
+            } else {
+                Text(model.floatingTitle)
+                    .font(.system(size: 12, weight: .semibold, design: .default))
+                    .foregroundStyle(VoiceWidgetPalette.ink)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
     }
 
     private var processingLabel: some View {
@@ -899,6 +953,482 @@ struct FloatingRecorderView: View {
         model.isRecording ? Color(red: 0.72, green: 0.12, blue: 0.10) : VoiceWidgetPalette.tealDark
     }
 
+}
+
+private struct FloatingTimerInstrumentPanel: View {
+    @ObservedObject var model: VoiceBridgeModel
+    let instrument: VoiceTimerInstrument
+
+    private var availableActivities: [VoiceTimerActivity] {
+        instrument.activities.filter { $0.id != instrument.activity?.id }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                VStack(spacing: 0) {
+                    if let session = instrument.session {
+                        timerRow(
+                            eyebrow: "SESSION",
+                            title: session.label,
+                            time: sessionTime(session, at: timeline.date),
+                            isRunning: session.timer.isRunning,
+                            toggleLabel: session.timer.startedAt == nil
+                                ? "Start session"
+                                : (session.timer.isRunning ? "Pause session" : "Resume session"),
+                            canFinish: session.timer.startedAt != nil,
+                            toggle: {
+                                model.performTimerAction(
+                                    subjectID: session.id,
+                                    kind: "session",
+                                    action: session.timer.isRunning ? "pause" : "start"
+                                )
+                            },
+                            finish: {
+                                model.performTimerAction(
+                                    subjectID: session.id,
+                                    kind: "session",
+                                    action: "finish"
+                                )
+                            }
+                        )
+                    }
+                    if instrument.session != nil {
+                        Divider().overlay(VoiceWidgetPalette.divider.opacity(0.65))
+                    }
+                    if let activity = instrument.activity {
+                        timerRow(
+                            eyebrow: "ACTIVITY",
+                            title: activity.title,
+                            time: activityTime(activity, at: timeline.date),
+                            isRunning: activity.timer?.isRunning == true,
+                            toggleLabel: activity.timer?.startedAt == nil
+                                ? "Start activity"
+                                : (activity.timer?.isRunning == true ? "Pause activity" : "Resume activity"),
+                            canFinish: activity.timer?.startedAt != nil,
+                            toggle: {
+                                model.performTimerAction(
+                                    subjectID: activity.id,
+                                    kind: "activity",
+                                    action: activity.timer?.isRunning == true ? "pause" : "start"
+                                )
+                            },
+                            finish: { model.openFinishDrawer(for: activity) }
+                        )
+                    } else {
+                        emptyActivityRow
+                    }
+                }
+            }
+
+            if let message = model.timerMutationMessage {
+                Text(message)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(VoiceWidgetPalette.warning)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(VoiceWidgetPalette.warning.opacity(0.07))
+            }
+
+            if let activity = model.finishingActivity {
+                Divider().overlay(VoiceWidgetPalette.divider.opacity(0.65))
+                finishDrawer(activity)
+            } else if model.activityPickerExpanded {
+                Divider().overlay(VoiceWidgetPalette.divider.opacity(0.65))
+                activityPicker
+            } else if !availableActivities.isEmpty {
+                Divider().overlay(VoiceWidgetPalette.divider.opacity(0.65))
+                Button(action: model.toggleActivityPicker) {
+                    HStack(spacing: 7) {
+                        Image(systemName: "list.bullet")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(instrument.activity == nil ? "Start an activity" : "Choose another activity")
+                            .font(.system(size: 11, weight: .semibold))
+                        Spacer()
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .bold))
+                    }
+                    .foregroundStyle(VoiceWidgetPalette.tealDark)
+                    .padding(.horizontal, 14)
+                    .frame(height: 38)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .voiceHoverFeedback(cornerRadius: 9, tint: VoiceWidgetPalette.teal)
+            }
+        }
+        .background {
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    LinearGradient(
+                        colors: [
+                            VoiceWidgetPalette.glassHighlight.opacity(0.54),
+                            VoiceWidgetPalette.glass.opacity(0.70),
+                            VoiceWidgetPalette.timerSurface.opacity(0.30),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                        .stroke(VoiceWidgetPalette.coolBorder.opacity(0.90), lineWidth: 0.9)
+                )
+                .shadow(color: VoiceWidgetPalette.coolShadow, radius: 8, y: 3)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .frame(
+            height: model.floatingHeight
+                - FloatingWidgetWindowPolicy.capsuleHeight
+                - FloatingWidgetWindowPolicy.timerGap
+                - 16,
+            alignment: .top
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Interview Arc timers")
+    }
+
+    private func timerRow(
+        eyebrow: String,
+        title: String,
+        time: String,
+        isRunning: Bool,
+        toggleLabel: String,
+        canFinish: Bool,
+        toggle: @escaping () -> Void,
+        finish: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(eyebrow)
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(VoiceWidgetPalette.tealDark)
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(VoiceWidgetPalette.ink)
+                    .lineLimit(1)
+            }
+            .frame(width: 190, alignment: .leading)
+
+            Text(time)
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(VoiceWidgetPalette.tealDark)
+                .frame(width: 104, alignment: .trailing)
+
+            HStack(spacing: 7) {
+                timerControl(
+                    symbol: isRunning ? "pause.fill" : "play.fill",
+                    label: toggleLabel,
+                    enabled: !model.timerMutationInFlight,
+                    action: toggle
+                )
+                timerControl(
+                    symbol: "stop.fill",
+                    label: "Finish \(eyebrow.lowercased())",
+                    enabled: canFinish && !model.timerMutationInFlight,
+                    action: finish
+                )
+            }
+            .frame(width: 70, alignment: .trailing)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 72)
+    }
+
+    private var emptyActivityRow: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("ACTIVITY")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(VoiceWidgetPalette.tealDark)
+                Text("No activity running")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(VoiceWidgetPalette.ink)
+            }
+            .frame(width: 190, alignment: .leading)
+            Text("—")
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .foregroundStyle(VoiceWidgetPalette.secondaryInk)
+                .frame(width: 104, alignment: .trailing)
+            Color.clear.frame(width: 70, height: 1)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 72)
+    }
+
+    private func timerControl(
+        symbol: String,
+        label: String,
+        enabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .bold))
+                .frame(width: 28, height: 28)
+        }
+        .buttonStyle(TimerInstrumentButtonStyle(tint: VoiceWidgetPalette.teal))
+        .foregroundStyle(enabled ? VoiceWidgetPalette.ink : VoiceWidgetPalette.secondaryInk.opacity(0.45))
+        .disabled(!enabled)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
+    private func finishDrawer(_ activity: VoiceTimerActivity) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("FINISH ACTIVITY")
+                        .font(.system(size: 9, weight: .bold))
+                        .tracking(0.8)
+                        .foregroundStyle(VoiceWidgetPalette.tealDark)
+                    Text(activity.title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                }
+                Spacer()
+                Button(action: model.cancelFinishDrawer) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .voiceHoverFeedback(cornerRadius: 9)
+                .help("Cancel finish")
+            }
+
+            HStack(spacing: 7) {
+                outcomeButton(.solved, label: "Solved", color: Color(red: 0.48, green: 0.63, blue: 0.10))
+                outcomeButton(
+                    .solvedAfterReviewingApproach,
+                    label: "With help",
+                    color: Color(red: 0.40, green: 0.46, blue: 0.80)
+                )
+                outcomeButton(.failed, label: "Failed", color: Color(red: 0.82, green: 0.35, blue: 0.24))
+                if activity.questionId != nil {
+                    Button {
+                        model.finishStarred.toggle()
+                    } label: {
+                        Image(systemName: model.finishStarred ? "star.fill" : "star")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 30, height: 28)
+                    }
+                    .buttonStyle(
+                        TimerInstrumentButtonStyle(
+                            tint: Color(red: 0.77, green: 0.61, blue: 0.12),
+                            selected: model.finishStarred
+                        )
+                    )
+                    .foregroundStyle(Color(red: 0.46, green: 0.36, blue: 0.06))
+                    .help(model.finishStarred ? "Remove star" : "Star for later")
+                    .accessibilityLabel(model.finishStarred ? "Starred" : "Not starred")
+                }
+            }
+
+            Button(action: model.confirmFinishActivity) {
+                HStack {
+                    if model.timerMutationInFlight {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "checkmark")
+                    }
+                    Text("Finish activity")
+                }
+                .font(.system(size: 11, weight: .bold))
+                .frame(maxWidth: .infinity)
+                .frame(height: 30)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.white)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(
+                        model.finishOutcome == nil
+                            ? VoiceWidgetPalette.secondaryInk.opacity(0.28)
+                            : VoiceWidgetPalette.tealDark
+                    )
+            )
+            .disabled(model.finishOutcome == nil || model.timerMutationInFlight)
+            .voiceHoverFeedback(
+                enabled: model.finishOutcome != nil && !model.timerMutationInFlight,
+                cornerRadius: 9,
+                tint: VoiceWidgetPalette.teal
+            )
+        }
+        .padding(12)
+        .background(VoiceWidgetPalette.timerSurface.opacity(0.46))
+    }
+
+    private func outcomeButton(
+        _ outcome: VoicePracticeOutcome,
+        label: String,
+        color: Color
+    ) -> some View {
+        Button {
+            model.finishOutcome = outcome
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "flag.fill")
+                    .font(.system(size: 9, weight: .bold))
+                Text(label)
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 28)
+        }
+        .buttonStyle(
+            TimerInstrumentButtonStyle(
+                tint: color,
+                selected: model.finishOutcome == outcome
+            )
+        )
+        .foregroundStyle(color)
+        .accessibilityLabel(label)
+    }
+
+    private var activityPicker: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("CHOOSE ACTIVITY")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(VoiceWidgetPalette.tealDark)
+                Spacer()
+                Button(action: model.toggleActivityPicker) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .voiceHoverFeedback(cornerRadius: 9)
+                .help("Close activity picker")
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 32)
+
+            ScrollView {
+                LazyVStack(spacing: 6) {
+                    ForEach(availableActivities) { activity in
+                        HStack(spacing: 8) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(activity.title)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(VoiceWidgetPalette.ink)
+                                    .lineLimit(1)
+                                Text(activity.timer?.startedAt == nil ? "Not started" : "Paused")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(VoiceWidgetPalette.secondaryInk)
+                            }
+                            Spacer()
+                            if activity.type == "leetcode", activity.url != nil {
+                                pickerButton(
+                                    symbol: "arrow.up.right.square",
+                                    label: "Start and open",
+                                    action: { model.startActivity(activity, openProblem: true) }
+                                )
+                            }
+                            pickerButton(
+                                symbol: "play.fill",
+                                label: activity.timer?.startedAt == nil ? "Start" : "Resume",
+                                action: { model.startActivity(activity, openProblem: false) }
+                            )
+                        }
+                        .padding(.horizontal, 9)
+                        .frame(height: 43)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(VoiceWidgetPalette.glassHighlight.opacity(0.40))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .stroke(VoiceWidgetPalette.coolBorder.opacity(0.65), lineWidth: 0.7)
+                                )
+                        )
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 9)
+            }
+        }
+        .background(VoiceWidgetPalette.timerSurface.opacity(0.34))
+    }
+
+    private func pickerButton(
+        symbol: String,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .frame(width: 27, height: 27)
+        }
+        .buttonStyle(TimerInstrumentButtonStyle(tint: VoiceWidgetPalette.teal))
+        .foregroundStyle(VoiceWidgetPalette.tealDark)
+        .disabled(model.timerMutationInFlight)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
+    private func sessionTime(_ session: VoiceTimerSession, at now: Date) -> String {
+        let elapsed = model.elapsedSeconds(for: session.timer, now: now)
+        let remaining = session.allocatedSeconds - elapsed
+        return remaining >= 0
+            ? "\(timerClock(remaining)) left"
+            : "+\(timerClock(abs(remaining)))"
+    }
+
+    private func activityTime(_ activity: VoiceTimerActivity, at now: Date) -> String {
+        guard let timer = activity.timer else { return "00:00:00" }
+        return timerClock(model.elapsedSeconds(for: timer, now: now))
+    }
+
+    private func timerClock(_ seconds: Int) -> String {
+        let safe = max(0, seconds)
+        return String(
+            format: "%02d:%02d:%02d",
+            safe / 3_600,
+            (safe % 3_600) / 60,
+            safe % 60
+        )
+    }
+}
+
+private struct TimerInstrumentButtonStyle: ButtonStyle {
+    let tint: Color
+    var selected = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(
+                        selected
+                            ? tint.opacity(configuration.isPressed ? 0.24 : 0.16)
+                            : Color.white.opacity(configuration.isPressed ? 0.26 : 0.46)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(
+                                selected ? tint.opacity(0.72) : VoiceWidgetPalette.coolBorder.opacity(0.72),
+                                lineWidth: 0.8
+                            )
+                    )
+                    .shadow(
+                        color: Color.black.opacity(configuration.isPressed ? 0.06 : 0.12),
+                        radius: configuration.isPressed ? 1 : 2,
+                        y: configuration.isPressed ? 0 : 1
+                    )
+            )
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
 }
 
 private struct FailureRecoveryPopover: View {

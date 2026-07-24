@@ -23,6 +23,62 @@ public actor InterviewArcAPIClient {
         return response
     }
 
+    public func mutateTimer(
+        subjectID: String,
+        kind: String,
+        action: String
+    ) async throws -> VoiceTimerMutationResponse {
+        struct Mutation: Encodable {
+            let type = "timer"
+            let subjectId: String
+            let kind: String
+            let action: String
+        }
+        struct Body: Encodable {
+            let protocolVersion: Int
+            let mutation: Mutation
+        }
+        let body = Body(
+            protocolVersion: Self.protocolVersion,
+            mutation: Mutation(subjectId: subjectID, kind: kind, action: action)
+        )
+        return try await send(
+            path: "voice/timers",
+            method: "POST",
+            body: encoder.encode(body)
+        )
+    }
+
+    public func finishActivity(
+        activityID: String,
+        outcome: VoicePracticeOutcome,
+        starred: Bool
+    ) async throws -> VoiceTimerMutationResponse {
+        struct Mutation: Encodable {
+            let type = "finish-activity"
+            let activityId: String
+            let outcome: VoicePracticeOutcome
+            let starred: Bool
+        }
+        struct Body: Encodable {
+            let protocolVersion: Int
+            let mutation: Mutation
+        }
+        let body = Body(
+            protocolVersion: Self.protocolVersion,
+            mutation: Mutation(
+                activityId: activityID,
+                outcome: outcome,
+                starred: starred
+            )
+        )
+        return try await send(
+            path: "voice/timers",
+            method: "POST",
+            body: encoder.encode(body)
+        )
+    }
+
     public func persistCapture(
         activity: FocusedVoiceActivity,
         turnID: String,
@@ -127,11 +183,17 @@ public actor InterviewArcAPIClient {
     }
 
     private func validate(response: URLResponse, data: Data) throws {
+        struct APIError: Decodable {
+            let error: String
+        }
         guard let http = response as? HTTPURLResponse else {
             throw VoiceBridgeError.invalidResponse(0, "Non-HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw VoiceBridgeError.invalidResponse(http.statusCode, String(data: data, encoding: .utf8) ?? "Unknown error")
+            let detail = (try? decoder.decode(APIError.self, from: data))?.error
+                ?? String(data: data, encoding: .utf8)
+                ?? "Unknown error"
+            throw VoiceBridgeError.invalidResponse(http.statusCode, detail)
         }
     }
 }
