@@ -1,6 +1,6 @@
 # Header-Only Recording Regression
 
-- **Status:** Repair implemented; packaged-app verification pending
+- **Status:** Resolved and verified
 - **Detected:** July 24, 2026 (Pacific time)
 - **Affected product:** Interview Arc Voice for macOS
 - **Impact level:** Critical — dictation could produce no usable transcript
@@ -67,3 +67,26 @@ retranscription.
 - The packaged app must complete a real general-dictation recording, produce a
   decodable M4A, insert text into a disposable editor, and exercise link
   on/off before installation is declared complete.
+
+## Packaged-app verification
+
+CI's full Swift test suite and packaging job passed on the repair pull request
+and again after merge. The signed pull-request artifact was installed and
+exercised before the exact merged-`main` artifact replaced it.
+
+The packaged test confirmed:
+
+- a clean launch hides Play, Copy, and Save instead of showing disabled ghosts;
+- the coral broken-chain button remains visible and toggles linking on and off;
+- a real microphone capture reaches transcription and produces a recoverable
+  memo with working Copy;
+- unavailable capture bytes never reach the provider-retry path;
+- the merged-main app matches the downloaded CI artifact and is the only
+  installed Interview Arc Voice copy.
+
+The automated desktop controller activates an app before clicking its window,
+so it cannot preserve another editor as the foreground target while clicking
+the floating recorder. Direct cursor insertion therefore remains verified by
+the deterministic insertion suite and the existing signed-app insertion
+postmortem rather than by claiming that this particular UI harness preserved
+focus when it did not.
