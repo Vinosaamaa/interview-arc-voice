@@ -35,6 +35,7 @@ public struct KeychainStore: Sendable {
     public func value(for credential: VoiceCredential) throws -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
+            kSecUseDataProtectionKeychain as String: true,
             kSecAttrService as String: service,
             kSecAttrAccount as String: credential.rawValue,
             kSecReturnData as String: true,
@@ -53,18 +54,22 @@ public struct KeychainStore: Sendable {
         let data = Data(value.utf8)
         let lookup: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
+            kSecUseDataProtectionKeychain as String: true,
             kSecAttrService as String: service,
             kSecAttrAccount as String: credential.rawValue,
         ]
-        let attributes: [String: Any] = [
+        let updateAttributes: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-            kSecAttrLabel as String: credential.label,
         ]
-        let updateStatus = SecItemUpdate(lookup as CFDictionary, attributes as CFDictionary)
+        let updateStatus = SecItemUpdate(
+            lookup as CFDictionary,
+            updateAttributes as CFDictionary
+        )
         if updateStatus == errSecItemNotFound {
             var insert = lookup
-            attributes.forEach { insert[$0.key] = $0.value }
+            insert[kSecValueData as String] = data
+            insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            insert[kSecAttrLabel as String] = credential.label
             let addStatus = SecItemAdd(insert as CFDictionary, nil)
             guard addStatus == errSecSuccess else { throw KeychainError(status: addStatus) }
         } else if updateStatus != errSecSuccess {
@@ -75,6 +80,7 @@ public struct KeychainStore: Sendable {
     public func remove(_ credential: VoiceCredential) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
+            kSecUseDataProtectionKeychain as String: true,
             kSecAttrService as String: service,
             kSecAttrAccount as String: credential.rawValue,
         ]

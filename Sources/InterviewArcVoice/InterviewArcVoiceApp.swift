@@ -884,10 +884,12 @@ final class VoiceBridgeModel: ObservableObject {
 
     private func prepareAndStartRecording() async {
         guard canRecord else {
-            reportFailure(
-                VoiceBridgeError.missingCredential("Groq API key"),
-                stage: .configuration
-            )
+            if failureNotice?.kind != .configuration {
+                reportFailure(
+                    VoiceBridgeError.missingCredential("Groq API key"),
+                    stage: .configuration
+                )
+            }
             return
         }
         guard textInjector.accessibilityTrusted else {
