@@ -1,6 +1,6 @@
 # Long-Dictation Transcript Integrity Failure
 
-- **Status:** Repair in progress
+- **Status:** Resolved and verified
 - **Detected:** July 24, 2026 (Pacific time)
 - **Affected product:** Interview Arc Voice for macOS
 - **Impact level:** Critical — user speech could be truncated or contaminated
@@ -73,6 +73,15 @@ needed to explain that text.
 nonempty and reconstructed all visible prose from those entries. The complete
 `response.text` was used only when no word timestamps existed. This inverted
 the intended source-of-truth relationship.
+
+### Packaged-app verification
+
+The signed application artifact was installed and exercised through the real
+menu-bar and floating-recorder interfaces. Recording start/stop remained
+stable with voice processing enabled, speaker output was suppressed instead
+of transcribed as user speech, and a silent capture entered the recoverable
+failure state with Play, Save, and Retry available. CI also rebuilt and tested
+the exact repair under Swift 6 strict concurrency.
 
 ## Root causes
 
