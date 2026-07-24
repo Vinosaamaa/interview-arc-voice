@@ -901,7 +901,10 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     private func prepareAndStartRecording() async {
-        guard canRecord else {
+        guard RecordingPreparationPolicy.canPrepare(
+            hasGroqCredential: hasGroqCredential,
+            isBusy: isBusy
+        ) else {
             if failureNotice?.kind != .configuration {
                 reportFailure(
                     VoiceBridgeError.missingCredential("Groq API key"),

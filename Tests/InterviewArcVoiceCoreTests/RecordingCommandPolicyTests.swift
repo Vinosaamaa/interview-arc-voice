@@ -21,6 +21,30 @@ import Testing
     )
 }
 
+@Test func microphonePreparationRemainsAllowedAfterStartupIsClaimed() {
+    #expect(
+        RecordingPreparationPolicy.canPrepare(
+            hasGroqCredential: true,
+            isBusy: false
+        )
+    )
+}
+
+@Test func microphonePreparationRequiresCredentialAndAnIdlePipeline() {
+    #expect(
+        !RecordingPreparationPolicy.canPrepare(
+            hasGroqCredential: false,
+            isBusy: false
+        )
+    )
+    #expect(
+        !RecordingPreparationPolicy.canPrepare(
+            hasGroqCredential: true,
+            isBusy: true
+        )
+    )
+}
+
 @Test func recordCommandStopsAnActiveCapture() {
     #expect(
         RecordingCommandPolicy.action(

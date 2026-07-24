@@ -15,3 +15,12 @@ public enum RecordingCommandPolicy {
         return .start
     }
 }
+
+public enum RecordingPreparationPolicy {
+    public static func canPrepare(
+        hasGroqCredential: Bool,
+        isBusy: Bool
+    ) -> Bool {
+        hasGroqCredential && !isBusy
+    }
+}

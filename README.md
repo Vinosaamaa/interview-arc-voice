@@ -176,6 +176,9 @@ The packaged capture regression and recovery-policy repair are documented in
 [`docs/postmortems/2026-07-24-header-only-recording-regression.md`](docs/postmortems/2026-07-24-header-only-recording-regression.md).
 The Keychain readiness and empty-credential repair is documented in
 [`docs/postmortems/2026-07-24-keychain-readiness-regression.md`](docs/postmortems/2026-07-24-keychain-readiness-regression.md).
+The recording-start self-rejection and lifecycle-policy repair is documented
+in
+[`docs/postmortems/2026-07-24-recording-start-readiness-regression.md`](docs/postmortems/2026-07-24-recording-start-readiness-regression.md).
 
 ## Provider and terminology references
 
