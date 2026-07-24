@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import Carbon
 import os
+import QuartzCore
 import SwiftUI
 import InterviewArcVoiceCore
 
@@ -430,10 +431,30 @@ final class FloatingPanelController {
         guard let panel else { show(model: model); return }
         panel.isVisible ? panel.orderOut(nil) : panel.orderFrontRegardless()
     }
+
+    func setPlaybackExpanded(_ expanded: Bool, reduceMotion: Bool) {
+        guard let panel else { return }
+        let width: CGFloat = expanded ? 360 : 250
+        guard abs(panel.frame.width - width) > 0.5 else { return }
+        var frame = panel.frame
+        let rightEdge = frame.maxX
+        frame.size.width = width
+        frame.origin.x = rightEdge - width
+        if reduceMotion {
+            panel.setFrame(frame, display: true)
+        } else {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.24
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                panel.animator().setFrame(frame, display: true)
+            }
+        }
+    }
 }
 
 struct FloatingRecorderView: View {
     @ObservedObject var model: VoiceBridgeModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 6) {
@@ -441,21 +462,27 @@ struct FloatingRecorderView: View {
             if model.isRecording {
                 LiveVoiceWaveform(recorder: model.recorder)
                 RecordingClock(recorder: model.recorder, compact: true)
+            } else if model.isPlaybackExpanded {
+                playbackControls
             } else if model.isBusy, model.showProcessingIndicator {
                 processingLabel
             } else {
                 activityLabel
-                if model.hasLastMemo {
+                if model.hasLastAudio {
                     memoButton(
                         symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
                         label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
                         action: model.toggleLastAudioPlayback
                     )
+                }
+                if !model.lastTranscript.isEmpty {
                     memoButton(
                         symbol: "doc.on.doc",
                         label: "Copy last transcript",
                         action: model.copyLastTranscript
                     )
+                }
+                if model.hasLastAudio {
                     memoButton(
                         symbol: "square.and.arrow.down",
                         label: "Save last audio and transcript",
@@ -465,13 +492,35 @@ struct FloatingRecorderView: View {
             }
             recordButton
         }
-        .padding(.horizontal, 2)
-        .frame(width: 250, height: 40)
+        .padding(.horizontal, 3)
+        .frame(width: model.isPlaybackExpanded ? 360 : 250, height: 40)
         .background(
             Capsule(style: .continuous)
-                .fill(.ultraThickMaterial)
-                .overlay(Capsule(style: .continuous).stroke(Color.white.opacity(0.22)))
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    Capsule(style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.18),
+                                    Color(red: 0.78, green: 0.92, blue: 0.90).opacity(0.08),
+                                    Color.black.opacity(0.04),
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                )
+                .overlay(Capsule(style: .continuous).stroke(Color.white.opacity(0.34), lineWidth: 0.8))
+                .shadow(color: Color.black.opacity(0.20), radius: 9, y: 4)
         )
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: model.isPlaybackExpanded)
+        .onChange(of: model.isPlaybackExpanded) { _, expanded in
+            FloatingPanelController.shared.setPlaybackExpanded(
+                expanded,
+                reduceMotion: reduceMotion
+            )
+        }
     }
 
     private var linkButton: some View {
@@ -492,7 +541,7 @@ struct FloatingRecorderView: View {
             }
             .frame(width: 28, height: 28)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LayeredWidgetButtonStyle(tint: model.linkStatusColor))
         .frame(width: 28, height: 36)
         .voiceHoverFeedback(
             enabled: !model.isRecording,
@@ -528,6 +577,40 @@ struct FloatingRecorderView: View {
         .accessibilityLabel(model.processingStatus)
     }
 
+    private var playbackControls: some View {
+        HStack(spacing: 6) {
+            memoButton(
+                symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
+                label: model.isPlayingLastAudio ? "Pause last recording" : "Resume last recording",
+                action: model.toggleLastAudioPlayback
+            )
+            Text(model.playbackTimeLabel)
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 72, alignment: .leading)
+            Slider(
+                value: Binding(
+                    get: { model.playbackProgress },
+                    set: { model.seekLastAudio(to: $0) }
+                ),
+                in: 0...1
+            )
+            .controlSize(.mini)
+            .tint(Color(red: 0.24, green: 0.72, blue: 0.68))
+            memoButton(
+                symbol: "doc.on.doc",
+                label: "Copy last transcript",
+                action: model.copyLastTranscript
+            )
+            memoButton(
+                symbol: "square.and.arrow.down",
+                label: "Save last audio and transcript",
+                action: model.exportLastMemo
+            )
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.97)))
+    }
+
     private func memoButton(
         symbol: String,
         label: String,
@@ -536,11 +619,15 @@ struct FloatingRecorderView: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 11, weight: .semibold))
-                .frame(width: 19, height: 26)
+                .frame(width: 22, height: 22)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LayeredWidgetButtonStyle(tint: Color(red: 0.30, green: 0.72, blue: 0.68)))
         .foregroundStyle(Color.primary)
-        .voiceHoverFeedback(enabled: !model.isBusy, cornerRadius: 7)
+        .voiceHoverFeedback(
+            enabled: !model.isBusy,
+            cornerRadius: 11,
+            tint: Color(red: 0.30, green: 0.72, blue: 0.68)
+        )
         .disabled(model.isBusy)
         .help(label)
         .accessibilityLabel(label)
@@ -564,7 +651,12 @@ struct FloatingRecorderView: View {
             }
             .frame(width: 36, height: 36)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(
+            LayeredWidgetButtonStyle(
+                tint: model.isRecording ? .red : Color(red: 0.40, green: 0.84, blue: 0.79),
+                prominent: true
+            )
+        )
         .voiceHoverFeedback(
             enabled: model.isRecording || model.canRecord,
             cornerRadius: 18,
@@ -578,6 +670,37 @@ struct FloatingRecorderView: View {
         )
     }
 
+}
+
+private struct LayeredWidgetButtonStyle: ButtonStyle {
+    let tint: Color
+    var prominent = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(configuration.isPressed ? 0.16 : 0.34),
+                                tint.opacity(configuration.isPressed ? 0.18 : 0.10),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay(Circle().stroke(Color.white.opacity(0.38), lineWidth: 0.7))
+                    .shadow(
+                        color: Color.black.opacity(configuration.isPressed ? 0.10 : 0.22),
+                        radius: configuration.isPressed ? 1 : (prominent ? 5 : 3),
+                        y: configuration.isPressed ? 0 : 2
+                    )
+            )
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .brightness(configuration.isPressed ? -0.04 : 0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
 }
 
 struct LinkStatusIcon: View {
