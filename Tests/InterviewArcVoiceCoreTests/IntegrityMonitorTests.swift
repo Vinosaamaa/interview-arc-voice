@@ -68,11 +68,27 @@ import Testing
             decodedDurationSeconds: 29.8,
             fileSizeBytes: 180_000,
             decodedFrameCount: 476_800,
-            writeErrorDescription: nil
+            writeErrorDescription: nil,
+            encodedAudioBytes: 178_000
         )
     )
 
     #expect(recovery == .transcribe)
+}
+
+@Test func nearSilentAACCaptureRequiresANewRecordingInsteadOfTranscription() {
+    let recovery = RecordingRecoveryPolicy.action(
+        for: RecordingIntegrityEvidence(
+            wallDurationSeconds: 4.99,
+            decodedDurationSeconds: 4.99,
+            fileSizeBytes: 24_896,
+            decodedFrameCount: 79_808,
+            writeErrorDescription: nil,
+            encodedAudioBytes: 320
+        )
+    )
+
+    #expect(recovery == .recordAgain)
 }
 
 @Test func normalTranscriptDoesNotTriggerASecondProviderCall() async throws {

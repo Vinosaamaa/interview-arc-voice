@@ -76,13 +76,16 @@ Save, and Retry instead of being discarded.
   Settings.
 - The menu panel is fixed at 260 points wide. The always-on-top recorder is a
   fixed 250-by-40-point capsule. It uses a filled teal chain for an active
-  Interview Arc link, an amber chain for general fallback, and a gray broken
-  chain when linking is off. The capsule exposes Play, Copy, and Save for the
+  Interview Arc link, an amber chain for general fallback, and a dark-blue
+  broken chain when linking is off. The capsule exposes Play, Copy, and Save for the
   latest capture and replaces its activity label with a live waveform while
   recording.
 - Cheap local audio checks run for every capture. Normal audio uses exactly one
   speech-to-text request. Only a provider failure or concrete integrity signal
   triggers one unprompted retry.
+- The finalized AAC payload must contain a plausible amount of encoded audio
+  for its duration. A timed but near-silent container is rejected before Groq
+  so ambient noise cannot become a guessed one-word transcript.
 
 ## First-time setup
 

@@ -481,11 +481,14 @@ struct FloatingRecorderView: View {
                     .fill(
                         model.linkToInterviewArc
                             ? model.linkStatusColor.opacity(0.14)
-                            : Color(red: 0.90, green: 0.35, blue: 0.30).opacity(0.18)
+                            : Color(red: 0.72, green: 0.82, blue: 0.96).opacity(0.42)
                     )
-                Image(systemName: model.linkStatusSymbol)
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(model.linkStatusColor)
+                LinkStatusIcon(
+                    isLinked: model.linkToInterviewArc,
+                    symbol: model.linkStatusSymbol,
+                    color: model.linkStatusColor,
+                    size: 19
+                )
             }
             .frame(width: 28, height: 28)
         }
@@ -575,6 +578,31 @@ struct FloatingRecorderView: View {
         )
     }
 
+}
+
+struct LinkStatusIcon: View {
+    let isLinked: Bool
+    let symbol: String
+    let color: Color
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            Image(systemName: symbol)
+                .font(.system(size: size, weight: .bold))
+            if !isLinked {
+                Capsule(style: .continuous)
+                    .fill(color)
+                    .frame(width: 2.2, height: size + 4)
+                    .rotationEffect(.degrees(42))
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .stroke(Color.white.opacity(0.75), lineWidth: 0.7)
+                    }
+            }
+        }
+        .foregroundStyle(color)
+    }
 }
 
 private struct VoiceHoverFeedbackModifier: ViewModifier {

@@ -177,12 +177,12 @@ final class VoiceBridgeModel: ObservableObject {
         "\(phase.label) · \(clock(processingElapsedSeconds))"
     }
     var linkStatusSymbol: String {
-        if !linkToInterviewArc { return "link.badge.minus" }
+        if !linkToInterviewArc { return "link" }
         return context?.focusedActivity == nil ? "link.circle" : "link.circle.fill"
     }
     var linkStatusColor: Color {
         if !linkToInterviewArc {
-            return Color(red: 0.90, green: 0.35, blue: 0.30)
+            return Color(red: 0.08, green: 0.20, blue: 0.42)
         }
         if context?.focusedActivity == nil {
             return Color(red: 0.92, green: 0.64, blue: 0.22)
@@ -597,8 +597,8 @@ final class VoiceBridgeModel: ObservableObject {
             case .recordAgain:
                 clearLastMemo()
                 canRetryLastTranscription = false
-                phase = .failed("No playable audio was recorded.")
-                contextMessage = "Check the microphone, then record again. Retranscription cannot recover missing audio."
+                phase = .failed("No usable speech was captured.")
+                contextMessage = "Check the microphone input, then record again. Voice will not insert a guessed transcript."
                 return
             }
             beginProcessing()
@@ -620,8 +620,8 @@ final class VoiceBridgeModel: ObservableObject {
             self.captureDestination = nil
             clearLastMemo()
             canRetryLastTranscription = false
-            phase = .failed("No playable audio was recorded.")
-            contextMessage = "Check the microphone, then record again. Retranscription cannot recover missing audio."
+            phase = .failed("No usable speech was captured.")
+            contextMessage = "Check the microphone input, then record again. Voice will not insert a guessed transcript."
         }
     }
 
@@ -983,8 +983,12 @@ private struct VoiceBridgeMenu: View {
             .voiceHoverFeedback(enabled: !model.isRecording, cornerRadius: 8)
             .disabled(model.isRecording)
             HStack(alignment: .center, spacing: 7) {
-                Image(systemName: model.linkStatusSymbol)
-                    .foregroundStyle(model.linkStatusColor)
+                LinkStatusIcon(
+                    isLinked: model.linkToInterviewArc,
+                    symbol: model.linkStatusSymbol,
+                    color: model.linkStatusColor,
+                    size: 14
+                )
                 Text(model.linkToInterviewArc && model.context?.focusedActivity != nil
                      ? model.floatingTitle
                      : "Inserts at the cursor")

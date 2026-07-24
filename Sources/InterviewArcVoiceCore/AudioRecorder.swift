@@ -139,12 +139,11 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
             throw VoiceBridgeError.recordingUnavailable
         }
         let duration = max(0, elapsedSeconds)
-        var fallbackFrames: Int64 = 0
+        let fallbackFrames: Int64 = 0
         if let recorder {
             let recorderDuration = recorder.currentTime
             recorder.stop()
             elapsedSeconds = max(duration, recorderDuration)
-            fallbackFrames = Int64(max(0, recorderDuration) * 16_000)
             self.recorder = nil
         } else {
             stopVoiceProcessedCapture()

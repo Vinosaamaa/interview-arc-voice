@@ -10,8 +10,10 @@
    one user answer as a continuous local M4A file. The system recorder owns
    file finalization; a capture is not eligible for transcription until the
    finalized file reopens with decoded frames.
-4. Reopen the finalized file and verify nonzero frames, write success, and
-   media duration against recording wall time.
+4. Reopen the finalized file and verify nonzero frames, write success, media
+   duration against recording wall time, and a plausible encoded-audio payload
+   rate. AAC containers that advance in time while carrying near-silent
+   four-byte packets never reach speech-to-text.
 5. Produce a speech-optimized transcription derivative and send it with the
    bounded vocabulary prompt to Groq Large v3.
 6. Insert the plain transcript plus a Markdown comment envelope containing its
