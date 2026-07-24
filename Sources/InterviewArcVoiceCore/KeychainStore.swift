@@ -13,6 +13,18 @@ public enum VoiceCredential: String, CaseIterable, Sendable {
     }
 }
 
+public struct CredentialSaveVerificationPolicy: Sendable {
+    public init() {}
+
+    public func isVerified(
+        submittedValue: String,
+        retrievedValue: String?
+    ) -> Bool {
+        submittedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            == retrievedValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 public struct KeychainStore: Sendable {
     private let service: String
 
@@ -78,5 +90,17 @@ public struct KeychainError: LocalizedError, Sendable {
 
     public var errorDescription: String? {
         SecCopyErrorMessageString(status, nil) as String? ?? "Keychain error \(status)"
+    }
+}
+
+public struct CredentialPersistenceError: LocalizedError, Sendable {
+    public let credential: VoiceCredential
+
+    public init(credential: VoiceCredential) {
+        self.credential = credential
+    }
+
+    public var errorDescription: String? {
+        "Voice could not verify the saved \(credential.label) in Keychain."
     }
 }
