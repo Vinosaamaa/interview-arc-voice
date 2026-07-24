@@ -1175,6 +1175,7 @@ private struct VoiceBridgeMenu: View {
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
             }
+            .voiceHoverFeedback(cornerRadius: 7)
         }
     }
 
