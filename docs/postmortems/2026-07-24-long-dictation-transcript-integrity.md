@@ -101,6 +101,9 @@ as authoritative introduced silent data loss.
    capture problem from an STT problem.
 5. Regression tests checked punctuation and chunk overlap but did not model a
    complete top-level transcript paired with a sparse word array.
+6. The first voice-processing capture implementation inherited `MainActor`
+   isolation inside AVAudioEngine's real-time tap callback. Packaged-app
+   testing caught the resulting queue-isolation crash before release.
 
 ## Five Whys
 
@@ -135,6 +138,10 @@ as authoritative introduced silent data loss.
   icon actions with accessibility labels.
 - Export is user initiated and writes a matching `.m4a` and `.txt`; General
   Dictation still performs no automatic persistent storage.
+- Recording uses Apple's voice-processing input path for echo cancellation and
+  noise suppression, with the original recorder as a compatibility fallback.
+- The audio tap writes through an explicitly sendable, non-actor helper; only
+  meter updates cross back to `MainActor`.
 
 ## Prevention and verification
 
@@ -147,4 +154,3 @@ as authoritative introduced silent data loss.
 - Verify the busy indicator, retry path, transcript scrolling, playback, copy,
   explicit export, and insertion in both Chromium and Electron editors.
 - Keep raw user audio and transcripts outside Git and CI fixtures.
-

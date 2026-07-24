@@ -1,6 +1,37 @@
 import AVFoundation
 import Foundation
 
+private final class VoiceProcessedAudioTap: @unchecked Sendable {
+    private let file: AVAudioFile
+    private let reportPower: @Sendable (Float) -> Void
+
+    init(
+        file: AVAudioFile,
+        reportPower: @escaping @Sendable (Float) -> Void
+    ) {
+        self.file = file
+        self.reportPower = reportPower
+    }
+
+    func consume(_ buffer: AVAudioPCMBuffer) {
+        try? file.write(from: buffer)
+        reportPower(Self.powerDecibels(buffer))
+    }
+
+    private static func powerDecibels(_ buffer: AVAudioPCMBuffer) -> Float {
+        guard let channels = buffer.floatChannelData,
+              buffer.frameLength > 0 else { return -60 }
+        let sampleCount = Int(buffer.frameLength)
+        var sum: Float = 0
+        for index in 0..<sampleCount {
+            let value = channels[0][index]
+            sum += value * value
+        }
+        let rootMeanSquare = sqrt(sum / Float(sampleCount))
+        return max(-60, 20 * log10(max(rootMeanSquare, 0.000_001)))
+    }
+}
+
 @MainActor
 public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
     @Published public private(set) var isRecording = false
@@ -100,16 +131,17 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
             commonFormat: .pcmFormatFloat32,
             interleaved: false
         )
+        let tap = VoiceProcessedAudioTap(file: file) { [weak self] power in
+            Task { @MainActor [weak self] in
+                self?.averagePower = power
+            }
+        }
         input.installTap(
             onBus: 0,
             bufferSize: 2_048,
             format: inputFormat
-        ) { [weak self] buffer, _ in
-            try? file.write(from: buffer)
-            let power = Self.powerDecibels(buffer)
-            Task { @MainActor [weak self] in
-                self?.averagePower = power
-            }
+        ) { @Sendable buffer, _ in
+            tap.consume(buffer)
         }
         engine.prepare()
         try engine.start()
@@ -144,16 +176,4 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         audioEngine = nil
     }
 
-    private nonisolated static func powerDecibels(_ buffer: AVAudioPCMBuffer) -> Float {
-        guard let channels = buffer.floatChannelData,
-              buffer.frameLength > 0 else { return -60 }
-        let sampleCount = Int(buffer.frameLength)
-        var sum: Float = 0
-        for index in 0..<sampleCount {
-            let value = channels[0][index]
-            sum += value * value
-        }
-        let rootMeanSquare = sqrt(sum / Float(sampleCount))
-        return max(-60, 20 * log10(max(rootMeanSquare, 0.000_001)))
-    }
 }
