@@ -37,6 +37,30 @@ import Testing
     )
 }
 
+@Test func normalNetworkJitterDoesNotDropAVisibleLinkedActivity() {
+    let policy = CaptureContextFreshnessPolicy(maximumAge: 10)
+    let now = Date(timeIntervalSince1970: 20)
+
+    #expect(
+        policy.isFresh(
+            lastVerifiedAt: Date(timeIntervalSince1970: 11),
+            now: now
+        )
+    )
+}
+
+@Test func genuinelyStaleContextStillFallsBackToGeneralDictation() {
+    let policy = CaptureContextFreshnessPolicy(maximumAge: 10)
+    let now = Date(timeIntervalSince1970: 20)
+
+    #expect(
+        !policy.isFresh(
+            lastVerifiedAt: Date(timeIntervalSince1970: 9),
+            now: now
+        )
+    )
+}
+
 @Test func aGeneralCaptureMayLateBindToAnActivityAlreadyRunningAtRecordStart() {
     let activity = focusedActivity(
         id: "course-schedule",
