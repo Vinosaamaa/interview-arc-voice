@@ -7,8 +7,10 @@ final class KeychainStoreTests: XCTestCase {
         defer { try? store.remove(.groqAPIKey) }
 
         try store.set("gsk_test_value", for: .groqAPIKey)
-
         XCTAssertEqual(try store.value(for: .groqAPIKey), "gsk_test_value")
+
+        try store.set("gsk_updated_value", for: .groqAPIKey)
+        XCTAssertEqual(try store.value(for: .groqAPIKey), "gsk_updated_value")
     }
 
     func testCredentialSaveIsVerifiedByReadingTheSubmittedValueBack() {
