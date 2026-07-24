@@ -127,6 +127,11 @@ timing or transport controls. Long activity names truncate on one line.
 ## Release checklist
 
 - No rectangular host background is visible around the capsule.
+- Test that transparency on both a pure-white window and a near-black window;
+  the host window's 250-by-56-point bounds must not be detectable on either.
+- The blur material and the custom shadow must both use the capsule silhouette.
+  Applying a shadow to the hosting view or leaving the blur effect rectangular
+  is a release-blocking defect even when it is subtle on the desktop wallpaper.
 - Linked, waiting, and off icons are demonstrably one hollow icon family.
 - The failure popover is narrower than the widget.
 - Record works in link-off, link-on/no-activity, and link-on/active-activity

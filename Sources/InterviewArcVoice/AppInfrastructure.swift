@@ -419,33 +419,40 @@ final class FloatingPanelController {
             return
         }
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 250, height: 56),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: 250,
+                height: FloatingWidgetWindowPolicy.hostHeight
+            ),
             styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.isOpaque = false
+        panel.isOpaque = FloatingWidgetWindowPolicy.hostIsOpaque
         panel.backgroundColor = .clear
         // NSPanel shadows are rectangular even when SwiftUI draws a capsule.
         // The capsule supplies its own shadow so the transparent window never
         // exposes a rectangular border around the widget.
-        panel.hasShadow = false
+        panel.hasShadow = FloatingWidgetWindowPolicy.usesNativeWindowShadow
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.isMovableByWindowBackground = true
         panel.becomesKeyOnlyIfNeeded = true
-        let hostingView = NSHostingView(rootView: FloatingRecorderView(model: model))
-        hostingView.wantsLayer = true
-        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
-        hostingView.layer?.isOpaque = false
+        let hostingView = TransparentHostingView(
+            rootView: FloatingRecorderView(model: model)
+        )
         panel.contentView = hostingView
         panel.setFrameAutosaveName("InterviewArcVoiceFloatingPanel")
         if !panel.setFrameUsingName("InterviewArcVoiceFloatingPanel") {
             panel.center()
         }
-        panel.setContentSize(NSSize(width: 250, height: 56))
+        panel.setContentSize(
+            NSSize(width: 250, height: FloatingWidgetWindowPolicy.hostHeight)
+        )
+        panel.invalidateShadow()
         panel.orderFrontRegardless()
         self.panel = panel
     }
@@ -471,6 +478,31 @@ final class FloatingPanelController {
                 panel.animator().setFrame(frame, display: true)
             }
         }
+    }
+}
+
+private final class TransparentHostingView<Content: View>: NSHostingView<Content> {
+    override var isOpaque: Bool { false }
+
+    override init(rootView: Content) {
+        super.init(rootView: rootView)
+        configureTransparentSurface()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        configureTransparentSurface()
+    }
+
+    private func configureTransparentSurface() {
+        wantsLayer = true
+        layer?.isOpaque = false
+        layer?.backgroundColor = NSColor.clear.cgColor
     }
 }
 
@@ -501,6 +533,22 @@ private struct FrostedInstrumentCapsule: View {
 }
 
 private struct InstrumentBlurView: NSViewRepresentable {
+    private static let capsuleMask: NSImage = {
+        let size = NSSize(width: 42, height: 40)
+        let image = NSImage(size: size, flipped: false) { rect in
+            NSColor.white.setFill()
+            NSBezierPath(
+                roundedRect: rect,
+                xRadius: 20,
+                yRadius: 20
+            ).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: 19, left: 20, bottom: 19, right: 20)
+        image.resizingMode = .stretch
+        return image
+    }()
+
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = .popover
@@ -511,12 +559,15 @@ private struct InstrumentBlurView: NSViewRepresentable {
         view.layer?.cornerCurve = .continuous
         view.layer?.masksToBounds = true
         view.layer?.backgroundColor = NSColor.clear.cgColor
+        view.maskImage = Self.capsuleMask
         return view
     }
 
     func updateNSView(_ view: NSVisualEffectView, context: Context) {
         view.layer?.cornerRadius = 20
         view.layer?.masksToBounds = true
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+        view.maskImage = Self.capsuleMask
     }
 }
 
@@ -525,57 +576,69 @@ struct FloatingRecorderView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 6) {
-            linkButton
-            if model.isRecording {
-                if model.recorder.signalHealth == .absent {
-                    microphoneSignalWarning
-                } else {
-                    LiveVoiceWaveform(recorder: model.recorder)
-                }
-                RecordingClock(recorder: model.recorder, compact: true)
-            } else if model.isPlaybackExpanded {
-                playbackControls
-            } else if model.isFailurePresented {
-                failureControls
-            } else if model.isBusy, model.showProcessingIndicator {
-                processingLabel
-            } else {
-                activityLabel
-                if model.hasLastAudio {
-                    memoButton(
-                        symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
-                        label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
-                        action: model.toggleLastAudioPlayback
-                    )
-                }
-                if !model.lastTranscript.isEmpty {
-                    memoButton(
-                        symbol: "doc.on.doc",
-                        label: "Copy last transcript",
-                        action: model.copyLastTranscript
-                    )
-                }
-                if model.hasLastAudio {
-                    memoButton(
-                        symbol: "square.and.arrow.down",
-                        label: "Save last audio and transcript",
-                        action: model.exportLastMemo
-                    )
-                }
-            }
-            recordButton
-        }
-        .padding(.horizontal, 4)
-        .frame(width: model.floatingWidth, height: 40)
-        .background(
+        ZStack {
+            Capsule(style: .continuous)
+                .fill(Color.black.opacity(0.001))
+                .shadow(
+                    color: VoiceWidgetPalette.coolShadow,
+                    radius: 7,
+                    y: 3
+                )
             FrostedInstrumentCapsule()
+            HStack(spacing: 6) {
+                linkButton
+                if model.isRecording {
+                    if model.recorder.signalHealth == .absent {
+                        microphoneSignalWarning
+                    } else {
+                        LiveVoiceWaveform(recorder: model.recorder)
+                    }
+                    RecordingClock(recorder: model.recorder, compact: true)
+                } else if model.isPlaybackExpanded {
+                    playbackControls
+                } else if model.isFailurePresented {
+                    failureControls
+                } else if model.isBusy, model.showProcessingIndicator {
+                    processingLabel
+                } else {
+                    activityLabel
+                    if model.hasLastAudio {
+                        memoButton(
+                            symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
+                            label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
+                            action: model.toggleLastAudioPlayback
+                        )
+                    }
+                    if !model.lastTranscript.isEmpty {
+                        memoButton(
+                            symbol: "doc.on.doc",
+                            label: "Copy last transcript",
+                            action: model.copyLastTranscript
+                        )
+                    }
+                    if model.hasLastAudio {
+                        memoButton(
+                            symbol: "square.and.arrow.down",
+                            label: "Save last audio and transcript",
+                            action: model.exportLastMemo
+                        )
+                    }
+                }
+                recordButton
+            }
+            .padding(.horizontal, 4)
+        }
+        .frame(
+            width: model.floatingWidth,
+            height: FloatingWidgetWindowPolicy.capsuleHeight
         )
         .clipShape(Capsule(style: .continuous))
         .contentShape(Capsule(style: .continuous))
-        .shadow(color: VoiceWidgetPalette.coolShadow, radius: 7, y: 3)
         .padding(.vertical, 8)
-        .frame(width: model.floatingWidth, height: 56)
+        .frame(
+            width: model.floatingWidth,
+            height: FloatingWidgetWindowPolicy.hostHeight
+        )
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: model.floatingWidth)
         .onChange(of: model.floatingWidth) { _, width in
             FloatingPanelController.shared.setWidth(
