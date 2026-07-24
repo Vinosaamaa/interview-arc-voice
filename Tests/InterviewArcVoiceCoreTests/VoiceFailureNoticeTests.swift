@@ -17,5 +17,57 @@ final class VoiceFailureNoticeTests: XCTestCase {
         let encoded = try JSONEncoder().encode(notice)
         XCTAssertEqual(try JSONDecoder().decode(VoiceFailureNotice.self, from: encoded), notice)
     }
-}
 
+    func testResolvedCredentialConfigurationFailureIsCleared() {
+        let notice = VoiceFailureNotice(
+            kind: .configuration,
+            title: "Settings need attention",
+            message: "Open settings to finish Voice setup",
+            detail: "Add your Groq API key in Interview Arc Voice settings.",
+            actions: [.openSettings]
+        )
+
+        XCTAssertNil(
+            CredentialFailureRecoveryPolicy().retainedFailure(
+                notice,
+                configurationIsReady: true
+            )
+        )
+    }
+
+    func testCredentialRecoveryKeepsUnrelatedFailures() {
+        let notice = VoiceFailureNotice(
+            kind: .transcription,
+            title: "Transcription failed",
+            message: "Recording preserved",
+            detail: "The provider did not return a transcript.",
+            actions: [.retryTranscription]
+        )
+
+        XCTAssertEqual(
+            CredentialFailureRecoveryPolicy().retainedFailure(
+                notice,
+                configurationIsReady: true
+            ),
+            notice
+        )
+    }
+
+    func testUnresolvedCredentialConfigurationFailureRemainsVisible() {
+        let notice = VoiceFailureNotice(
+            kind: .configuration,
+            title: "Settings need attention",
+            message: "Open settings to finish Voice setup",
+            detail: "Add your Groq API key in Interview Arc Voice settings.",
+            actions: [.openSettings]
+        )
+
+        XCTAssertEqual(
+            CredentialFailureRecoveryPolicy().retainedFailure(
+                notice,
+                configurationIsReady: false
+            ),
+            notice
+        )
+    }
+}

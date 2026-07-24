@@ -178,6 +178,9 @@ final class VoiceBridgeModel: ObservableObject {
     var hasGroqCredential: Bool {
         !groqKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+    var configurationIsReady: Bool {
+        hasGroqCredential
+    }
     var canRecord: Bool {
         hasGroqCredential && !isBusy && !isStartingRecording
     }
@@ -490,6 +493,7 @@ final class VoiceBridgeModel: ObservableObject {
         guard !isRecording else { return }
         linkToInterviewArc = enabled
         UserDefaults.standard.set(enabled, forKey: "voice.linkToInterviewArc")
+        reconcilePersistedCredentialFailure()
         if !isBusy {
             deliveryStates = [:]
         }
@@ -516,6 +520,11 @@ final class VoiceBridgeModel: ObservableObject {
             UserDefaults.standard.set(apiBaseURL, forKey: "voice.apiBaseURL")
             UserDefaults.standard.set(workspacePath, forKey: "voice.workspacePath")
             UserDefaults.standard.set(codexPath, forKey: "voice.codexPath")
+            reconcilePersistedCredentialFailure()
+            if !isBusy {
+                phase = failureNotice.map { .failed($0.title) }
+                    ?? (hasGroqCredential ? .idle : .setup)
+            }
             settingsExpanded = false
             Task { await refreshContext(showProgress: false) }
         } catch {
@@ -726,6 +735,15 @@ final class VoiceBridgeModel: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "voice.lastFailure")
     }
 
+    private func reconcilePersistedCredentialFailure() {
+        let retainedFailure = CredentialFailureRecoveryPolicy().retainedFailure(
+            failureNotice,
+            configurationIsReady: configurationIsReady
+        )
+        guard failureNotice != nil, retainedFailure == nil else { return }
+        clearFailureAfterSuccess()
+    }
+
     private func loadSecureSettings() async {
         let keychain = keychain
         let snapshot = await Task.detached(priority: .userInitiated) {
@@ -756,6 +774,7 @@ final class VoiceBridgeModel: ObservableObject {
                 actions: [.openSettings]
             )
         } else {
+            reconcilePersistedCredentialFailure()
             phase = failureNotice.map { .failed($0.title) }
                 ?? (hasGroqCredential ? .idle : .setup)
         }
