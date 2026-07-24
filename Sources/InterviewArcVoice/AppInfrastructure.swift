@@ -127,6 +127,20 @@ final class DictationTextInjector {
             textInjectionLogger.error("Insertion has no valid external target")
             return .noFocusedEditor
         }
+
+        // Use a real paste event first. Browser and Electron editors keep
+        // their DOM/model state in renderer processes and can report that an
+        // Accessibility value write succeeded even though the framework
+        // immediately discards it. Command-V follows the same input path as a
+        // user paste, so React, contenteditable, CodeMirror, Monaco, terminals,
+        // and ordinary AppKit fields all receive the expected change event.
+        if await pasteIntoTarget(text, targetPID: targetPID) {
+            textInjectionLogger.info("Inserted through the global paste path")
+            return .inserted
+        }
+
+        // Retain direct Accessibility insertion as a fallback for an unusual
+        // editor that cannot receive the system paste shortcut.
         target.activate(options: [.activateIgnoringOtherApps])
         try? await Task.sleep(for: .milliseconds(220))
 
@@ -160,13 +174,8 @@ final class DictationTextInjector {
             }
         }
 
-        let inserted = await pasteIntoTarget(text, targetPID: targetPID)
-        if inserted {
-            textInjectionLogger.info("Inserted through the global paste fallback")
-        } else {
-            textInjectionLogger.error("The global paste fallback could not target the requested editor")
-        }
-        return inserted ? .inserted : .noFocusedEditor
+        textInjectionLogger.error("Neither paste nor Accessibility could target the requested editor")
+        return .noFocusedEditor
     }
 
     /// Chromium and Electron frequently expose an editable value while
