@@ -54,7 +54,7 @@ retranscription.
 - Preserve playable partial audio for Play and Save, but ask the user to record
   again for a complete transcript.
 - Hide memo actions when no usable last memo exists.
-- Keep the link toggle available outside active recording, use a visible coral
+- Keep the link toggle available outside active recording, use a visible dark-blue
   broken-chain state, and add hover feedback to interactive widget and menu
   controls.
 
@@ -77,7 +77,7 @@ exercised before the exact merged-`main` artifact replaced it.
 The packaged test confirmed:
 
 - a clean launch hides Play, Copy, and Save instead of showing disabled ghosts;
-- the coral broken-chain button remains visible and toggles linking on and off;
+- the dark-blue broken-chain button remains visible and toggles linking on and off;
 - a real microphone capture reaches transcription and produces a recoverable
   memo with working Copy;
 - unavailable capture bytes never reach the provider-retry path;
@@ -132,3 +132,41 @@ The signed follow-up build then completed an end-to-end foreground test:
 The same build was launched cleanly with linking off. Its dark-blue chain with
 a diagonal break rendered visibly on a pale-blue circle, and no memo controls
 appeared until the first valid recording existed.
+
+## Recurrence: valid timelines with no live microphone signal
+
+Later on July 24, four additional packaged-app captures reproduced the
+near-silent shape:
+
+- 13.692 seconds at 692 bits per second;
+- 6.460 seconds at 500 bits per second;
+- 72.892 seconds at 500 bits per second; and
+- 2.364 seconds at 500 bits per second.
+
+All four files had valid M4A timelines, so file finalization itself succeeded.
+Their encoded microphone payload was effectively silence. The integrity gate
+correctly kept these files away from Groq, but the product still reduced the
+failure to the generic label **Needs attention**. It neither warned while the
+user was still speaking nor identified the active input after the recording.
+
+The recurrence exposed two additional gaps:
+
+1. recorder metering was used only for the waveform, not as a live health
+   signal; and
+2. AVAudioRecorder delegate errors and the selected input device were not
+   retained as actionable diagnostics.
+
+The follow-up adds a cheap, entirely local signal monitor. After a short warmup
+it warns while a capture has not crossed the microphone-level threshold. It
+also retains the finalized recording, selected input, duration, payload rate,
+and integrity reasons in a persistent recovery notice. Encode/finalization
+callbacks now contribute diagnostics instead of being discarded.
+
+The same review found an independent retry-routing defect: a failed linked
+capture could be retranscribed through the general-dictation route, losing its
+Interview Arc activity association. Retry now preserves the original capture
+destination and re-enters the linked pipeline with the same activity context.
+
+These checks do not add a second transcription call to healthy recordings.
+They run from the recorder's existing local meter and the finalized-file
+inspection that already guarded the provider boundary.

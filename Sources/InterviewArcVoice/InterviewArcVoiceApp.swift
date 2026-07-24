@@ -1,14 +1,26 @@
 import AppKit
 import AVFoundation
 import Carbon
+import os
 import SwiftUI
 import UniformTypeIdentifiers
 import InterviewArcVoiceCore
+
+private let voiceBridgeLogger = Logger(
+    subsystem: "app.interviewarc.voice",
+    category: "VoiceBridge"
+)
 
 private struct SecureCredentialSnapshot: Sendable {
     let interviewArcToken: String
     let groqAPIKey: String
     let errorDescription: String?
+}
+
+enum VoiceLinkPresentationState: Equatable {
+    case off
+    case waiting
+    case linked
 }
 
 @main
@@ -65,7 +77,7 @@ final class VoiceBridgeModel: ObservableObject {
             case .inserting: "Inserting at the cursor"
             case .delivered: "Complete"
             case .queued: "Complete with retry queued"
-            case .failed: "Needs attention"
+            case .failed(let message): message
             }
         }
 
@@ -85,6 +97,17 @@ final class VoiceBridgeModel: ObservableObject {
     private enum CaptureDestination {
         case linked(FocusedVoiceActivity, startedAt: Date)
         case general(startedAt: Date)
+    }
+
+    private enum FailureStage {
+        case microphone
+        case recording
+        case transcription
+        case insertion
+        case interviewArc
+        case configuration
+        case playback
+        case export
     }
 
     @Published var phase: Phase = .setup
@@ -111,6 +134,8 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var canRetryLastTranscription = false
     @Published private(set) var processingElapsedSeconds: TimeInterval = 0
     @Published private(set) var showProcessingIndicator = false
+    @Published private(set) var failureNotice: VoiceFailureNotice?
+    @Published var failureDetailsPresented = false
 
     let recorder = AnswerRecorder()
 
@@ -136,9 +161,11 @@ final class VoiceBridgeModel: ObservableObject {
     private var activationObserver: NSObjectProtocol?
     private var lastExternalApplicationPID: pid_t?
     private var lastAudioData: Data?
+    private var lastAudioURL: URL?
     private var lastAudioDuration: TimeInterval = 0
     private var lastMemoCreatedAt = Date()
     private var lastMemoActivityTitle: String?
+    private var lastRetryDestination: CaptureDestination?
     private var audioPlayer: AVAudioPlayer?
     private var playbackTimer: Timer?
     private var processingTimer: Timer?
@@ -190,12 +217,20 @@ final class VoiceBridgeModel: ObservableObject {
     var playbackTimeLabel: String {
         "\(clock(playbackCurrentTime)) / \(clock(playbackDuration))"
     }
+    var statusTitle: String {
+        failureNotice?.title ?? phase.label
+    }
+    var statusSummary: String {
+        if let failureNotice { return failureNotice.message }
+        if !contextMessage.isEmpty { return contextMessage }
+        return linkToInterviewArc ? "Interview Arc" : "General dictation"
+    }
     var processingStatus: String {
         "\(phase.label) · \(clock(processingElapsedSeconds))"
     }
-    var linkStatusSymbol: String {
-        if !linkToInterviewArc { return "link" }
-        return context?.focusedActivity == nil ? "link.circle" : "link.circle.fill"
+    var linkPresentationState: VoiceLinkPresentationState {
+        if !linkToInterviewArc { return .off }
+        return context?.focusedActivity == nil ? .waiting : .linked
     }
     var linkStatusColor: Color {
         if !linkToInterviewArc {
@@ -211,6 +246,13 @@ final class VoiceBridgeModel: ObservableObject {
         if let activity = context?.focusedActivity { return "Linked to \(activity.title)." }
         return "Auto-link is on. No activity is focused, so recording will use general dictation."
     }
+    var isFailurePresented: Bool {
+        if case .failed = phase { return failureNotice != nil }
+        return false
+    }
+    var floatingWidth: CGFloat {
+        isPlaybackExpanded || isFailurePresented ? 360 : 250
+    }
 
     init() {
         let defaults = UserDefaults.standard
@@ -223,6 +265,10 @@ final class VoiceBridgeModel: ObservableObject {
             shortcut = saved
         } else {
             shortcut = .standard
+        }
+        if let data = defaults.data(forKey: "voice.lastFailure"),
+           let storedFailure = try? JSONDecoder().decode(VoiceFailureNotice.self, from: data) {
+            failureNotice = storedFailure
         }
         recordingStore = try? RecordingStore()
         if let frontmost = NSWorkspace.shared.frontmostApplication,
@@ -331,7 +377,7 @@ final class VoiceBridgeModel: ObservableObject {
                 }
             }
         } catch {
-            phase = .failed("The last recording could not be played.")
+            reportFailure(error, stage: .playback, hasRecoverableAudio: hasLastAudio)
         }
     }
 
@@ -380,7 +426,7 @@ final class VoiceBridgeModel: ObservableObject {
             }
             contextMessage = "Voice memo saved."
         } catch {
-            phase = .failed("The voice memo could not be saved: \(error.localizedDescription)")
+            reportFailure(error, stage: .export, hasRecoverableAudio: hasLastAudio)
         }
     }
 
@@ -388,26 +434,38 @@ final class VoiceBridgeModel: ObservableObject {
         guard canRetryLastTranscription,
               let lastAudioData,
               let recordingStore else { return }
-        let retryURL = recordingStore.nextTemporaryRecordingURL()
+        let retryURL = lastAudioURL ?? recordingStore.nextTemporaryRecordingURL()
         do {
-            try lastAudioData.write(to: retryURL, options: .atomic)
+            if !FileManager.default.fileExists(atPath: retryURL.path) {
+                try lastAudioData.write(to: retryURL, options: .atomic)
+            }
             targetApplicationPID = currentInsertionTargetPID()
             canRetryLastTranscription = false
+            captureGeneration = UUID()
+            let generation = captureGeneration
             beginProcessing()
             phase = .transcribing
             Task {
-                await processGeneral(
-                    recording: RecordedCapture(
-                        url: retryURL,
-                        duration: lastAudioDuration,
-                        writtenFrameCount: 1,
-                        writeErrorDescription: nil
-                    ),
-                    rememberAudio: false
+                let recording = RecordedCapture(
+                    url: retryURL,
+                    duration: lastAudioDuration,
+                    writtenFrameCount: 1,
+                    writeErrorDescription: nil
                 )
+                switch lastRetryDestination {
+                case .linked(let activity, let startedAt):
+                    await processLinked(
+                        recording: recording,
+                        activity: activity,
+                        startedAt: startedAt,
+                        generation: generation
+                    )
+                case .general, nil:
+                    await processGeneral(recording: recording, rememberAudio: false)
+                }
             }
         } catch {
-            phase = .failed("The recording could not be prepared for retry.")
+            reportFailure(error, stage: .recording, hasRecoverableAudio: hasLastAudio)
         }
     }
 
@@ -425,13 +483,15 @@ final class VoiceBridgeModel: ObservableObject {
         if enabled {
             contextMessage = "Auto-link will check the current activity before recording."
             if !isBusy {
-                phase = hasGroqCredential ? .idle : .setup
+                phase = failureNotice.map { .failed($0.title) }
+                    ?? (hasGroqCredential ? .idle : .setup)
             }
             Task { await refreshContext(showProgress: false) }
         } else {
             contextMessage = "General dictation will not touch Interview Arc."
             if !isBusy {
-                phase = hasGroqCredential ? .idle : .setup
+                phase = failureNotice.map { .failed($0.title) }
+                    ?? (hasGroqCredential ? .idle : .setup)
             }
         }
     }
@@ -446,7 +506,7 @@ final class VoiceBridgeModel: ObservableObject {
             settingsExpanded = false
             Task { await refreshContext(showProgress: false) }
         } catch {
-            phase = .failed("Secure settings could not be saved: \(error.localizedDescription)")
+            reportFailure(error, stage: .configuration)
         }
     }
 
@@ -480,7 +540,10 @@ final class VoiceBridgeModel: ObservableObject {
         Task {
             if pipeline == nil { pipeline = try? makeLinkedPipeline() }
             guard let pipeline else {
-                phase = .failed("Add the Interview Arc token before retrying linked delivery.")
+                reportFailure(
+                    VoiceBridgeError.missingCredential("Interview Arc token"),
+                    stage: .configuration
+                )
                 return
             }
             _ = await pipeline.retryPending()
@@ -491,6 +554,163 @@ final class VoiceBridgeModel: ObservableObject {
 
     func toggleFloatingPanel() {
         FloatingPanelController.shared.toggle(model: self)
+    }
+
+    func showFailureDetails() {
+        guard failureNotice != nil else { return }
+        failureDetailsPresented = true
+    }
+
+    func dismissFailure() {
+        failureDetailsPresented = false
+        failureNotice = nil
+        UserDefaults.standard.removeObject(forKey: "voice.lastFailure")
+        if case .failed = phase {
+            phase = hasGroqCredential ? .idle : .setup
+        }
+    }
+
+    func performFailureAction(_ action: VoiceFailureAction) {
+        switch action {
+        case .recordAgain:
+            failureDetailsPresented = false
+            if canRecord { toggleRecording() }
+        case .retryTranscription:
+            failureDetailsPresented = false
+            retryLastTranscription()
+        case .playRecording:
+            toggleLastAudioPlayback()
+        case .saveRecording:
+            exportLastMemo()
+        case .insertAgain:
+            failureDetailsPresented = false
+            reinsertLastTranscript()
+        case .enableAccessibility:
+            requestAccessibilityPermission()
+        case .openSettings:
+            failureDetailsPresented = false
+            settingsExpanded = true
+        case .retryConnection:
+            failureDetailsPresented = false
+            Task { await refresh() }
+        }
+    }
+
+    private func reportFailure(
+        kind: VoiceFailureKind,
+        title: String,
+        message: String,
+        detail: String,
+        actions: [VoiceFailureAction]
+    ) {
+        let notice = VoiceFailureNotice(
+            kind: kind,
+            title: title,
+            message: message,
+            detail: detail,
+            actions: actions
+        )
+        failureNotice = notice
+        phase = .failed(title)
+        contextMessage = message
+        if let data = try? JSONEncoder().encode(notice) {
+            UserDefaults.standard.set(data, forKey: "voice.lastFailure")
+        }
+        voiceBridgeLogger.error(
+            "Failure [\(kind.rawValue, privacy: .public)]: \(title, privacy: .public) — \(detail, privacy: .public)"
+        )
+    }
+
+    private func reportFailure(
+        _ error: Error,
+        stage: FailureStage,
+        hasRecoverableAudio: Bool = false
+    ) {
+        let detail = String(
+            error.localizedDescription
+                .replacingOccurrences(of: "\n", with: " ")
+                .prefix(420)
+        )
+        switch stage {
+        case .microphone:
+            reportFailure(
+                kind: .microphone,
+                title: "Microphone unavailable",
+                message: "Voice could not open the microphone",
+                detail: detail,
+                actions: [.recordAgain, .openSettings]
+            )
+        case .recording:
+            reportFailure(
+                kind: .recording,
+                title: "Recording failed",
+                message: hasRecoverableAudio
+                    ? "Recording preserved · choose Play or Save"
+                    : "No usable recording was created",
+                detail: detail,
+                actions: hasRecoverableAudio
+                    ? [.recordAgain, .playRecording, .saveRecording]
+                    : [.recordAgain]
+            )
+        case .transcription:
+            reportFailure(
+                kind: .transcription,
+                title: "Transcription failed",
+                message: hasRecoverableAudio
+                    ? "Recording preserved · choose Retry or Play"
+                    : "The speech service did not return a transcript",
+                detail: detail,
+                actions: hasRecoverableAudio
+                    ? [.retryTranscription, .playRecording, .saveRecording]
+                    : [.recordAgain]
+            )
+        case .insertion:
+            reportFailure(
+                kind: .insertion,
+                title: "Text was not inserted",
+                message: "Your transcript is safe · focus an editor and insert again",
+                detail: detail,
+                actions: [.insertAgain, .enableAccessibility]
+            )
+        case .interviewArc:
+            reportFailure(
+                kind: .interviewArc,
+                title: "Interview Arc delivery delayed",
+                message: "Your answer is safe · delivery can be retried",
+                detail: detail,
+                actions: [.retryConnection, .playRecording, .saveRecording]
+            )
+        case .configuration:
+            reportFailure(
+                kind: .configuration,
+                title: "Settings need attention",
+                message: "Open settings to finish Voice setup",
+                detail: detail,
+                actions: [.openSettings]
+            )
+        case .playback:
+            reportFailure(
+                kind: .playback,
+                title: "Playback failed",
+                message: "The recording could not be played",
+                detail: detail,
+                actions: [.saveRecording]
+            )
+        case .export:
+            reportFailure(
+                kind: .export,
+                title: "Save failed",
+                message: "Voice could not save the recording",
+                detail: detail,
+                actions: [.saveRecording]
+            )
+        }
+    }
+
+    private func clearFailureAfterSuccess() {
+        failureDetailsPresented = false
+        failureNotice = nil
+        UserDefaults.standard.removeObject(forKey: "voice.lastFailure")
     }
 
     private func loadSecureSettings() async {
@@ -513,11 +733,19 @@ final class VoiceBridgeModel: ObservableObject {
 
         connectionTokenDraft = snapshot.interviewArcToken
         groqKeyDraft = snapshot.groqAPIKey
-        if snapshot.errorDescription != nil {
-            contextMessage = "Keychain access failed. Open Connection settings to enter the keys again."
-        }
         accessibilityNeeded = !textInjector.accessibilityTrusted
-        phase = hasGroqCredential ? .idle : .setup
+        if let errorDescription = snapshot.errorDescription {
+            reportFailure(
+                kind: .configuration,
+                title: "Keychain access failed",
+                message: "Open settings to enter your keys again",
+                detail: errorDescription,
+                actions: [.openSettings]
+            )
+        } else {
+            phase = failureNotice.map { .failed($0.title) }
+                ?? (hasGroqCredential ? .idle : .setup)
+        }
         await refreshContext(showProgress: false)
     }
 
@@ -582,14 +810,22 @@ final class VoiceBridgeModel: ObservableObject {
 
     private func prepareAndStartRecording() async {
         guard canRecord else {
-            phase = .setup
-            contextMessage = "Add your Groq API key in Connection settings."
+            reportFailure(
+                VoiceBridgeError.missingCredential("Groq API key"),
+                stage: .configuration
+            )
             return
         }
         guard textInjector.accessibilityTrusted else {
             accessibilityNeeded = true
             textInjector.requestAccessibilityPermission()
-            phase = .failed("Enable Accessibility so Voice can insert text at the focused cursor.")
+            reportFailure(
+                kind: .insertion,
+                title: "Accessibility permission required",
+                message: "Allow Voice to insert text at the focused cursor",
+                detail: "macOS Accessibility access is currently disabled for Interview Arc Voice.",
+                actions: [.enableAccessibility]
+            )
             return
         }
         targetApplicationPID = currentInsertionTargetPID()
@@ -614,7 +850,10 @@ final class VoiceBridgeModel: ObservableObject {
         }
 
         guard let recordingStore else {
-            phase = .failed("Interview Arc Voice cannot open its private recording folder.")
+            reportFailure(
+                VoiceBridgeError.recordingUnavailable,
+                stage: .configuration
+            )
             return
         }
         let destination: URL
@@ -632,14 +871,16 @@ final class VoiceBridgeModel: ObservableObject {
         } catch {
             self.captureDestination = nil
             canRetryLastTranscription = false
-            phase = .failed(error.localizedDescription)
-            contextMessage = "Voice could not start the microphone."
+            reportFailure(error, stage: .microphone)
         }
     }
 
     private func stopAndProcess() {
         guard let captureDestination else {
-            phase = .failed("The recording destination was lost. Record again.")
+            reportFailure(
+                VoiceBridgeError.recordingUnavailable,
+                stage: .recording
+            )
             return
         }
         do {
@@ -659,21 +900,37 @@ final class VoiceBridgeModel: ObservableObject {
                 memoActivityTitle = nil
             }
             self.captureDestination = nil
-            let recovery = try recordingRecoveryAction(for: recording)
+            lastRetryDestination = captureDestination
+            let evidence = try RecordingFileInspector.inspect(recording)
+            let recovery = RecordingRecoveryPolicy.action(for: evidence)
+            voiceBridgeLogger.info(
+                "Capture finalized: wall=\(evidence.wallDurationSeconds, privacy: .public)s decoded=\(evidence.decodedDurationSeconds, privacy: .public)s bytes=\(evidence.fileSizeBytes, privacy: .public) audioBytes=\(evidence.encodedAudioBytes ?? -1, privacy: .public) frames=\(evidence.decodedFrameCount, privacy: .public) recovery=\(String(describing: recovery), privacy: .public)"
+            )
             switch recovery {
             case .transcribe:
                 rememberLastAudio(recording, activityTitle: memoActivityTitle)
             case .preserveWithoutRetry:
                 rememberLastAudio(recording, activityTitle: memoActivityTitle)
                 canRetryLastTranscription = false
-                phase = .failed("Recording ended early.")
-                contextMessage = "The playable portion is preserved. Record again for a complete transcript."
+                reportFailure(
+                    kind: .recording,
+                    title: "Recording ended early",
+                    message: "Playable audio preserved · record again for a complete answer",
+                    detail: recordingDiagnosticDetail(evidence),
+                    actions: [.recordAgain, .playRecording, .saveRecording]
+                )
                 return
             case .recordAgain:
-                clearLastMemo()
+                rememberLastAudio(recording, activityTitle: memoActivityTitle)
                 canRetryLastTranscription = false
-                phase = .failed("No usable speech was captured.")
-                contextMessage = "Check the microphone input, then record again. Voice will not insert a guessed transcript."
+                reportFailure(
+                    kind: .microphone,
+                    title: "No microphone signal",
+                    message: "Recording preserved · check the input and record again",
+                    detail: recordingDiagnosticDetail(evidence)
+                        + " Another voice app may be using the microphone, the selected input may be unavailable, or its level may be muted.",
+                    actions: [.recordAgain, .playRecording, .saveRecording]
+                )
                 return
             }
             beginProcessing()
@@ -693,10 +950,8 @@ final class VoiceBridgeModel: ObservableObject {
             }
         } catch {
             self.captureDestination = nil
-            clearLastMemo()
             canRetryLastTranscription = false
-            phase = .failed("No usable speech was captured.")
-            contextMessage = "Check the microphone input, then record again. Voice will not insert a guessed transcript."
+            reportFailure(error, stage: .recording, hasRecoverableAudio: hasLastAudio)
         }
     }
 
@@ -706,7 +961,7 @@ final class VoiceBridgeModel: ObservableObject {
     ) async {
         guard let recordingStore else {
             endProcessing()
-            phase = .failed("Voice settings are incomplete.")
+            reportFailure(VoiceBridgeError.recordingUnavailable, stage: .configuration)
             return
         }
         if rememberAudio { rememberLastAudio(recording) }
@@ -715,7 +970,7 @@ final class VoiceBridgeModel: ObservableObject {
         } catch {
             canRetryLastTranscription = false
             endProcessing()
-            phase = .failed("The saved recording is not playable. Record again.")
+            reportFailure(error, stage: .recording, hasRecoverableAudio: hasLastAudio)
             return
         }
         do {
@@ -735,14 +990,21 @@ final class VoiceBridgeModel: ObservableObject {
             )
             canRetryLastTranscription = false
             endProcessing()
-            phase = inserted ? .delivered : .failed("Voice could not find the focused text editor. Click the editor and try again.")
-            contextMessage = inserted
-                ? "Dictation inserted at the cursor. Press Send when ready."
-                : "No editable cursor was available."
+            if inserted {
+                clearFailureAfterSuccess()
+                phase = .delivered
+                contextMessage = "Dictation inserted at the cursor. Press Send when ready."
+            } else {
+                reportFailure(
+                    VoiceBridgeError.codexUnavailable("No editable cursor was available."),
+                    stage: .insertion,
+                    hasRecoverableAudio: hasLastAudio
+                )
+            }
         } catch {
             canRetryLastTranscription = hasLastAudio
             endProcessing()
-            phase = .failed(error.localizedDescription)
+            reportFailure(error, stage: .transcription, hasRecoverableAudio: hasLastAudio)
         }
     }
 
@@ -758,7 +1020,7 @@ final class VoiceBridgeModel: ObservableObject {
             guard generation == captureGeneration else { return }
             canRetryLastTranscription = false
             endProcessing()
-            phase = .failed("The saved recording is not playable. Record again.")
+            reportFailure(error, stage: .recording, hasRecoverableAudio: hasLastAudio)
             return
         }
         do {
@@ -786,9 +1048,13 @@ final class VoiceBridgeModel: ObservableObject {
             guard generation == captureGeneration else { return }
             endProcessing()
             if !lastInsertionSucceeded {
-                phase = .failed("The answer was saved, but Voice could not find the focused text editor.")
-                contextMessage = "Click the editor, then use Insert again from Last transcript."
+                reportFailure(
+                    VoiceBridgeError.codexUnavailable("The answer was saved, but the focused editor was unavailable."),
+                    stage: .insertion,
+                    hasRecoverableAudio: hasLastAudio
+                )
             } else {
+                clearFailureAfterSuccess()
                 phase = result.hasQueuedRetry ? .queued : .delivered
                 contextMessage = result.hasQueuedRetry
                     ? "Inserted at the cursor; one background step will retry."
@@ -798,7 +1064,7 @@ final class VoiceBridgeModel: ObservableObject {
             guard generation == captureGeneration else { return }
             canRetryLastTranscription = hasLastAudio
             endProcessing()
-            phase = .failed(error.localizedDescription)
+            reportFailure(error, stage: .transcription, hasRecoverableAudio: hasLastAudio)
         }
     }
 
@@ -818,6 +1084,7 @@ final class VoiceBridgeModel: ObservableObject {
     private func finishForegroundInsertion() {
         endProcessing()
         if lastInsertionSucceeded {
+            clearFailureAfterSuccess()
             phase = .delivered
             contextMessage = "Inserted at the cursor. Press Send when ready."
         }
@@ -832,7 +1099,16 @@ final class VoiceBridgeModel: ObservableObject {
                 editorText: lastInsertionText.isEmpty ? lastTranscript : lastInsertionText,
                 showDeliveryStep: linkToInterviewArc
             )
-            phase = inserted ? .delivered : .failed("Click an editable text field, then try Insert again.")
+            if inserted {
+                clearFailureAfterSuccess()
+                phase = .delivered
+            } else {
+                reportFailure(
+                    VoiceBridgeError.codexUnavailable("Click an editable text field, then try Insert again."),
+                    stage: .insertion,
+                    hasRecoverableAudio: hasLastAudio
+                )
+            }
         }
     }
 
@@ -882,6 +1158,10 @@ final class VoiceBridgeModel: ObservableObject {
         guard force || phase == .setup || phase == .idle || phase == .refreshing else {
             return
         }
+        if let failureNotice {
+            phase = .failed(failureNotice.title)
+            return
+        }
         phase = hasGroqCredential ? .idle : .setup
     }
 
@@ -922,6 +1202,7 @@ final class VoiceBridgeModel: ObservableObject {
         isPlaybackExpanded = false
         playbackCurrentTime = 0
         lastAudioData = try? Data(contentsOf: recording.url, options: .mappedIfSafe)
+        lastAudioURL = recording.url
         hasLastAudio = lastAudioData != nil
         lastAudioDuration = recording.duration
         playbackDuration = recording.duration
@@ -941,9 +1222,11 @@ final class VoiceBridgeModel: ObservableObject {
         playbackCurrentTime = 0
         playbackDuration = 0
         lastAudioData = nil
+        lastAudioURL = nil
         hasLastAudio = false
         lastAudioDuration = 0
         lastMemoActivityTitle = nil
+        lastRetryDestination = nil
         lastTranscript = ""
         lastInsertionText = ""
     }
@@ -988,11 +1271,22 @@ final class VoiceBridgeModel: ObservableObject {
         }
     }
 
-    private func recordingRecoveryAction(
-        for recording: RecordedCapture
-    ) throws -> RecordingRecoveryAction {
-        let evidence = try RecordingFileInspector.inspect(recording)
-        return RecordingRecoveryPolicy.action(for: evidence)
+    private func recordingDiagnosticDetail(
+        _ evidence: RecordingIntegrityEvidence
+    ) -> String {
+        let bitrate: Int
+        if let audioBytes = evidence.encodedAudioBytes,
+           evidence.decodedDurationSeconds > 0 {
+            bitrate = Int(
+                (Double(audioBytes) * 8 / evidence.decodedDurationSeconds).rounded()
+            )
+        } else {
+            bitrate = 0
+        }
+        let reasons = RecordingIntegrityEvaluator.evaluate(evidence).reasons
+            .map(\.rawValue)
+            .joined(separator: ", ")
+        return "Input: \(recorder.inputDeviceName). Recorded \(clock(evidence.wallDurationSeconds)); decoded \(clock(evidence.decodedDurationSeconds)); microphone payload \(bitrate) bps. Integrity signals: \(reasons.isEmpty ? "none" : reasons)."
     }
 
     private func clock(_ seconds: TimeInterval) -> String {
@@ -1034,6 +1328,10 @@ private struct VoiceBridgeMenu: View {
             statusHeader
             modeCard
             recordingControl
+            if model.recorder.isRecording, model.recorder.signalHealth == .absent {
+                microphoneSignalWarning
+            }
+            if model.isFailurePresented { failureCard }
             if model.showsDeliverySteps { deliveryProgress }
             if model.hasLastMemo { transcriptPreview }
             if model.pendingRetryCount > 0 { retryRow }
@@ -1052,11 +1350,11 @@ private struct VoiceBridgeMenu: View {
             }
             .frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 1) {
-                Text(model.phase.label).font(.subheadline.weight(.semibold)).lineLimit(1)
-                Text(model.linkToInterviewArc ? "Interview Arc" : "General dictation")
+                Text(model.statusTitle).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Text(model.statusSummary)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
             Spacer()
             Button(action: model.toggleFloatingPanel) { Image(systemName: "macwindow.on.rectangle") }
@@ -1087,8 +1385,7 @@ private struct VoiceBridgeMenu: View {
             .disabled(model.isRecording)
             HStack(alignment: .center, spacing: 7) {
                 LinkStatusIcon(
-                    isLinked: model.linkToInterviewArc,
-                    symbol: model.linkStatusSymbol,
+                    state: model.linkPresentationState,
                     color: model.linkStatusColor,
                     size: 14
                 )
@@ -1103,6 +1400,87 @@ private struct VoiceBridgeMenu: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var microphoneSignalWarning: some View {
+        Label(
+            "No microphone signal detected. Stop this capture, check the selected input, and record again.",
+            systemImage: "waveform.slash"
+        )
+        .font(.caption)
+        .foregroundStyle(Color(red: 0.65, green: 0.20, blue: 0.14))
+        .padding(9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+    }
+
+    private var failureCard: some View {
+        Group {
+            if let failure = model.failureNotice {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top, spacing: 7) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Color(red: 0.86, green: 0.30, blue: 0.20))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(failure.title)
+                                .font(.caption.weight(.bold))
+                            Text(failure.message)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button(action: model.dismissFailure) {
+                            Image(systemName: "xmark")
+                                .frame(width: 18, height: 18)
+                        }
+                        .buttonStyle(.borderless)
+                        .voiceHoverFeedback(cornerRadius: 6)
+                        .accessibilityLabel("Dismiss failure")
+                    }
+                    Text(failure.detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    ForEach(failure.actions, id: \.self) { action in
+                        Button {
+                            model.performFailureAction(action)
+                        } label: {
+                            Label(failureActionLabel(action), systemImage: failureActionSymbol(action))
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(action == failure.actions.first ? MenuFailureButtonStyle.primary : .secondary)
+                        .voiceHoverFeedback(cornerRadius: 8, tint: .teal)
+                    }
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            }
+        }
+    }
+
+    private func failureActionSymbol(_ action: VoiceFailureAction) -> String {
+        switch action {
+        case .recordAgain: "arrow.counterclockwise"
+        case .retryTranscription, .retryConnection: "arrow.clockwise"
+        case .playRecording: "play.fill"
+        case .saveRecording: "square.and.arrow.down"
+        case .insertAgain: "text.cursor"
+        case .enableAccessibility: "hand.raised.fill"
+        case .openSettings: "gearshape.fill"
+        }
+    }
+
+    private func failureActionLabel(_ action: VoiceFailureAction) -> String {
+        switch action {
+        case .recordAgain: "Record again"
+        case .retryTranscription: "Retry transcription"
+        case .playRecording: "Play recording"
+        case .saveRecording: "Save recording"
+        case .insertAgain: "Insert transcript again"
+        case .enableAccessibility: "Enable Accessibility"
+        case .openSettings: "Open settings"
+        case .retryConnection: "Retry Interview Arc connection"
+        }
     }
 
     private var recordingControl: some View {
@@ -1345,6 +1723,31 @@ private struct DeliveryMenuStep: View {
         case .needsAttention: .red
         case nil: .secondary
         }
+    }
+}
+
+private struct MenuFailureButtonStyle: ButtonStyle {
+    let prominent: Bool
+
+    static let primary = MenuFailureButtonStyle(prominent: true)
+    static let secondary = MenuFailureButtonStyle(prominent: false)
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(prominent ? Color.white : Color(red: 0.08, green: 0.38, blue: 0.34))
+            .padding(.horizontal, 10)
+            .frame(minHeight: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(
+                        prominent
+                            ? Color(red: 0.08, green: 0.44, blue: 0.39)
+                            : Color(red: 0.82, green: 0.92, blue: 0.90)
+                    )
+            )
+            .opacity(configuration.isPressed ? 0.78 : 1)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
     }
 }
 
