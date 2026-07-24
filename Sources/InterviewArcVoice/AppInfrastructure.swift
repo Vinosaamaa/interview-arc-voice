@@ -484,7 +484,7 @@ final class FloatingPanelController {
 private final class TransparentHostingView<Content: View>: NSHostingView<Content> {
     override var isOpaque: Bool { false }
 
-    override init(rootView: Content) {
+    required init(rootView: Content) {
         super.init(rootView: rootView)
         configureTransparentSurface()
     }
