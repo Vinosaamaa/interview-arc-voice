@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="30.2.4">
+  <diagram name="Architecture">
+    <mxGraphModel dx="1800" dy="1180" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="1250" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="2" value="Interview Arc Voice: capture, transcription, insertion, and linked delivery" style="text;html=1;align=center;verticalAlign=middle;fontSize=26;fontStyle=1;fontColor=#163a36;" vertex="1" parent="1">
+          <mxGeometry x="250" y="20" width="1400" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="3" value="1. Interaction and capture" style="swimlane;startSize=34;horizontal=1;rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f9f8;strokeColor=#6c8ebf;fontStyle=1;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1820" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="4" value="User&#xa;click or global hotkey" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" vertex="1" parent="3">
+          <mxGeometry x="40" y="80" width="190" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="5" value="Menu bar + floating recorder&#xa;never auto-sends" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" vertex="1" parent="3">
+          <mxGeometry x="300" y="80" width="230" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="6" value="Capture context&#xa;NSWorkspace + target PID + activity" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="3">
+          <mxGeometry x="610" y="80" width="250" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="7" value="AudioRecorder&#xa;continuous M4A" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" vertex="1" parent="3">
+          <mxGeometry x="940" y="80" width="210" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="8" value="Security prerequisites&#xa;Keychain credentials + TCC Accessibility" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="3">
+          <mxGeometry x="1240" y="70" width="300" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="9" value="Stable app identity&#xa;bundle ID + designated requirement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=13;" vertex="1" parent="3">
+          <mxGeometry x="1610" y="80" width="180" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="10" value="2. Speech processing and routing" style="swimlane;startSize=34;horizontal=1;rounded=1;whiteSpace=wrap;html=1;fillColor=#f8faf5;strokeColor=#82b366;fontStyle=1;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="40" y="330" width="1820" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="11" value="Speech derivative&#xa;chunk only when required" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="10">
+          <mxGeometry x="190" y="80" width="230" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="12" value="Groq Speech-to-Text&#xa;whisper-large-v3 + vocabulary prompt" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=13;" vertex="1" parent="10">
+          <mxGeometry x="520" y="70" width="280" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="13" value="Exact transcript&#xa;no rewriting or filler removal" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="10">
+          <mxGeometry x="900" y="80" width="250" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="14" value="Linked running activity?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;" vertex="1" parent="10">
+          <mxGeometry x="1270" y="65" width="190" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="15" value="Editor text&#xa;plain transcript or transcript + Voice envelope" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="10">
+          <mxGeometry x="1570" y="70" width="220" height="100" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="16" value="3. Focused-editor insertion" style="swimlane;startSize=34;horizontal=1;rounded=1;whiteSpace=wrap;html=1;fillColor=#fffaf4;strokeColor=#d79b00;fontStyle=1;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="40" y="580" width="1820" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="17" value="Activate captured target&#xa;NSRunningApplication by PID" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="16">
+          <mxGeometry x="70" y="80" width="240" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="18" value="Snapshot NSPasteboard&#xa;write transient transcript" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="16">
+          <mxGeometry x="390" y="80" width="250" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="19" value="Post Command-V&#xa;CGEvent at cghidEventTap" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="16">
+          <mxGeometry x="720" y="80" width="240" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="20" value="Chromium / Electron / AppKit editor&#xa;DOM and model receive normal paste events" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" vertex="1" parent="16">
+          <mxGeometry x="1040" y="70" width="300" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="21" value="Restore original clipboard after 1.5 s&#xa;only if changeCount is unchanged" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="16">
+          <mxGeometry x="1420" y="70" width="300" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="22" value="Fallback: verified AXSelectedText / AXValue write" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="16">
+          <mxGeometry x="1030" y="170" width="320" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="23" value="4. Linked background delivery" style="swimlane;startSize=34;horizontal=1;rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f5fa;strokeColor=#9673a6;fontStyle=1;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="40" y="830" width="1820" height="240" as="geometry"/>
+        </mxCell>
+        <mxCell id="24" value="D1 transcript turn&#xa;idempotent turnId" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="23">
+          <mxGeometry x="270" y="80" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="25" value="Private R2 audio&#xa;authenticated playback only" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="23">
+          <mxGeometry x="690" y="80" width="240" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="26" value="Delivery Coach&#xa;attempt-specific speaking evidence" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="23">
+          <mxGeometry x="1130" y="80" width="260" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="27" value="General mode cleanup&#xa;delete temporary audio; no D1 or R2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=13;" vertex="1" parent="23">
+          <mxGeometry x="1540" y="80" width="240" height="100" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="28" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="4" target="5"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="29" value="capture target" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.35;entryX=0;entryY=0.35;" edge="1" parent="1" source="5" target="6"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="30" value="record" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.7;entryX=0;entryY=0.7;" edge="1" parent="1" source="5" target="7"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="31" value="credentials / permission" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="8" target="7"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="32" value="preserves TCC trust" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="9" target="8"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="33" value="audio derivative" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="7" target="11"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="34" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="11" target="12"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="35" value="STT result" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="12" target="13"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="36" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="13" target="14"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="37" value="route metadata" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="6" target="14"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="38" value="Yes: add envelope" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.35;entryX=0;entryY=0.35;" edge="1" parent="1" source="14" target="15"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="39" value="No: plain text" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.7;entryX=0;entryY=0.7;" edge="1" parent="1" source="14" target="15"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="40" value="captured PID" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="6" target="17"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="41" value="text" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="15" target="18"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="42" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="17" target="18"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="43" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="18" target="19"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="44" value="paste event" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="19" target="20"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="45" value="after renderer consumes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="20" target="21"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="46" value="only if paste unavailable" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;exitX=0.5;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="17" target="22"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="47" value="verified write" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;exitX=1;exitY=0.5;entryX=0.5;entryY=1;" edge="1" parent="1" source="22" target="20"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="48" value="linked capture" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.35;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="14" target="24"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="49" value="original M4A" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.6;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="7" target="25"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="50" value="analyze clip" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="25" target="26"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="51" value="general fallback" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;exitX=0.65;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="14" target="27"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

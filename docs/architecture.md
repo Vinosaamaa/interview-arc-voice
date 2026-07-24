@@ -9,8 +9,12 @@
 4. Produce a speech-optimized transcription derivative.
 5. Send the derivative and vocabulary prompt to Groq Large v3.
 6. Insert the plain transcript plus a Markdown comment envelope containing its
-   activity and turn IDs into the focused editor through macOS Accessibility
-   without using the clipboard; do not submit it.
+   activity and turn IDs into the captured editor. Voice activates the captured
+   application, snapshots the macOS pasteboard, posts a real Command-V through
+   the HID event stream, waits for a renderer-backed editor to consume it, and
+   restores the original pasteboard only if no other owner changed it. A
+   read-back-verified Accessibility write remains the fallback; Voice never
+   submits the message.
 7. Upload the original recording to private R2 and link it to the resulting
    user transcript turn.
 8. Start delivery analysis in a background Codex task.
@@ -36,8 +40,10 @@ general route:
 
 1. Record into the private temporary directory.
 2. Transcribe verbatim through Groq.
-3. Insert into the app that was active when recording began through the focused
-   Accessibility text element, with Unicode keyboard events as a direct fallback.
+3. Activate the app that was active when recording began and insert through the
+   guarded paste-event path described above. If paste dispatch is unavailable,
+   use direct Accessibility replacement only when the resulting `AXValue`
+   exactly matches the expected UTF-16 edit.
 4. Delete the temporary audio on success or failure.
 
 This route never calls the Interview Arc capture, audio, delivery-analysis, or
@@ -92,3 +98,26 @@ All three specialties use the same delivery pipeline. Delivery analysis may
 describe observable speech evidence such as pace, pauses, fillers, clarity,
 organization, vocal variation, and perceived confidence. It must not infer the
 speaker's mental state or other sensitive traits.
+
+## Universal insertion reliability
+
+Native AppKit controls, Chromium web editors, and Electron editors expose
+different editing behavior. A successful return from
+`AXUIElementSetAttributeValue` is not sufficient evidence that a web editor's
+DOM or application model changed. Likewise, posting a keyboard event directly
+to a Chromium parent PID does not guarantee delivery to its renderer process.
+The production path therefore:
+
+1. remembers the last non-Voice foreground application PID;
+2. captures that target at recording start;
+3. reactivates the same application before insertion;
+4. posts a real paste event at `.cghidEventTap`;
+5. holds the transient transcript for 1.5 seconds so asynchronous renderers can
+   consume it;
+6. restores the previous pasteboard only when `NSPasteboard.changeCount`
+   confirms that no other owner has changed it; and
+7. uses direct AX replacement only as a verified fallback.
+
+See
+[`postmortems/2026-07-23-universal-dictation-insertion.md`](postmortems/2026-07-23-universal-dictation-insertion.md)
+for the evidence, failed approaches, diagrams, and regression plan.
