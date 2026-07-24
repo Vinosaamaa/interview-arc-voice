@@ -1,8 +1,14 @@
 import AppKit
 import ApplicationServices
 import Carbon
+import os
 import SwiftUI
 import InterviewArcVoiceCore
+
+private let textInjectionLogger = Logger(
+    subsystem: "app.interviewarc.voice",
+    category: "TextInjection"
+)
 
 struct HotKeyShortcut: Codable, Equatable, Sendable {
     let keyCode: UInt32
@@ -111,14 +117,32 @@ final class DictationTextInjector {
     }
 
     func deliver(text: String, targetPID: pid_t?) async -> DictationOutput {
-        guard accessibilityTrusted else { return .accessibilityRequired }
+        guard accessibilityTrusted else {
+            textInjectionLogger.error("Insertion blocked because Accessibility is not trusted")
+            return .accessibilityRequired
+        }
         guard let targetPID,
               let target = NSRunningApplication(processIdentifier: targetPID),
               target.bundleIdentifier != Bundle.main.bundleIdentifier else {
+            textInjectionLogger.error("Insertion has no valid external target")
             return .noFocusedEditor
         }
-        target.activate(options: [])
-        try? await Task.sleep(for: .milliseconds(140))
+
+        // Use a real paste event first. Browser and Electron editors keep
+        // their DOM/model state in renderer processes and can report that an
+        // Accessibility value write succeeded even though the framework
+        // immediately discards it. Command-V follows the same input path as a
+        // user paste, so React, contenteditable, CodeMirror, Monaco, terminals,
+        // and ordinary AppKit fields all receive the expected change event.
+        if await pasteIntoTarget(text, targetPID: targetPID) {
+            textInjectionLogger.info("Inserted through the global paste path")
+            return .inserted
+        }
+
+        // Retain direct Accessibility insertion as a fallback for an unusual
+        // editor that cannot receive the system paste shortcut.
+        target.activate(options: [.activateIgnoringOtherApps])
+        try? await Task.sleep(for: .milliseconds(220))
 
         let application = AXUIElementCreateApplication(targetPID)
         var focusedValue: CFTypeRef?
@@ -141,18 +165,146 @@ final class DictationTextInjector {
                     kAXSelectedTextAttribute as CFString,
                     text as CFTypeRef
                ) == .success {
+                textInjectionLogger.info("Inserted through the focused Accessibility text element")
+                return .inserted
+            }
+            if replaceFocusedValue(text, in: focused) {
+                textInjectionLogger.info("Inserted through the focused Accessibility value and selection range")
                 return .inserted
             }
         }
 
-        return await pasteIntoTarget(text, targetPID: targetPID) ? .inserted : .noFocusedEditor
+        textInjectionLogger.error("Neither paste nor Accessibility could target the requested editor")
+        return .noFocusedEditor
+    }
+
+    /// Chromium and Electron frequently expose an editable value while
+    /// rejecting `AXSelectedText` writes. Prefer their UTF-16 selection range
+    /// when one is available. Some web controls (including empty search boxes)
+    /// omit that range even though their value is writable; append in that
+    /// case so the insertion still lands in the focused editor.
+    private func replaceFocusedValue(_ text: String, in focused: AXUIElement) -> Bool {
+        var valueSettable = DarwinBoolean(false)
+        guard AXUIElementIsAttributeSettable(
+            focused,
+            kAXValueAttribute as CFString,
+            &valueSettable
+        ) == .success,
+        valueSettable.boolValue else {
+            return false
+        }
+
+        var currentValue: CFTypeRef?
+        let valueRead = AXUIElementCopyAttributeValue(
+            focused,
+            kAXValueAttribute as CFString,
+            &currentValue
+        )
+        guard valueRead == .success else {
+            textInjectionLogger.debug(
+                "Focused editor exposes a writable value but reading it failed: \(valueRead.rawValue)"
+            )
+            return false
+        }
+
+        let currentText: String
+        if let string = currentValue as? String {
+            currentText = string
+        } else if let attributedString = currentValue as? NSAttributedString {
+            currentText = attributedString.string
+        } else if currentValue == nil {
+            currentText = ""
+        } else {
+            return false
+        }
+
+        var selectedRangeValue: CFTypeRef?
+        let selectedRangeRead = AXUIElementCopyAttributeValue(
+            focused,
+            kAXSelectedTextRangeAttribute as CFString,
+            &selectedRangeValue
+        )
+
+        let currentNSString = currentText as NSString
+        var selectedRange = CFRange(location: currentNSString.length, length: 0)
+        if selectedRangeRead == .success, let selectedRangeValue {
+            let selectedRangeAXValue = selectedRangeValue as! AXValue
+            guard AXValueGetType(selectedRangeAXValue) == .cfRange,
+                  AXValueGetValue(selectedRangeAXValue, .cfRange, &selectedRange) else {
+                return false
+            }
+        } else {
+            textInjectionLogger.debug(
+                "Focused editor omitted its selection range; inserting at the end of its value"
+            )
+        }
+        guard selectedRange.location >= 0,
+              selectedRange.length >= 0,
+              selectedRange.location + selectedRange.length <= currentNSString.length else {
+            return false
+        }
+
+        let updatedText = currentNSString.replacingCharacters(
+            in: NSRange(location: selectedRange.location, length: selectedRange.length),
+            with: text
+        )
+        guard AXUIElementSetAttributeValue(
+            focused,
+            kAXValueAttribute as CFString,
+            updatedText as CFTypeRef
+        ) == .success else {
+            return false
+        }
+
+        // Some Chromium controls report a successful AX write while silently
+        // keeping their old DOM value. Treat that as a rejected direct write
+        // so the real Command-V fallback can dispatch the browser's expected
+        // paste/input events instead of claiming the transcript was inserted.
+        var verifiedValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            focused,
+            kAXValueAttribute as CFString,
+            &verifiedValue
+        ) == .success else {
+            return false
+        }
+        let verifiedText: String?
+        if let string = verifiedValue as? String {
+            verifiedText = string
+        } else if let attributedString = verifiedValue as? NSAttributedString {
+            verifiedText = attributedString.string
+        } else {
+            verifiedText = nil
+        }
+        guard verifiedText == updatedText else {
+            textInjectionLogger.debug(
+                "Focused editor ignored its direct Accessibility value write; falling back to paste"
+            )
+            return false
+        }
+
+        var updatedRange = CFRange(
+            location: selectedRange.location + (text as NSString).length,
+            length: 0
+        )
+        if let updatedRangeValue = AXValueCreate(.cfRange, &updatedRange) {
+            _ = AXUIElementSetAttributeValue(
+                focused,
+                kAXSelectedTextRangeAttribute as CFString,
+                updatedRangeValue
+            )
+        }
+        return true
     }
 
     /// Web `contenteditable` controls and terminal emulators often reject
     /// synthetic Unicode key events even though native AppKit fields accept
-    /// direct AX replacement. A targeted paste is the common denominator
-    /// across those editors. The user's pasteboard is restored immediately
-    /// afterward, unless another app changed it during the insertion.
+    /// direct AX replacement. A transient paste is the common denominator
+    /// across those editors. Post the shortcut through the active HID event
+    /// stream: Chromium and Electron put their editable controls in renderer
+    /// processes, so posting Command-V only to the parent application's PID
+    /// never reaches the focused editor. The user's pasteboard is restored
+    /// immediately afterward, unless another app changed it during insertion.
     private func pasteIntoTarget(_ text: String, targetPID: pid_t) async -> Bool {
         guard let source = CGEventSource(stateID: .combinedSessionState),
               let keyDown = CGEvent(
@@ -168,6 +320,8 @@ final class DictationTextInjector {
             return false
         }
 
+        guard await activateTarget(targetPID) else { return false }
+
         let pasteboard = NSPasteboard.general
         let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
         pasteboard.clearContents()
@@ -179,17 +333,34 @@ final class DictationTextInjector {
         let transientChangeCount = pasteboard.changeCount
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
-        keyDown.postToPid(targetPID)
-        keyUp.postToPid(targetPID)
+        keyDown.post(tap: .cghidEventTap)
+        try? await Task.sleep(for: .milliseconds(35))
+        keyUp.post(tap: .cghidEventTap)
 
-        // Give Chromium, Electron, and terminal renderers time to consume the
-        // pasteboard before restoring it. Do not overwrite a newer clipboard
-        // value created by the user or another app during this window.
-        try? await Task.sleep(for: .milliseconds(180))
+        // Renderer-backed editors consume the HID shortcut asynchronously.
+        // Restoring the clipboard after only a few hundred milliseconds can
+        // make Chromium paste the user's previous clipboard value instead of
+        // the transcript. Keep the transient value alive through that event
+        // handoff, then restore it only if nobody changed the clipboard.
+        try? await Task.sleep(for: .milliseconds(1_500))
         if pasteboard.changeCount == transientChangeCount {
             snapshot.restore(to: pasteboard)
         }
         return true
+    }
+
+    private func activateTarget(_ targetPID: pid_t) async -> Bool {
+        guard let target = NSRunningApplication(processIdentifier: targetPID) else {
+            return false
+        }
+        target.activate(options: [.activateIgnoringOtherApps])
+        for _ in 0..<6 {
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(75))
+        }
+        return NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID
     }
 }
 

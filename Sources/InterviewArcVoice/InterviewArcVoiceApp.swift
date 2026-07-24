@@ -3,6 +3,12 @@ import Carbon
 import SwiftUI
 import InterviewArcVoiceCore
 
+private struct SecureCredentialSnapshot: Sendable {
+    let interviewArcToken: String
+    let groqAPIKey: String
+    let errorDescription: String?
+}
+
 @main
 struct InterviewArcVoiceApp: App {
     @StateObject private var model: VoiceBridgeModel
@@ -284,10 +290,26 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     private func loadSecureSettings() async {
-        do {
-            connectionTokenDraft = try keychain.value(for: .interviewArcToken) ?? ""
-            groqKeyDraft = try keychain.value(for: .groqAPIKey) ?? ""
-        } catch {
+        let keychain = keychain
+        let snapshot = await Task.detached(priority: .userInitiated) {
+            do {
+                return SecureCredentialSnapshot(
+                    interviewArcToken: try keychain.value(for: .interviewArcToken) ?? "",
+                    groqAPIKey: try keychain.value(for: .groqAPIKey) ?? "",
+                    errorDescription: nil
+                )
+            } catch {
+                return SecureCredentialSnapshot(
+                    interviewArcToken: "",
+                    groqAPIKey: "",
+                    errorDescription: error.localizedDescription
+                )
+            }
+        }.value
+
+        connectionTokenDraft = snapshot.interviewArcToken
+        groqKeyDraft = snapshot.groqAPIKey
+        if snapshot.errorDescription != nil {
             contextMessage = "Keychain access failed. Open Connection settings to enter the keys again."
         }
         accessibilityNeeded = !textInjector.accessibilityTrusted
