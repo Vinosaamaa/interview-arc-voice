@@ -247,6 +247,33 @@ final class DictationTextInjector {
             return false
         }
 
+        // Some Chromium controls report a successful AX write while silently
+        // keeping their old DOM value. Treat that as a rejected direct write
+        // so the real Command-V fallback can dispatch the browser's expected
+        // paste/input events instead of claiming the transcript was inserted.
+        var verifiedValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            focused,
+            kAXValueAttribute as CFString,
+            &verifiedValue
+        ) == .success else {
+            return false
+        }
+        let verifiedText: String?
+        if let string = verifiedValue as? String {
+            verifiedText = string
+        } else if let attributedString = verifiedValue as? NSAttributedString {
+            verifiedText = attributedString.string
+        } else {
+            verifiedText = nil
+        }
+        guard verifiedText == updatedText else {
+            textInjectionLogger.debug(
+                "Focused editor ignored its direct Accessibility value write; falling back to paste"
+            )
+            return false
+        }
+
         var updatedRange = CFRange(
             location: selectedRange.location + (text as NSString).length,
             length: 0
