@@ -49,3 +49,18 @@ public struct VoiceFailureNotice: Codable, Equatable, Identifiable, Sendable {
         self.occurredAt = occurredAt
     }
 }
+
+public struct CredentialFailureRecoveryPolicy: Sendable {
+    public init() {}
+
+    public func retainedFailure(
+        _ failure: VoiceFailureNotice?,
+        configurationIsReady: Bool
+    ) -> VoiceFailureNotice? {
+        guard failure?.kind == .configuration,
+              configurationIsReady else {
+            return failure
+        }
+        return nil
+    }
+}
