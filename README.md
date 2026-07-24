@@ -164,6 +164,8 @@ is in
 [`docs/postmortems/2026-07-23-universal-dictation-insertion.md`](docs/postmortems/2026-07-23-universal-dictation-insertion.md).
 The long-dictation integrity analysis and repair record is in
 [`docs/postmortems/2026-07-24-long-dictation-transcript-integrity.md`](docs/postmortems/2026-07-24-long-dictation-transcript-integrity.md).
+The packaged capture regression and recovery-policy repair are documented in
+[`docs/postmortems/2026-07-24-header-only-recording-regression.md`](docs/postmortems/2026-07-24-header-only-recording-regression.md).
 
 ## Provider and terminology references
 
