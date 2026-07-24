@@ -41,6 +41,7 @@ public struct VoicePipelineResult: Equatable, Sendable {
 public actor VoicePipeline {
     private let api: InterviewArcAPIClient
     private let transcriber: any SpeechTranscribing
+    private let reliableTranscriber: ReliableSpeechTranscriber
     private let codex: CodexBridge
     private let vocabularyResolver: VocabularyResolver
     private let retryQueue: VoiceRetryQueue
@@ -60,6 +61,7 @@ public actor VoicePipeline {
     ) {
         self.api = api
         self.transcriber = transcriber
+        reliableTranscriber = ReliableSpeechTranscriber(base: transcriber)
         self.codex = codex
         self.vocabularyResolver = vocabularyResolver
         self.retryQueue = retryQueue
@@ -78,11 +80,13 @@ public actor VoicePipeline {
     ) async throws -> VoicePipelineResult {
         await progress(.init(component: .transcript, state: .working))
         let vocabulary = vocabularyResolver.resolve(activity.vocabularyContext)
-        let transcription = try await transcriber.transcribe(
+        let reliable = try await reliableTranscriber.transcribe(
             fileURL: recordingURL,
             prompt: vocabulary.prompt,
-            temporaryDirectory: temporaryDirectory
+            temporaryDirectory: temporaryDirectory,
+            audioDurationSeconds: durationSeconds
         )
+        let transcription = reliable.transcription
         let turnID = "voice-\(UUID().uuidString.lowercased())"
         let requestedClipID = "clip-\(UUID().uuidString.lowercased())"
         await transcriptReady(VoiceCaptureEnvelope(

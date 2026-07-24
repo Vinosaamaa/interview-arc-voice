@@ -4,17 +4,25 @@ import Foundation
 private final class VoiceProcessedAudioTap: @unchecked Sendable {
     private let file: AVAudioFile
     private let reportPower: @Sendable (Float) -> Void
+    let writeState: AudioWriteState
 
     init(
         file: AVAudioFile,
+        writeState: AudioWriteState,
         reportPower: @escaping @Sendable (Float) -> Void
     ) {
         self.file = file
+        self.writeState = writeState
         self.reportPower = reportPower
     }
 
     func consume(_ buffer: AVAudioPCMBuffer) {
-        try? file.write(from: buffer)
+        do {
+            try file.write(from: buffer)
+            writeState.recordFrames(Int64(buffer.frameLength))
+        } catch {
+            writeState.recordError(error)
+        }
         reportPower(Self.powerDecibels(buffer))
     }
 
@@ -32,6 +40,49 @@ private final class VoiceProcessedAudioTap: @unchecked Sendable {
     }
 }
 
+private final class AudioWriteState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var frames: Int64 = 0
+    private var errorDescription: String?
+
+    func recordFrames(_ count: Int64) {
+        lock.lock()
+        frames += count
+        lock.unlock()
+    }
+
+    func recordError(_ error: Error) {
+        lock.lock()
+        if errorDescription == nil { errorDescription = error.localizedDescription }
+        lock.unlock()
+    }
+
+    func snapshot() -> (frames: Int64, errorDescription: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (frames, errorDescription)
+    }
+}
+
+public struct RecordedCapture: Sendable {
+    public let url: URL
+    public let duration: TimeInterval
+    public let writtenFrameCount: Int64
+    public let writeErrorDescription: String?
+
+    public init(
+        url: URL,
+        duration: TimeInterval,
+        writtenFrameCount: Int64,
+        writeErrorDescription: String?
+    ) {
+        self.url = url
+        self.duration = duration
+        self.writtenFrameCount = writtenFrameCount
+        self.writeErrorDescription = writeErrorDescription
+    }
+}
+
 @MainActor
 public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
     @Published public private(set) var isRecording = false
@@ -42,6 +93,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
     private var audioEngine: AVAudioEngine?
     private var audioFile: AVAudioFile?
     private var destinationURL: URL?
+    private var audioWriteState: AudioWriteState?
     private var ticker: Timer?
     private var startedAt: Date?
 
@@ -83,26 +135,36 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         }
     }
 
-    public func stop() throws -> (url: URL, duration: TimeInterval) {
+    public func stop() throws -> RecordedCapture {
         guard isRecording, let url = destinationURL else {
             throw VoiceBridgeError.recordingUnavailable
         }
         let duration = max(0, elapsedSeconds)
+        var fallbackFrames: Int64 = 0
         if let recorder {
             let recorderDuration = recorder.currentTime
             recorder.stop()
             elapsedSeconds = max(duration, recorderDuration)
+            fallbackFrames = Int64(max(0, recorderDuration) * 16_000)
             self.recorder = nil
         } else {
             stopVoiceProcessedCapture()
         }
+        let writeSnapshot = audioWriteState?.snapshot()
+            ?? (frames: fallbackFrames, errorDescription: nil)
+        audioWriteState = nil
         ticker?.invalidate()
         ticker = nil
         startedAt = nil
         destinationURL = nil
         isRecording = false
         averagePower = -60
-        return (url, max(duration, elapsedSeconds))
+        return RecordedCapture(
+            url: url,
+            duration: max(duration, elapsedSeconds),
+            writtenFrameCount: writeSnapshot.frames,
+            writeErrorDescription: writeSnapshot.errorDescription
+        )
     }
 
     private func startVoiceProcessedCapture(at url: URL) throws {
@@ -131,7 +193,8 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
             commonFormat: .pcmFormatFloat32,
             interleaved: false
         )
-        let tap = VoiceProcessedAudioTap(file: file) { [weak self] power in
+        let writeState = AudioWriteState()
+        let tap = VoiceProcessedAudioTap(file: file, writeState: writeState) { [weak self] power in
             Task { @MainActor [weak self] in
                 self?.averagePower = power
             }
@@ -147,6 +210,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         try engine.start()
         audioFile = file
         audioEngine = engine
+        audioWriteState = writeState
     }
 
     private func startRecorderFallback(at url: URL) throws {
@@ -164,6 +228,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
             throw VoiceBridgeError.recordingUnavailable
         }
         self.recorder = recorder
+        audioWriteState = nil
     }
 
     private func stopVoiceProcessedCapture() {

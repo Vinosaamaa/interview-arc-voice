@@ -19,14 +19,16 @@ through the versioned Interview Arc API contract.
 
 ## Two capture modes
 
-**Link to Interview Arc** is on by default. Immediately before recording, Voice
-refreshes the focused dashboard activity. When an activity and specialist are
-available, one click:
+**Link to Interview Arc** is on by default. Voice refreshes the focused
+dashboard activity continuously while idle, so pressing Record can open the
+microphone immediately without waiting for the network. When an activity and
+specialist are available, one click:
 
 1. Reads the activity currently focused on Interview Arc Today.
 2. Records one uninterrupted M4A under Application Support.
 3. Selects a compact technical vocabulary prompt from the activity metadata.
-4. Transcribes with Groq `whisper-large-v3`, chunking only when required.
+4. Verifies that the finalized audio duration and frames match the recording,
+   then transcribes with Groq `whisper-large-v3`, chunking only when required.
 5. Persists the exact user transcript turn in D1.
 6. Inserts the verbatim answer plus a Markdown comment envelope at the focused
    text cursor. For renderer-backed web and Electron editors, Voice briefly
@@ -38,7 +40,8 @@ available, one click:
 7. Uploads the original M4A to private R2 and links it to the answer.
 8. Starts an ephemeral Delivery Coach task for observable speaking feedback.
 
-R2 upload and delivery-analysis setup run in the background. A failed stage is
+R2 upload and delivery-analysis setup run in the background and do not keep the
+floating recorder in a busy state after text reaches the cursor. A failed stage is
 saved in a private local retry queue and automatically retried after relaunch;
 the recording itself is never discarded.
 
@@ -51,7 +54,9 @@ never leaves the transcript as the user's clipboard value. Direct insertion
 requires macOS Accessibility access; without it, Voice keeps the transcript
 available for **Insert again** and explains how to enable access.
 General dictation never writes transcript, audio, or coaching data to Interview
-Arc, D1, or R2.
+Arc, D1, or R2. Successful temporary audio is deleted. If capture or
+transcription integrity fails, the original remains recoverable through Play,
+Save, and Retry instead of being discarded.
 
 ## Product decisions
 
@@ -70,8 +75,14 @@ Arc, D1, or R2.
 - The global shortcut defaults to `Control-Option-Space` and is configurable in
   Settings.
 - The menu panel is fixed at 260 points wide. The always-on-top recorder is a
-  fixed 250-by-40-point capsule and replaces its activity label with a live
-  microphone waveform while recording.
+  fixed 250-by-40-point capsule. It uses a filled teal chain for an active
+  Interview Arc link, an amber chain for general fallback, and a gray broken
+  chain when linking is off. The capsule exposes Play, Copy, and Save for the
+  latest capture and replaces its activity label with a live waveform while
+  recording.
+- Cheap local audio checks run for every capture. Normal audio uses exactly one
+  speech-to-text request. Only a provider failure or concrete integrity signal
+  triggers one unprompted retry.
 
 ## First-time setup
 
@@ -96,9 +107,9 @@ app with a newer package from this repository preserves the same macOS privacy
 identity instead of requiring permission again after every build.
 7. For interview practice, focus an activity on Today. Keep **Link to Interview Arc** on.
    The activity title appears in the floating recorder.
-8. Select the microphone or press `Control-Option-Space`. Voice refreshes the
-   focused activity immediately before recording, so switching problem timers
-   never requires a manual refresh. Speak, then select stop or press the
+8. Select the microphone or press `Control-Option-Space`. Voice uses the
+   continuously refreshed focused activity and starts capture immediately, so
+   switching problem timers never requires a manual refresh. Speak, then select stop or press the
    shortcut again. The transcript appears at the cursor; press Send yourself.
 9. For ordinary dictation, turn **Link to Interview Arc** off. The resulting
    text is inserted into the active app and the temporary recording is deleted.

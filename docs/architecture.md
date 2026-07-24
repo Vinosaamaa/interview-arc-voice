@@ -2,12 +2,16 @@
 
 ## Linked practice flow
 
-1. Read the focused Interview Arc activity through the authenticated API.
+1. Refresh and cache the focused Interview Arc activity through the
+   authenticated API while idle.
 2. Resolve a deterministic vocabulary prompt from explicit terms, stored pack
    IDs, metadata triggers, and the specialty base pack.
-3. Record one user answer as a continuous local M4A file.
-4. Produce a speech-optimized transcription derivative.
-5. Send the derivative and vocabulary prompt to Groq Large v3.
+3. Open the microphone immediately from the cached routing snapshot and record
+   one user answer as a continuous local M4A file.
+4. Reopen the finalized file and verify nonzero frames, write success, and
+   media duration against recording wall time.
+5. Produce a speech-optimized transcription derivative and send it with the
+   bounded vocabulary prompt to Groq Large v3.
 6. Insert the plain transcript plus a Markdown comment envelope containing its
    activity and turn IDs into the captured editor. Voice activates the captured
    application, snapshots the macOS pasteboard, posts a real Command-V through
@@ -23,6 +27,13 @@
 
 R2 upload and delivery analysis continue after visible cursor insertion.
 Failures enter a local retry queue.
+
+The normal transcription path performs one provider request. Existing response
+metadata is checked without another network call. A concrete failure,
+incomplete provider result, implausible duration, known prompt leakage, or
+missing output triggers exactly one unprompted retry. If the retry is also
+suspicious, Voice does not claim success; it retains the original audio and
+offers Play, Save, and Retry.
 
 The user sends the inserted text through the visible Codex task. The rendered
 message shows the answer while the specialist receives the comment envelope and
@@ -44,11 +55,12 @@ general route:
    guarded paste-event path described above. If paste dispatch is unavailable,
    use direct Accessibility replacement only when the resulting `AXValue`
    exactly matches the expected UTF-16 edit.
-4. Delete the temporary audio on success or failure.
+4. Delete the temporary audio after a trustworthy result. Preserve it for
+   explicit recovery when recording or transcription integrity fails.
 
 This route never calls the Interview Arc capture, audio, delivery-analysis, or
-Codex APIs. Automatic context refresh happens again before every recording, so
-the route is based on the current activity rather than stale launch-time state.
+Codex APIs. Automatic one-second context refresh keeps the next capture's
+routing snapshot current without delaying microphone start.
 
 ## Vocabulary resolution without runtime AI
 
