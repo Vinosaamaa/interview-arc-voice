@@ -170,3 +170,34 @@ destination and re-enters the linked pipeline with the same activity context.
 These checks do not add a second transcription call to healthy recordings.
 They run from the recorder's existing local meter and the finalized-file
 inspection that already guarded the provider boundary.
+
+## Recurrence-fix packaged verification
+
+Pull request 18 and merged-main run `30106887060` passed the complete Swift
+test-and-package workflow. The downloaded merged-main application passed
+strict code-signature verification and package-resource verification before it
+replaced the installed application. The installed executable SHA-256 was
+`46471a47b9da85096ceb94595959d06315a444d6f437991895b431da8e1f5bdb`.
+
+The exact installed artifact then completed a real desktop smoke test:
+
+- linking off rendered the visible dark-blue broken chain;
+- auto-link on with no running activity rendered the same chain geometry with
+  the amber waiting badge and clearly stayed in general fallback;
+- the live microphone meter reacted immediately during an 11-second capture;
+- the finalized audio reached Groq and returned a punctuated transcript;
+- Play widened the widget into its elapsed/total-time seek control and returned
+  to compact mode when playback completed; and
+- Copy, Save, and Record remained individually discoverable and accessible.
+
+No Interview Arc activity was running during this verification, so the release
+test intentionally did not create a synthetic production attempt or R2 object.
+Linked retry routing is covered by the merged control-flow repair and CI;
+production D1/R2 verification remains part of the next real linked practice
+turn rather than contaminating the user's journal with test data.
+
+The desktop automation harness activates an application before interacting with
+it, so it cannot faithfully preserve a user's editor focus while clicking a
+nonactivating floating panel. The test therefore verifies capture,
+transcription, playback, icon states, and recovery affordances without making a
+new direct-cursor claim beyond the established insertion regression suite.
