@@ -2,6 +2,14 @@ import XCTest
 @testable import InterviewArcVoiceCore
 
 final class KeychainStoreTests: XCTestCase {
+    func testCredentialReadinessRequiresANonemptyGroqKey() {
+        let policy = CredentialReadinessPolicy()
+
+        XCTAssertEqual(policy.readiness(groqAPIKey: ""), .missingGroqAPIKey)
+        XCTAssertEqual(policy.readiness(groqAPIKey: " \n\t "), .missingGroqAPIKey)
+        XCTAssertEqual(policy.readiness(groqAPIKey: "gsk_saved"), .ready)
+    }
+
     func testCredentialRoundTripsThroughKeychain() throws {
         let store = KeychainStore(service: "dev.interviewarc.voice.tests.\(UUID().uuidString)")
         defer { try? store.remove(.groqAPIKey) }

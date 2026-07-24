@@ -80,7 +80,8 @@ timing or transport controls. Long activity names truncate on one line.
 - All three states use the same hollow chain geometry, size, orientation,
   stroke cap, and stroke weight.
 - `linked`: intact hollow teal chain.
-- `waiting`: intact hollow teal chain with a small restrained status dot.
+- `waiting`: intact hollow teal chain. Context is communicated by the title and
+  accessibility label rather than by drawing a different badge on the icon.
 - `off`: the same chain split at its center, rendered as a hollow dark-blue
   broken chain.
 - Never fake the broken state by drawing a filled slash over a chain.

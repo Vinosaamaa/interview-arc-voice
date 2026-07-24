@@ -45,6 +45,21 @@ public struct CredentialCandidateSelectionPolicy: Sendable {
     }
 }
 
+public enum CredentialReadiness: Equatable, Sendable {
+    case ready
+    case missingGroqAPIKey
+}
+
+public struct CredentialReadinessPolicy: Sendable {
+    public init() {}
+
+    public func readiness(groqAPIKey: String) -> CredentialReadiness {
+        groqAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? .missingGroqAPIKey
+            : .ready
+    }
+}
+
 public struct KeychainStore: Sendable {
     private let service: String
 
