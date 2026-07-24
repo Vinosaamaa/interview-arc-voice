@@ -1,5 +1,21 @@
 import Foundation
 
+public struct FloatingWidgetDisclosureState: Equatable, Sendable {
+    public let timerPanelExpanded: Bool
+    public let finishingActivityID: String?
+    public let activityPickerExpanded: Bool
+
+    public init(
+        timerPanelExpanded: Bool,
+        finishingActivityID: String?,
+        activityPickerExpanded: Bool
+    ) {
+        self.timerPanelExpanded = timerPanelExpanded
+        self.finishingActivityID = finishingActivityID
+        self.activityPickerExpanded = activityPickerExpanded
+    }
+}
+
 public enum FloatingWidgetWindowPolicy {
     public static let hostIsOpaque = false
     public static let usesNativeWindowShadow = false
@@ -14,4 +30,11 @@ public enum FloatingWidgetWindowPolicy {
     public static let recorderIsBottomSurface = true
     public static let expandsUpward = true
     public static let timerDisclosureAvailableDuringPlayback = true
+    public static let timerPanelContentAnchorsToCapsule = true
+
+    public static func disclosureStateWhenRecordingStarts(
+        current: FloatingWidgetDisclosureState
+    ) -> FloatingWidgetDisclosureState {
+        current
+    }
 }

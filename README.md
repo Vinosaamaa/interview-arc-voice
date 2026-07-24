@@ -84,8 +84,10 @@ Save, and Retry instead of being discarded.
   latest capture, offers a native filename/location save dialog with an
   optional sibling transcript, and replaces its activity label with a live
   waveform while recording. Its timer surface, activity picker, and finish
-  drawer grow upward from the fixed bottom capsule. Playback keeps seek,
-  pause/resume, Stop, and timer-disclosure controls available.
+  drawer grow upward from the fixed bottom capsule across a true 10-point
+  visible gap. Recording preserves their current open or closed state.
+  Playback keeps seek, pause/resume, Stop, and timer-disclosure controls
+  available.
 - The permanent widget visual and interaction contract is
   [`design-system/pages/floating-widget.md`](design-system/pages/floating-widget.md).
 - Agents changing any visible Voice interface must begin with
