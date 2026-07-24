@@ -76,12 +76,15 @@ Save, and Retry instead of being discarded.
   Settings.
 - The menu panel is fixed at 260 points wide. The always-on-top recorder is a
   layered 250-by-40-point capsule that smoothly widens to 360 points for
-  seekable playback, then returns to its compact state. It uses a filled teal chain for an active
-  Interview Arc link, an amber chain for general fallback, and a dark-blue
-  broken chain when linking is off. The capsule exposes Play, Copy, and Save for the
+  seekable playback, then returns to its compact state. It uses one hollow
+  chain icon family: an intact teal chain for an active Interview Arc link, a
+  quieter intact chain while link mode waits for a focused activity, and a
+  dark-blue hollow broken chain when linking is off. The capsule exposes Play, Copy, and Save for the
   latest capture, offers a native filename/location save dialog with an
   optional sibling transcript, and replaces its activity label with a live
   waveform while recording.
+- The permanent widget visual and interaction contract is
+  [`design-system/pages/floating-widget.md`](design-system/pages/floating-widget.md).
 - Cheap local audio checks run for every capture. Normal audio uses exactly one
   speech-to-text request. Only a provider failure or concrete integrity signal
   triggers one unprompted retry.
@@ -171,6 +174,8 @@ The long-dictation integrity analysis and repair record is in
 [`docs/postmortems/2026-07-24-long-dictation-transcript-integrity.md`](docs/postmortems/2026-07-24-long-dictation-transcript-integrity.md).
 The packaged capture regression and recovery-policy repair are documented in
 [`docs/postmortems/2026-07-24-header-only-recording-regression.md`](docs/postmortems/2026-07-24-header-only-recording-regression.md).
+The Keychain readiness and empty-credential repair is documented in
+[`docs/postmortems/2026-07-24-keychain-readiness-regression.md`](docs/postmortems/2026-07-24-keychain-readiness-regression.md).
 
 ## Provider and terminology references
 

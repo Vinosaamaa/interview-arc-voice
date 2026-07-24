@@ -252,12 +252,12 @@ final class VoiceBridgeModel: ObservableObject {
     }
     var linkStatusColor: Color {
         if !linkToInterviewArc {
-            return Color(red: 0.08, green: 0.20, blue: 0.42)
+            return Color(red: 0.090, green: 0.227, blue: 0.408)
         }
         if context?.focusedActivity == nil {
-            return Color(red: 0.92, green: 0.64, blue: 0.22)
+            return Color(red: 0.20, green: 0.48, blue: 0.47)
         }
-        return Color(red: 0.40, green: 0.84, blue: 0.79)
+        return Color(red: 0.078, green: 0.557, blue: 0.537)
     }
     var linkStatusAccessibilityLabel: String {
         if !linkToInterviewArc { return "General dictation. Interview Arc linking is off." }
@@ -269,7 +269,7 @@ final class VoiceBridgeModel: ObservableObject {
         return false
     }
     var floatingWidth: CGFloat {
-        isPlaybackExpanded || isFailurePresented ? 360 : 250
+        isPlaybackExpanded ? 360 : 250
     }
 
     init() {
@@ -530,6 +530,9 @@ final class VoiceBridgeModel: ObservableObject {
         do {
             let submittedToken = connectionTokenDraft.trimmingCharacters(in: .whitespacesAndNewlines)
             let submittedGroqKey = groqKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !submittedGroqKey.isEmpty else {
+                throw VoiceBridgeError.missingCredential("Groq API key")
+            }
             try keychain.set(submittedToken, for: .interviewArcToken)
             try keychain.set(submittedGroqKey, for: .groqAPIKey)
             let savedToken = try keychain.value(for: .interviewArcToken)
@@ -537,7 +540,8 @@ final class VoiceBridgeModel: ObservableObject {
             let verification = CredentialSaveVerificationPolicy()
             guard verification.isVerified(
                 submittedValue: submittedToken,
-                retrievedValue: savedToken
+                retrievedValue: savedToken,
+                permitsEmpty: true
             ) else {
                 throw CredentialPersistenceError(credential: .interviewArcToken)
             }
