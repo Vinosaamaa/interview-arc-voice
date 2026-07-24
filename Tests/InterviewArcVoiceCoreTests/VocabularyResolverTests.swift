@@ -94,6 +94,32 @@ import Testing
     let result = TranscriptAssembler.assemble([(chunk, response)])
 
     #expect(result.text == "We use Dijkstra's algorithm, then relax edges.")
+    #expect(result.words.count == 9)
+}
+
+@Test func transcriptAssemblerDoesNotTruncateToSparseWordTimestamps() {
+    let chunk = AudioChunk(
+        url: URL(fileURLWithPath: "/tmp/long-answer.m4a"),
+        offsetSeconds: 0,
+        durationSeconds: 120,
+        isTemporary: false
+    )
+    let response = GroqTranscription(
+        text: "This is the complete long answer, including the closing marker omega.",
+        language: "en",
+        duration: 120,
+        words: [
+            TranscriptWord(word: "This", start: 0, end: 0.2),
+            TranscriptWord(word: "is", start: 0.25, end: 0.4),
+            TranscriptWord(word: "the", start: 0.45, end: 0.6),
+        ],
+        segments: nil
+    )
+
+    let result = TranscriptAssembler.assemble([(chunk, response)])
+
+    #expect(result.text == response.text)
+    #expect(result.words.count == 3)
 }
 
 @Test func transcriptAssemblerRemovesChunkOverlap() {
@@ -153,7 +179,7 @@ import Testing
 
 private actor StubTranscriber: SpeechTranscribing {
     func transcribe(fileURL: URL, prompt: String, temporaryDirectory: URL) async throws -> TranscriptionResult {
-        #expect(prompt.contains("general dictation"))
+        #expect(prompt.isEmpty)
         return TranscriptionResult(
             text: "verbatim test transcript",
             words: [],

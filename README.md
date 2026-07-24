@@ -143,6 +143,9 @@ local signature. GitHub Actions runs the full Xcode-backed test and packaging
 job for every pull request. See `docs/architecture.md` and
 `docs/protocol-v1.md` for the data flow and boundary decisions.
 
+The long-dictation integrity analysis and repair record is in
+[`docs/postmortems/2026-07-24-long-dictation-transcript-integrity.md`](docs/postmortems/2026-07-24-long-dictation-transcript-integrity.md).
+
 ## Provider and terminology references
 
 - [Groq Speech to Text](https://console.groq.com/docs/speech-to-text)

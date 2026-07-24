@@ -440,6 +440,8 @@ struct FloatingRecorderView: View {
             if model.isRecording {
                 LiveVoiceWaveform(recorder: model.recorder)
                 RecordingClock(recorder: model.recorder, compact: true)
+            } else if model.isBusy {
+                processingLabel
             } else {
                 activityLabel
             }
@@ -479,19 +481,44 @@ struct FloatingRecorderView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var processingLabel: some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.small)
+            Text(model.processingStatus)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityLabel(model.processingStatus)
+    }
+
     private var recordButton: some View {
         Button(action: model.toggleRecording) {
             ZStack {
-                Circle().fill(model.isRecording ? Color(red: 0.96, green: 0.29, blue: 0.25) : Color(red: 0.40, green: 0.84, blue: 0.79))
-                Image(systemName: model.isRecording ? "stop.fill" : "mic.fill")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(Color(red: 0.04, green: 0.16, blue: 0.15))
+                Circle().fill(
+                    model.isRecording
+                        ? Color(red: 0.96, green: 0.29, blue: 0.25)
+                        : (model.isBusy ? Color.secondary.opacity(0.22) : Color(red: 0.40, green: 0.84, blue: 0.79))
+                )
+                if model.isBusy {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: model.isRecording ? "stop.fill" : "mic.fill")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Color(red: 0.04, green: 0.16, blue: 0.15))
+                }
             }
             .frame(width: 36, height: 36)
         }
         .buttonStyle(.plain)
         .disabled(!model.isRecording && !model.canRecord)
-        .accessibilityLabel(model.isRecording ? "Stop recording" : "Start recording")
+        .accessibilityLabel(
+            model.isBusy
+                ? model.processingStatus
+                : (model.isRecording ? "Stop recording" : "Start recording")
+        )
     }
 
 }
