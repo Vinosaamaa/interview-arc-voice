@@ -18,10 +18,30 @@ public struct CredentialSaveVerificationPolicy: Sendable {
 
     public func isVerified(
         submittedValue: String,
-        retrievedValue: String?
+        retrievedValue: String?,
+        permitsEmpty: Bool = false
     ) -> Bool {
-        submittedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let submitted = submittedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard permitsEmpty || !submitted.isEmpty else { return false }
+        return submitted
             == retrievedValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+public struct CredentialCandidateSelectionPolicy: Sendable {
+    public init() {}
+
+    public func preferredValue(
+        primary: String?,
+        legacyCandidates: [String]
+    ) -> String? {
+        let normalizedPrimary = primary?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let normalizedPrimary, !normalizedPrimary.isEmpty {
+            return normalizedPrimary
+        }
+        return legacyCandidates.lazy
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
     }
 }
 
@@ -33,6 +53,30 @@ public struct KeychainStore: Sendable {
     }
 
     public func value(for credential: VoiceCredential) throws -> String? {
+        let primary = try primaryValue(for: credential)
+        let selection = CredentialCandidateSelectionPolicy()
+        if let preferred = selection.preferredValue(
+            primary: primary,
+            legacyCandidates: []
+        ) {
+            return preferred
+        }
+
+        let recovered = selection.preferredValue(
+            primary: primary,
+            legacyCandidates: try legacyValues(for: credential)
+        )
+        if let recovered {
+            // Older packaged builds relied on the Keychain search list rather
+            // than explicitly targeting the login Keychain. Preserve that
+            // existing credential by copying it into the current canonical
+            // item after a successful read.
+            try set(recovered, for: credential)
+        }
+        return recovered
+    }
+
+    private func primaryValue(for credential: VoiceCredential) throws -> String? {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -48,6 +92,26 @@ public struct KeychainStore: Sendable {
             throw KeychainError(status: status)
         }
         return String(data: data, encoding: .utf8)
+    }
+
+    private func legacyValues(for credential: VoiceCredential) throws -> [String] {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: credential.rawValue,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+        ]
+        var items: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &items)
+        if status == errSecItemNotFound { return [] }
+        guard status == errSecSuccess else { throw KeychainError(status: status) }
+        if let data = items as? Data {
+            return String(data: data, encoding: .utf8).map { [$0] } ?? []
+        }
+        return (items as? [Data] ?? []).compactMap {
+            String(data: $0, encoding: .utf8)
+        }
     }
 
     public func set(_ value: String, for credential: VoiceCredential) throws {

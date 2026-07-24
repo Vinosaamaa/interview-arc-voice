@@ -3,6 +3,11 @@
 Read `README.md`, `docs/architecture.md`, and `docs/protocol-v1.md` before
 changing this repository.
 
+Before changing the always-on-top recorder, its status icons, macOS panel
+shape, playback expansion, or recovery popover, also read and follow
+`design-system/pages/floating-widget.md`. That page-specific contract overrides
+the generic design-system master for the widget.
+
 ## Scope
 
 This repository owns the native macOS recording client only. The sibling

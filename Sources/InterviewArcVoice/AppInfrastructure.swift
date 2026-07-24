@@ -11,6 +11,22 @@ private let textInjectionLogger = Logger(
     category: "TextInjection"
 )
 
+enum VoiceWidgetPalette {
+    static let glass = Color(red: 0.957, green: 0.980, blue: 0.980)
+    static let glassHighlight = Color.white
+    static let coolBorder = Color(red: 0.784, green: 0.855, blue: 0.859)
+    static let timerSurface = Color(red: 0.898, green: 0.953, blue: 0.949)
+    static let teal = Color(red: 0.078, green: 0.557, blue: 0.537)
+    static let tealDark = Color(red: 0.031, green: 0.482, blue: 0.467)
+    static let tealGlow = Color(red: 0.749, green: 0.929, blue: 0.910)
+    static let ink = Color(red: 0.090, green: 0.165, blue: 0.196)
+    static let secondaryInk = Color(red: 0.345, green: 0.439, blue: 0.455)
+    static let divider = Color(red: 0.729, green: 0.800, blue: 0.804)
+    static let coolShadow = Color(red: 0.333, green: 0.482, blue: 0.490).opacity(0.16)
+    static let linkOff = Color(red: 0.090, green: 0.227, blue: 0.408)
+    static let warning = Color(red: 0.722, green: 0.353, blue: 0.196)
+}
+
 struct HotKeyShortcut: Codable, Equatable, Sendable {
     let keyCode: UInt32
     let carbonModifiers: UInt32
@@ -403,7 +419,7 @@ final class FloatingPanelController {
             return
         }
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 250, height: 40),
+            contentRect: NSRect(x: 0, y: 0, width: 250, height: 56),
             styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -423,12 +439,13 @@ final class FloatingPanelController {
         let hostingView = NSHostingView(rootView: FloatingRecorderView(model: model))
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        hostingView.layer?.isOpaque = false
         panel.contentView = hostingView
         panel.setFrameAutosaveName("InterviewArcVoiceFloatingPanel")
         if !panel.setFrameUsingName("InterviewArcVoiceFloatingPanel") {
             panel.center()
         }
-        panel.setContentSize(NSSize(width: 250, height: 40))
+        panel.setContentSize(NSSize(width: 250, height: 56))
         panel.orderFrontRegardless()
         self.panel = panel
     }
@@ -454,6 +471,52 @@ final class FloatingPanelController {
                 panel.animator().setFrame(frame, display: true)
             }
         }
+    }
+}
+
+private struct FrostedInstrumentCapsule: View {
+    var body: some View {
+        ZStack {
+            InstrumentBlurView()
+            Capsule(style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            VoiceWidgetPalette.glassHighlight.opacity(0.58),
+                            VoiceWidgetPalette.glass.opacity(0.72),
+                            VoiceWidgetPalette.timerSurface.opacity(0.36),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            Capsule(style: .continuous)
+                .stroke(VoiceWidgetPalette.coolBorder.opacity(0.90), lineWidth: 0.9)
+            Capsule(style: .continuous)
+                .inset(by: 1.4)
+                .stroke(VoiceWidgetPalette.glassHighlight.opacity(0.72), lineWidth: 0.7)
+        }
+        .clipShape(Capsule(style: .continuous))
+    }
+}
+
+private struct InstrumentBlurView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .popover
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.wantsLayer = true
+        view.layer?.cornerRadius = 20
+        view.layer?.cornerCurve = .continuous
+        view.layer?.masksToBounds = true
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        view.layer?.cornerRadius = 20
+        view.layer?.masksToBounds = true
     }
 }
 
@@ -503,26 +566,16 @@ struct FloatingRecorderView: View {
             }
             recordButton
         }
-        .padding(.horizontal, 3)
+        .padding(.horizontal, 4)
         .frame(width: model.floatingWidth, height: 40)
-        .background(.ultraThinMaterial, in: Capsule(style: .continuous))
         .background(
-            Capsule(style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.18),
-                            Color(red: 0.78, green: 0.92, blue: 0.90).opacity(0.08),
-                            Color.black.opacity(0.04),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            FrostedInstrumentCapsule()
         )
         .clipShape(Capsule(style: .continuous))
         .contentShape(Capsule(style: .continuous))
-        .shadow(color: Color.black.opacity(0.20), radius: 9, y: 4)
+        .shadow(color: VoiceWidgetPalette.coolShadow, radius: 7, y: 3)
+        .padding(.vertical, 8)
+        .frame(width: model.floatingWidth, height: 56)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: model.floatingWidth)
         .onChange(of: model.floatingWidth) { _, width in
             FloatingPanelController.shared.setWidth(
@@ -534,22 +587,14 @@ struct FloatingRecorderView: View {
 
     private var linkButton: some View {
         Button(action: model.toggleLinkMode) {
-            ZStack {
-                Circle()
-                    .fill(
-                        model.linkPresentationState == .off
-                            ? Color(red: 0.82, green: 0.88, blue: 0.97).opacity(0.72)
-                            : model.linkStatusColor.opacity(0.14)
-                    )
-                LinkStatusIcon(
-                    state: model.linkPresentationState,
-                    color: model.linkStatusColor,
-                    size: 19
-                )
-            }
+            LinkStatusIcon(
+                state: model.linkPresentationState,
+                color: model.linkStatusColor,
+                size: 19
+            )
             .frame(width: 28, height: 28)
         }
-        .buttonStyle(LayeredWidgetButtonStyle(tint: model.linkStatusColor))
+        .buttonStyle(.plain)
         .frame(width: 28, height: 36)
         .voiceHoverFeedback(
             enabled: !model.isRecording,
@@ -562,15 +607,10 @@ struct FloatingRecorderView: View {
     }
 
     private var activityLabel: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(model.floatingEyebrow)
-                .font(.system(size: 8, weight: .bold, design: .rounded))
-                .tracking(0.8)
-                .foregroundStyle(.secondary)
-            Text(model.floatingTitle)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .lineLimit(1)
-        }
+        Text(model.floatingTitle)
+            .font(.system(size: 12, weight: .semibold, design: .default))
+            .foregroundStyle(VoiceWidgetPalette.ink)
+            .lineLimit(1)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -718,17 +758,37 @@ struct FloatingRecorderView: View {
     private var recordButton: some View {
         Button(action: model.toggleRecording) {
             ZStack {
-                Circle().fill(
-                    model.isRecording
-                        ? Color(red: 0.96, green: 0.29, blue: 0.25)
-                        : (model.isBusy ? Color.secondary.opacity(0.22) : Color(red: 0.40, green: 0.84, blue: 0.79))
-                )
+                Circle()
+                    .fill(recordHaloColor.opacity(model.isBusy ? 0.12 : 0.46))
+                    .frame(width: 38, height: 38)
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.94),
+                                recordFaceColor.opacity(0.72),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay(
+                        Circle()
+                            .stroke(
+                                model.isBusy
+                                    ? VoiceWidgetPalette.coolBorder
+                                    : recordIconColor.opacity(0.72),
+                                lineWidth: 1
+                            )
+                    )
+                    .shadow(color: recordHaloColor.opacity(0.34), radius: 4, y: 2)
+                    .frame(width: 32, height: 32)
                 if model.isBusy {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: model.isRecording ? "stop.fill" : "mic.fill")
                         .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(Color(red: 0.04, green: 0.16, blue: 0.15))
+                        .foregroundStyle(recordIconColor)
                 }
             }
             .frame(width: 36, height: 36)
@@ -752,6 +812,18 @@ struct FloatingRecorderView: View {
         )
     }
 
+    private var recordHaloColor: Color {
+        model.isRecording ? Color(red: 0.96, green: 0.29, blue: 0.25) : VoiceWidgetPalette.tealGlow
+    }
+
+    private var recordFaceColor: Color {
+        model.isRecording ? Color(red: 1.00, green: 0.78, blue: 0.76) : VoiceWidgetPalette.timerSurface
+    }
+
+    private var recordIconColor: Color {
+        model.isRecording ? Color(red: 0.72, green: 0.12, blue: 0.10) : VoiceWidgetPalette.tealDark
+    }
+
 }
 
 private struct FailureRecoveryPopover: View {
@@ -759,33 +831,35 @@ private struct FailureRecoveryPopover: View {
 
     var body: some View {
         if let failure = model.failureNotice {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 11) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 8) {
                     ZStack {
-                        Circle().fill(Color.orange.opacity(0.12))
+                        Circle().fill(VoiceWidgetPalette.warning.opacity(0.10))
                         Image(systemName: "exclamationmark.triangle")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundStyle(Color(red: 0.86, green: 0.30, blue: 0.20))
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(VoiceWidgetPalette.warning)
                     }
-                    .frame(width: 42, height: 42)
-                    VStack(alignment: .leading, spacing: 3) {
+                    .frame(width: 28, height: 28)
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(failure.title)
-                            .font(.headline)
+                            .font(.caption.weight(.bold))
+                            .lineLimit(1)
                         Text(failure.message)
-                            .font(.subheadline)
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
+                            .lineLimit(2)
                     }
                     Spacer()
                     Button(action: model.dismissFailure) {
                         Image(systemName: "xmark")
-                            .frame(width: 22, height: 22)
+                            .frame(width: 18, height: 18)
                     }
                     .buttonStyle(.borderless)
                     .voiceHoverFeedback(cornerRadius: 7)
                     .accessibilityLabel("Dismiss failure")
                 }
 
-                HStack(spacing: 8) {
+                VStack(spacing: 6) {
                     ForEach(failure.actions, id: \.self) { action in
                         if action == failure.actions.first {
                             failureActionButton(action)
@@ -797,24 +871,17 @@ private struct FailureRecoveryPopover: View {
                     }
                 }
 
-                Divider()
-
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("WHAT HAPPENED")
-                        .font(.caption2.weight(.bold))
-                        .tracking(0.8)
-                        .foregroundStyle(.secondary)
+                DisclosureGroup("Details") {
                     Text(failure.detail)
-                        .font(.caption)
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
-                    Text("Kept until dismissed or a new recording succeeds")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .padding(.top, 4)
                 }
+                .font(.caption2.weight(.semibold))
             }
-            .padding(16)
-            .frame(width: 430)
+            .padding(11)
+            .frame(width: 232)
         }
     }
 
@@ -898,29 +965,20 @@ struct LinkStatusIcon: View {
                 .font(.system(size: size, weight: .semibold))
             if state == .off {
                 Capsule(style: .continuous)
-                    .fill(Color(red: 0.82, green: 0.88, blue: 0.97))
-                    .frame(width: 4.6, height: size + 7)
+                    .fill(Color.black)
+                    .frame(width: 3.2, height: size + 8)
                     .rotationEffect(.degrees(42))
+                    .blendMode(.destinationOut)
             }
             if state == .waiting {
                 Circle()
                     .fill(color)
                     .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1))
-                    .frame(width: max(6, size * 0.38), height: max(6, size * 0.38))
+                    .frame(width: max(5, size * 0.30), height: max(5, size * 0.30))
                     .offset(x: size * 0.36, y: -size * 0.36)
             }
-            if state == .linked {
-                ZStack {
-                    Circle().fill(color)
-                    Image(systemName: "checkmark")
-                        .font(.system(size: max(5, size * 0.28), weight: .black))
-                        .foregroundStyle(.white)
-                }
-                .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1))
-                .frame(width: max(7, size * 0.43), height: max(7, size * 0.43))
-                .offset(x: size * 0.36, y: -size * 0.36)
-            }
         }
+        .compositingGroup()
         .foregroundStyle(color)
     }
 }

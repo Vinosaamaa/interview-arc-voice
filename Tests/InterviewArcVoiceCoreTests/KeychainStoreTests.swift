@@ -34,5 +34,30 @@ final class KeychainStoreTests: XCTestCase {
                 retrievedValue: "different-value"
             )
         )
+        XCTAssertFalse(
+            policy.isVerified(
+                submittedValue: " \n ",
+                retrievedValue: ""
+            ),
+            "An empty Keychain item must not be accepted as a saved credential."
+        )
+        XCTAssertTrue(
+            policy.isVerified(
+                submittedValue: "",
+                retrievedValue: "",
+                permitsEmpty: true
+            ),
+            "The optional Interview Arc token may remain empty for general dictation."
+        )
+    }
+
+    func testCredentialRecoveryPrefersAUsableLegacyCandidateOverAnEmptyPrimaryItem() {
+        XCTAssertEqual(
+            CredentialCandidateSelectionPolicy().preferredValue(
+                primary: "",
+                legacyCandidates: ["", "  ", "gsk_recovered_value"]
+            ),
+            "gsk_recovered_value"
+        )
     }
 }
