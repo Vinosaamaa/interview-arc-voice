@@ -432,9 +432,8 @@ final class FloatingPanelController {
         panel.isVisible ? panel.orderOut(nil) : panel.orderFrontRegardless()
     }
 
-    func setPlaybackExpanded(_ expanded: Bool, reduceMotion: Bool) {
+    func setWidth(_ width: CGFloat, reduceMotion: Bool) {
         guard let panel else { return }
-        let width: CGFloat = expanded ? 360 : 250
         guard abs(panel.frame.width - width) > 0.5 else { return }
         var frame = panel.frame
         let rightEdge = frame.maxX
@@ -460,10 +459,16 @@ struct FloatingRecorderView: View {
         HStack(spacing: 6) {
             linkButton
             if model.isRecording {
-                LiveVoiceWaveform(recorder: model.recorder)
+                if model.recorder.signalHealth == .absent {
+                    microphoneSignalWarning
+                } else {
+                    LiveVoiceWaveform(recorder: model.recorder)
+                }
                 RecordingClock(recorder: model.recorder, compact: true)
             } else if model.isPlaybackExpanded {
                 playbackControls
+            } else if model.isFailurePresented {
+                failureControls
             } else if model.isBusy, model.showProcessingIndicator {
                 processingLabel
             } else {
@@ -493,7 +498,7 @@ struct FloatingRecorderView: View {
             recordButton
         }
         .padding(.horizontal, 3)
-        .frame(width: model.isPlaybackExpanded ? 360 : 250, height: 40)
+        .frame(width: model.floatingWidth, height: 40)
         .background(
             Capsule(style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -511,13 +516,12 @@ struct FloatingRecorderView: View {
                             )
                         )
                 )
-                .overlay(Capsule(style: .continuous).stroke(Color.white.opacity(0.34), lineWidth: 0.8))
                 .shadow(color: Color.black.opacity(0.20), radius: 9, y: 4)
         )
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: model.isPlaybackExpanded)
-        .onChange(of: model.isPlaybackExpanded) { _, expanded in
-            FloatingPanelController.shared.setPlaybackExpanded(
-                expanded,
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: model.floatingWidth)
+        .onChange(of: model.floatingWidth) { _, width in
+            FloatingPanelController.shared.setWidth(
+                width,
                 reduceMotion: reduceMotion
             )
         }
@@ -528,13 +532,12 @@ struct FloatingRecorderView: View {
             ZStack {
                 Circle()
                     .fill(
-                        model.linkToInterviewArc
-                            ? model.linkStatusColor.opacity(0.14)
-                            : Color(red: 0.72, green: 0.82, blue: 0.96).opacity(0.42)
+                        model.linkPresentationState == .off
+                            ? Color(red: 0.82, green: 0.88, blue: 0.97).opacity(0.72)
+                            : model.linkStatusColor.opacity(0.14)
                     )
                 LinkStatusIcon(
-                    isLinked: model.linkToInterviewArc,
-                    symbol: model.linkStatusSymbol,
+                    state: model.linkPresentationState,
                     color: model.linkStatusColor,
                     size: 19
                 )
@@ -575,6 +578,55 @@ struct FloatingRecorderView: View {
         }
         .frame(maxWidth: .infinity)
         .accessibilityLabel(model.processingStatus)
+    }
+
+    private var microphoneSignalWarning: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "waveform.slash")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Color(red: 0.86, green: 0.30, blue: 0.20))
+            Text("No microphone signal")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .lineLimit(1)
+                .foregroundStyle(Color(red: 0.62, green: 0.20, blue: 0.14))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityLabel("No microphone signal detected")
+    }
+
+    private var failureControls: some View {
+        HStack(spacing: 5) {
+            Button(action: model.showFailureDetails) {
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color(red: 0.86, green: 0.30, blue: 0.20))
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(model.failureNotice?.title.uppercased() ?? "NEEDS ATTENTION")
+                            .font(.system(size: 8, weight: .bold, design: .rounded))
+                            .tracking(0.6)
+                            .foregroundStyle(.secondary)
+                        Text(model.failureNotice?.message ?? "Open details for recovery")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .voiceHoverFeedback(cornerRadius: 8, tint: .orange)
+            .popover(isPresented: $model.failureDetailsPresented, arrowEdge: .bottom) {
+                FailureRecoveryPopover(model: model)
+            }
+            ForEach(Array((model.failureNotice?.actions ?? []).prefix(2)), id: \.self) { action in
+                memoButton(
+                    symbol: failureSymbol(action),
+                    label: failureLabel(action),
+                    action: { model.performFailureAction(action) }
+                )
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var playbackControls: some View {
@@ -633,6 +685,31 @@ struct FloatingRecorderView: View {
         .accessibilityLabel(label)
     }
 
+    private func failureSymbol(_ action: VoiceFailureAction) -> String {
+        switch action {
+        case .recordAgain: "arrow.counterclockwise"
+        case .retryTranscription, .retryConnection: "arrow.clockwise"
+        case .playRecording: "play.fill"
+        case .saveRecording: "square.and.arrow.down"
+        case .insertAgain: "text.cursor"
+        case .enableAccessibility: "hand.raised.fill"
+        case .openSettings: "gearshape.fill"
+        }
+    }
+
+    private func failureLabel(_ action: VoiceFailureAction) -> String {
+        switch action {
+        case .recordAgain: "Record again"
+        case .retryTranscription: "Retry transcription"
+        case .playRecording: "Play recording"
+        case .saveRecording: "Save recording"
+        case .insertAgain: "Insert transcript again"
+        case .enableAccessibility: "Enable Accessibility"
+        case .openSettings: "Open settings"
+        case .retryConnection: "Retry Interview Arc connection"
+        }
+    }
+
     private var recordButton: some View {
         Button(action: model.toggleRecording) {
             ZStack {
@@ -672,6 +749,108 @@ struct FloatingRecorderView: View {
 
 }
 
+private struct FailureRecoveryPopover: View {
+    @ObservedObject var model: VoiceBridgeModel
+
+    var body: some View {
+        if let failure = model.failureNotice {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 11) {
+                    ZStack {
+                        Circle().fill(Color.orange.opacity(0.12))
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(Color(red: 0.86, green: 0.30, blue: 0.20))
+                    }
+                    .frame(width: 42, height: 42)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(failure.title)
+                            .font(.headline)
+                        Text(failure.message)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(action: model.dismissFailure) {
+                        Image(systemName: "xmark")
+                            .frame(width: 22, height: 22)
+                    }
+                    .buttonStyle(.borderless)
+                    .voiceHoverFeedback(cornerRadius: 7)
+                    .accessibilityLabel("Dismiss failure")
+                }
+
+                HStack(spacing: 8) {
+                    ForEach(failure.actions, id: \.self) { action in
+                        if action == failure.actions.first {
+                            failureActionButton(action)
+                                .buttonStyle(.borderedProminent)
+                        } else {
+                            failureActionButton(action)
+                                .buttonStyle(.bordered)
+                        }
+                    }
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("WHAT HAPPENED")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.8)
+                        .foregroundStyle(.secondary)
+                    Text(failure.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    Text("Kept until dismissed or a new recording succeeds")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(16)
+            .frame(width: 430)
+        }
+    }
+
+    private func failureActionButton(_ action: VoiceFailureAction) -> some View {
+        Button {
+            model.performFailureAction(action)
+        } label: {
+            Label(actionLabel(action), systemImage: actionSymbol(action))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+        }
+        .tint(Color(red: 0.08, green: 0.44, blue: 0.39))
+        .voiceHoverFeedback(cornerRadius: 8, tint: .teal)
+    }
+
+    private func actionSymbol(_ action: VoiceFailureAction) -> String {
+        switch action {
+        case .recordAgain: "arrow.counterclockwise"
+        case .retryTranscription, .retryConnection: "arrow.clockwise"
+        case .playRecording: "play.fill"
+        case .saveRecording: "square.and.arrow.down"
+        case .insertAgain: "text.cursor"
+        case .enableAccessibility: "hand.raised.fill"
+        case .openSettings: "gearshape.fill"
+        }
+    }
+
+    private func actionLabel(_ action: VoiceFailureAction) -> String {
+        switch action {
+        case .recordAgain: "Record again"
+        case .retryTranscription: "Retry"
+        case .playRecording: "Play"
+        case .saveRecording: "Save"
+        case .insertAgain: "Insert again"
+        case .enableAccessibility: "Enable access"
+        case .openSettings: "Settings"
+        case .retryConnection: "Retry connection"
+        }
+    }
+}
+
 private struct LayeredWidgetButtonStyle: ButtonStyle {
     let tint: Color
     var prominent = false
@@ -704,24 +883,37 @@ private struct LayeredWidgetButtonStyle: ButtonStyle {
 }
 
 struct LinkStatusIcon: View {
-    let isLinked: Bool
-    let symbol: String
+    let state: VoiceLinkPresentationState
     let color: Color
     let size: CGFloat
 
     var body: some View {
         ZStack {
-            Image(systemName: symbol)
-                .font(.system(size: size, weight: .bold))
-            if !isLinked {
+            Image(systemName: "link")
+                .font(.system(size: size, weight: .semibold))
+            if state == .off {
                 Capsule(style: .continuous)
-                    .fill(color)
-                    .frame(width: 2.2, height: size + 4)
+                    .fill(Color(red: 0.82, green: 0.88, blue: 0.97))
+                    .frame(width: 4.6, height: size + 7)
                     .rotationEffect(.degrees(42))
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .stroke(Color.white.opacity(0.75), lineWidth: 0.7)
-                    }
+            }
+            if state == .waiting {
+                Circle()
+                    .fill(color)
+                    .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1))
+                    .frame(width: max(6, size * 0.38), height: max(6, size * 0.38))
+                    .offset(x: size * 0.36, y: -size * 0.36)
+            }
+            if state == .linked {
+                ZStack {
+                    Circle().fill(color)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: max(5, size * 0.28), weight: .black))
+                        .foregroundStyle(.white)
+                }
+                .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1))
+                .frame(width: max(7, size * 0.43), height: max(7, size * 0.43))
+                .offset(x: size * 0.36, y: -size * 0.36)
             }
         }
         .foregroundStyle(color)
