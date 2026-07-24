@@ -29,9 +29,12 @@ available, one click:
 4. Transcribes with Groq `whisper-large-v3`, chunking only when required.
 5. Persists the exact user transcript turn in D1.
 6. Inserts the verbatim answer plus a Markdown comment envelope at the focused
-   text cursor without using the clipboard. The envelope identifies the D1 turn
-   so the specialist does not append it twice; the user reviews the answer and
-   presses Send.
+   text cursor. For renderer-backed web and Electron editors, Voice briefly
+   snapshots and replaces the macOS pasteboard so the editor receives a real
+   paste event, then restores the prior contents if no other app changed them.
+   The user never performs a manual copy/paste. The envelope identifies the D1
+   turn so the specialist does not append it twice; the user reviews the answer
+   and presses Send.
 7. Uploads the original M4A to private R2 and links it to the answer.
 8. Starts an ephemeral Delivery Coach task for observable speaking feedback.
 
@@ -42,9 +45,11 @@ the recording itself is never discarded.
 When linking is off—or when no usable Interview Arc activity is focused—Voice
 works as **general dictation**. It records to a temporary file, transcribes with
 Groq, inserts into the app that was active when recording began, and deletes the
-temporary audio. Voice never uses the clipboard. Direct insertion requires
-macOS Accessibility access; without it, Voice keeps the transcript available
-for **Insert again** and explains how to enable access.
+temporary audio. Voice uses a guarded transient pasteboard operation internally
+for editors that require a real paste event; it restores the prior contents and
+never leaves the transcript as the user's clipboard value. Direct insertion
+requires macOS Accessibility access; without it, Voice keeps the transcript
+available for **Insert again** and explains how to enable access.
 General dictation never writes transcript, audio, or coaching data to Interview
 Arc, D1, or R2.
 
@@ -82,8 +87,8 @@ your Interview Arc personal connection token.
    - Interview Arc repository: `/Users/wenkxu/Projects/Interview Prep/interview-arc`
    - Codex executable: `/Applications/ChatGPT.app/Contents/Resources/codex`
 5. Save. macOS stores both secrets in Keychain.
-6. Allow Accessibility when prompted so Voice can insert at the focused cursor
-   without using the clipboard.
+6. Allow Accessibility when prompted so Voice can activate the captured app and
+   insert at its focused cursor.
 
 The packaged app carries a stable local designated requirement for
 `app.interviewarc.voice`. After the first Accessibility grant, replacing the
@@ -143,6 +148,9 @@ local signature. GitHub Actions runs the full Xcode-backed test and packaging
 job for every pull request. See `docs/architecture.md` and
 `docs/protocol-v1.md` for the data flow and boundary decisions.
 
+The complete engineering record for the universal-insertion failure and repair
+is in
+[`docs/postmortems/2026-07-23-universal-dictation-insertion.md`](docs/postmortems/2026-07-23-universal-dictation-insertion.md).
 The long-dictation integrity analysis and repair record is in
 [`docs/postmortems/2026-07-24-long-dictation-transcript-integrity.md`](docs/postmortems/2026-07-24-long-dictation-transcript-integrity.md).
 
