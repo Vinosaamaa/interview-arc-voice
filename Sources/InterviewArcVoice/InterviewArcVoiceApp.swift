@@ -259,15 +259,12 @@ final class VoiceBridgeModel: ObservableObject {
             audioPlayer = player
             isPlayingLastAudio = true
             playbackTimer?.invalidate()
-            playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] timer in
+            playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
                 Task { @MainActor in
-                    guard let self else {
-                        timer.invalidate()
-                        return
-                    }
+                    guard let self else { return }
                     if self.audioPlayer?.isPlaying != true {
                         self.isPlayingLastAudio = false
-                        timer.invalidate()
+                        self.playbackTimer?.invalidate()
                         self.playbackTimer = nil
                     }
                 }
@@ -749,12 +746,9 @@ final class VoiceBridgeModel: ObservableObject {
         processingTimer?.invalidate()
         processingElapsedSeconds = 0
         let startedAt = Date()
-        processingTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] timer in
+        processingTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self else {
-                    timer.invalidate()
-                    return
-                }
+                guard let self else { return }
                 self.processingElapsedSeconds = Date().timeIntervalSince(startedAt)
             }
         }
