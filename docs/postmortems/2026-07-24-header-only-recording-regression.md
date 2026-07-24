@@ -201,3 +201,45 @@ it, so it cannot faithfully preserve a user's editor focus while clicking a
 nonactivating floating panel. The test therefore verifies capture,
 transcription, playback, icon states, and recovery affordances without making a
 new direct-cursor claim beyond the established insertion regression suite.
+
+## Recurrence: silent short captures, duplicate starts, and delayed linking
+
+A later production report exposed three independent paths that presented as one
+unreliable recorder:
+
+1. A short, finalized silent recording could avoid the duration-based AAC
+   bitrate guard and reach transcription. The provider could then guess a word
+   such as “you” or “thank you.”
+2. The record command started microphone acquisition asynchronously without
+   marking that startup as in progress. A second click or hotkey during that
+   window could request the microphone again and surface an intermittent,
+   misleading capture error.
+3. The continuously polled Voice context endpoint rebuilt the owner’s complete
+   practice history and published-content graph on every request. That work was
+   unnecessary for discovering one running stopwatch and made new activity
+   focus arrive late.
+4. Manual refreshes, wake refreshes, and the polling loop could overlap. A
+   slower request that started earlier was allowed to finish last and replace a
+   newer linked result with stale fallback state.
+
+The repair preserves the recorder’s measured peak level in the finalized
+capture evidence. A capture that never crosses the same local speech threshold
+used by the live microphone monitor is rejected before the provider call,
+including recordings shorter than the existing bitrate window. This is a local
+comparison and adds no network request.
+
+Recording startup now has an explicit in-progress gate. A repeated record
+command while macOS permission and microphone acquisition are underway is
+ignored; it cannot open a second recorder. Diagnostics report the measured
+input evidence and no longer speculate that another application owns the
+microphone.
+
+The website bridge now resolves the newest running activity timer directly from
+D1. Idle polls return immediately. Published content and specialist metadata
+are loaded only after a running activity exists. The macOS client also numbers
+context refreshes and applies only the newest result, so an older response can
+never roll the widget back to general fallback. Regression tests cover the
+short-silence provider boundary, the duplicate-start command policy, refresh
+ordering, and the direct active-stopwatch lookup. The exact merged application
+and deployed bridge still require packaged verification before this recurrence
+can be marked released.

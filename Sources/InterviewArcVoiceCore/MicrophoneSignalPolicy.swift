@@ -7,12 +7,14 @@ public enum MicrophoneSignalHealth: String, Codable, Equatable, Sendable {
 }
 
 public struct MicrophoneSignalPolicy: Equatable, Sendable {
+    public static let defaultSignalThresholdDecibels: Float = -65
+
     public let warningDelaySeconds: TimeInterval
     public let signalThresholdDecibels: Float
 
     public init(
         warningDelaySeconds: TimeInterval = 2.5,
-        signalThresholdDecibels: Float = -65
+        signalThresholdDecibels: Float = Self.defaultSignalThresholdDecibels
     ) {
         self.warningDelaySeconds = warningDelaySeconds
         self.signalThresholdDecibels = signalThresholdDecibels
@@ -31,4 +33,3 @@ public struct MicrophoneSignalPolicy: Equatable, Sendable {
         return .warmingUp
     }
 }
-

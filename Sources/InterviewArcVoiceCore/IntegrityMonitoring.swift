@@ -17,6 +17,7 @@ public struct RecordingIntegrityEvidence: Equatable, Sendable {
     public let decodedFrameCount: Int64
     public let writeErrorDescription: String?
     public let encodedAudioBytes: Int?
+    public let peakPowerDecibels: Float?
 
     public init(
         wallDurationSeconds: Double,
@@ -24,7 +25,8 @@ public struct RecordingIntegrityEvidence: Equatable, Sendable {
         fileSizeBytes: Int,
         decodedFrameCount: Int64,
         writeErrorDescription: String?,
-        encodedAudioBytes: Int? = nil
+        encodedAudioBytes: Int? = nil,
+        peakPowerDecibels: Float? = nil
     ) {
         self.wallDurationSeconds = wallDurationSeconds
         self.decodedDurationSeconds = decodedDurationSeconds
@@ -32,6 +34,7 @@ public struct RecordingIntegrityEvidence: Equatable, Sendable {
         self.decodedFrameCount = decodedFrameCount
         self.writeErrorDescription = writeErrorDescription
         self.encodedAudioBytes = encodedAudioBytes
+        self.peakPowerDecibels = peakPowerDecibels
     }
 }
 
@@ -84,6 +87,10 @@ public enum RecordingIntegrityEvaluator {
                 reasons.append(.insufficientSignal)
             }
         }
+        if let peakPowerDecibels = evidence.peakPowerDecibels,
+           peakPowerDecibels < MicrophoneSignalPolicy.defaultSignalThresholdDecibels {
+            reasons.append(.insufficientSignal)
+        }
         return RecordingIntegrityResult(reasons: reasons)
     }
 }
@@ -101,7 +108,8 @@ public enum RecordingFileInspector {
             fileSizeBytes: resources.fileSize ?? 0,
             decodedFrameCount: max(decodedFrames, capture.writtenFrameCount),
             writeErrorDescription: capture.writeErrorDescription,
-            encodedAudioBytes: encodedAudioByteCount(at: capture.url)
+            encodedAudioBytes: encodedAudioByteCount(at: capture.url),
+            peakPowerDecibels: capture.peakPowerDecibels
         )
     }
 

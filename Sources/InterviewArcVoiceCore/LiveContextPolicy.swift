@@ -1,5 +1,14 @@
 import Foundation
 
+public enum ContextRefreshOrderingPolicy {
+    public static func shouldApply(
+        requestID: Int,
+        latestRequestID: Int
+    ) -> Bool {
+        requestID == latestRequestID
+    }
+}
+
 public struct VoiceContextRetentionPolicy: Sendable {
     public init() {}
 

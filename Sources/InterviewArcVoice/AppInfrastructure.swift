@@ -412,12 +412,18 @@ final class FloatingPanelController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        // NSPanel shadows are rectangular even when SwiftUI draws a capsule.
+        // The capsule supplies its own shadow so the transparent window never
+        // exposes a rectangular border around the widget.
+        panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.isMovableByWindowBackground = true
         panel.becomesKeyOnlyIfNeeded = true
-        panel.contentView = NSHostingView(rootView: FloatingRecorderView(model: model))
+        let hostingView = NSHostingView(rootView: FloatingRecorderView(model: model))
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        panel.contentView = hostingView
         panel.setFrameAutosaveName("InterviewArcVoiceFloatingPanel")
         if !panel.setFrameUsingName("InterviewArcVoiceFloatingPanel") {
             panel.center()
@@ -499,25 +505,24 @@ struct FloatingRecorderView: View {
         }
         .padding(.horizontal, 3)
         .frame(width: model.floatingWidth, height: 40)
+        .background(.ultraThinMaterial, in: Capsule(style: .continuous))
         .background(
             Capsule(style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    Capsule(style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.18),
-                                    Color(red: 0.78, green: 0.92, blue: 0.90).opacity(0.08),
-                                    Color.black.opacity(0.04),
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.18),
+                            Color(red: 0.78, green: 0.92, blue: 0.90).opacity(0.08),
+                            Color.black.opacity(0.04),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 )
-                .shadow(color: Color.black.opacity(0.20), radius: 9, y: 4)
         )
+        .clipShape(Capsule(style: .continuous))
+        .contentShape(Capsule(style: .continuous))
+        .shadow(color: Color.black.opacity(0.20), radius: 9, y: 4)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: model.floatingWidth)
         .onChange(of: model.floatingWidth) { _, width in
             FloatingPanelController.shared.setWidth(

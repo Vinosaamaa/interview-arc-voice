@@ -69,17 +69,20 @@ public struct RecordedCapture: Sendable {
     public let duration: TimeInterval
     public let writtenFrameCount: Int64
     public let writeErrorDescription: String?
+    public let peakPowerDecibels: Float?
 
     public init(
         url: URL,
         duration: TimeInterval,
         writtenFrameCount: Int64,
-        writeErrorDescription: String?
+        writeErrorDescription: String?,
+        peakPowerDecibels: Float? = nil
     ) {
         self.url = url
         self.duration = duration
         self.writtenFrameCount = writtenFrameCount
         self.writeErrorDescription = writeErrorDescription
+        self.peakPowerDecibels = peakPowerDecibels
     }
 }
 
@@ -165,6 +168,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         }
         let writeSnapshot = audioWriteState?.snapshot()
             ?? (frames: fallbackFrames, errorDescription: recorderErrorDescription)
+        let recordedPeakPower = peakPower
         audioWriteState = nil
         recorderErrorDescription = nil
         ticker?.invalidate()
@@ -173,11 +177,13 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         destinationURL = nil
         isRecording = false
         averagePower = -60
+        peakPower = -160
         return RecordedCapture(
             url: url,
             duration: max(duration, elapsedSeconds),
             writtenFrameCount: writeSnapshot.frames,
-            writeErrorDescription: writeSnapshot.errorDescription
+            writeErrorDescription: writeSnapshot.errorDescription,
+            peakPowerDecibels: recordedPeakPower
         )
     }
 
