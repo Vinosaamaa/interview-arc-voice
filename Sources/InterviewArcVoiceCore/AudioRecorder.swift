@@ -255,20 +255,27 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         audioEngine = nil
     }
 
-    public func audioRecorderEncodeErrorDidOccur(
+    public nonisolated func audioRecorderEncodeErrorDidOccur(
         _ recorder: AVAudioRecorder,
         error: Error?
     ) {
-        recorderErrorDescription = error?.localizedDescription
+        let description = error?.localizedDescription
             ?? "The system audio recorder reported an encoding failure."
+        Task { @MainActor [weak self] in
+            self?.recorderErrorDescription = description
+        }
     }
 
-    public func audioRecorderDidFinishRecording(
+    public nonisolated func audioRecorderDidFinishRecording(
         _ recorder: AVAudioRecorder,
         successfully flag: Bool
     ) {
-        if !flag, recorderErrorDescription == nil {
-            recorderErrorDescription = "The system audio recorder did not finalize successfully."
+        guard !flag else { return }
+        Task { @MainActor [weak self] in
+            if self?.recorderErrorDescription == nil {
+                self?.recorderErrorDescription =
+                    "The system audio recorder did not finalize successfully."
+            }
         }
     }
 
