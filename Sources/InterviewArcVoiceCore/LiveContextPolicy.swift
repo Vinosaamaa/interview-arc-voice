@@ -11,6 +11,22 @@ public struct VoiceContextRetentionPolicy: Sendable {
     }
 }
 
+public struct CaptureContextFreshnessPolicy: Sendable {
+    public let maximumAge: TimeInterval
+
+    public init(maximumAge: TimeInterval = 10) {
+        self.maximumAge = maximumAge
+    }
+
+    public func isFresh(
+        lastVerifiedAt: Date?,
+        now: Date = Date()
+    ) -> Bool {
+        guard let lastVerifiedAt else { return false }
+        return now.timeIntervalSince(lastVerifiedAt) <= maximumAge
+    }
+}
+
 public struct LateCaptureBindingPolicy: Sendable {
     public init() {}
 

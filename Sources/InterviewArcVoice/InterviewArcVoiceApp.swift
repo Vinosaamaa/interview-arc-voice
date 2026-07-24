@@ -117,6 +117,7 @@ final class VoiceBridgeModel: ObservableObject {
     private let keychain = KeychainStore()
     private let routingPolicy = CaptureRoutingPolicy()
     private let contextRetentionPolicy = VoiceContextRetentionPolicy()
+    private let contextFreshnessPolicy = CaptureContextFreshnessPolicy()
     private let lateBindingPolicy = LateCaptureBindingPolicy()
     private let playbackCompletionPolicy = PlaybackCompletionPolicy()
     private let hotKeyManager = GlobalHotKeyManager()
@@ -1008,8 +1009,7 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     private var contextIsFreshForCapture: Bool {
-        guard let contextLastVerifiedAt else { return false }
-        return Date().timeIntervalSince(contextLastVerifiedAt) <= 3
+        contextFreshnessPolicy.isFresh(lastVerifiedAt: contextLastVerifiedAt)
     }
 
     private func applyLateCaptureBinding(from refreshed: VoiceContextResponse) {
