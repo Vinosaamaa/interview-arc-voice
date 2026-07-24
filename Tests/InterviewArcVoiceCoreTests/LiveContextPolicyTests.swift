@@ -2,6 +2,21 @@ import Foundation
 import Testing
 @testable import InterviewArcVoiceCore
 
+@Test func staleContextRefreshCannotReplaceTheLatestActivity() {
+    #expect(
+        ContextRefreshOrderingPolicy.shouldApply(
+            requestID: 8,
+            latestRequestID: 9
+        ) == false
+    )
+    #expect(
+        ContextRefreshOrderingPolicy.shouldApply(
+            requestID: 9,
+            latestRequestID: 9
+        )
+    )
+}
+
 @Test func transientRefreshFailureRetainsLastKnownContext() {
     let previous = voiceContext(
         activityID: "course-schedule",

@@ -156,6 +156,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var shortcutMonitor: Any?
     private var lastInsertionSucceeded = false
     private var contextPollTask: Task<Void, Never>?
+    private var contextRefreshRequestID = 0
     private var contextLastVerifiedAt: Date?
     private var wakeObserver: NSObjectProtocol?
     private var activationObserver: NSObjectProtocol?
@@ -170,6 +171,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var playbackTimer: Timer?
     private var processingTimer: Timer?
     private var processingIndicatorTask: Task<Void, Never>?
+    @Published private(set) var isStartingRecording = false
 
     var isRecording: Bool { phase == .recording }
     var isBusy: Bool { [.refreshing, .transcribing, .sending, .inserting].contains(phase) }
@@ -177,7 +179,7 @@ final class VoiceBridgeModel: ObservableObject {
         !groqKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
     var canRecord: Bool {
-        hasGroqCredential && !isBusy
+        hasGroqCredential && !isBusy && !isStartingRecording
     }
     var menuBarSymbol: String {
         switch phase {
@@ -312,10 +314,21 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func toggleRecording() {
-        if isRecording {
+        switch RecordingCommandPolicy.action(
+            isRecording: isRecording,
+            isStarting: isStartingRecording,
+            isBusy: isBusy
+        ) {
+        case .stop:
             stopAndProcess()
-        } else {
-            Task { await prepareAndStartRecording() }
+        case .start:
+            isStartingRecording = true
+            Task {
+                await prepareAndStartRecording()
+                isStartingRecording = false
+            }
+        case .ignore:
+            break
         }
     }
 
@@ -750,6 +763,8 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     private func refreshContext(showProgress: Bool) async {
+        contextRefreshRequestID += 1
+        let requestID = contextRefreshRequestID
         guard linkToInterviewArc else {
             contextMessage = "General dictation will not touch Interview Arc."
             settlePhaseAfterContextRefresh(force: showProgress)
@@ -771,6 +786,10 @@ final class VoiceBridgeModel: ObservableObject {
         if showProgress { phase = .refreshing }
         do {
             let loaded = try await InterviewArcAPIClient(baseURL: baseURL, token: token).context()
+            guard ContextRefreshOrderingPolicy.shouldApply(
+                requestID: requestID,
+                latestRequestID: contextRefreshRequestID
+            ) else { return }
             context = contextRetentionPolicy.context(previous: context, refreshed: loaded)
             contextLastVerifiedAt = Date()
             applyLateCaptureBinding(from: loaded)
@@ -787,6 +806,10 @@ final class VoiceBridgeModel: ObservableObject {
                 }
             }
         } catch {
+            guard ContextRefreshOrderingPolicy.shouldApply(
+                requestID: requestID,
+                latestRequestID: contextRefreshRequestID
+            ) else { return }
             context = contextRetentionPolicy.context(previous: context, refreshed: nil)
             if !isRecording && !isBusy {
                 contextMessage = context?.focusedActivity == nil
@@ -928,7 +951,7 @@ final class VoiceBridgeModel: ObservableObject {
                     title: "No microphone signal",
                     message: "Recording preserved · check the input and record again",
                     detail: recordingDiagnosticDetail(evidence)
-                        + " Another voice app may be using the microphone, the selected input may be unavailable, or its level may be muted.",
+                        + " No speech-level signal reached the selected input.",
                     actions: [.recordAgain, .playRecording, .saveRecording]
                 )
                 return
@@ -1286,7 +1309,10 @@ final class VoiceBridgeModel: ObservableObject {
         let reasons = RecordingIntegrityEvaluator.evaluate(evidence).reasons
             .map(\.rawValue)
             .joined(separator: ", ")
-        return "Input: \(recorder.inputDeviceName). Recorded \(clock(evidence.wallDurationSeconds)); decoded \(clock(evidence.decodedDurationSeconds)); microphone payload \(bitrate) bps. Integrity signals: \(reasons.isEmpty ? "none" : reasons)."
+        let peak = evidence.peakPowerDecibels
+            .map { String(format: "%.1f dB", $0) }
+            ?? "unavailable"
+        return "Input: \(recorder.inputDeviceName). Recorded \(clock(evidence.wallDurationSeconds)); decoded \(clock(evidence.decodedDurationSeconds)); peak \(peak); microphone payload \(bitrate) bps. Integrity signals: \(reasons.isEmpty ? "none" : reasons)."
     }
 
     private func clock(_ seconds: TimeInterval) -> String {

@@ -91,6 +91,38 @@ import Testing
     #expect(recovery == .recordAgain)
 }
 
+@Test func shortSilentCaptureNeverReachesTheTranscriptionProvider() {
+    let recovery = RecordingRecoveryPolicy.action(
+        for: RecordingIntegrityEvidence(
+            wallDurationSeconds: 0.85,
+            decodedDurationSeconds: 0.82,
+            fileSizeBytes: 8_192,
+            decodedFrameCount: 13_120,
+            writeErrorDescription: nil,
+            encodedAudioBytes: 2_400,
+            peakPowerDecibels: -82
+        )
+    )
+
+    #expect(recovery == .recordAgain)
+}
+
+@Test func shortCaptureWithRealSpeechCanStillBeTranscribed() {
+    let recovery = RecordingRecoveryPolicy.action(
+        for: RecordingIntegrityEvidence(
+            wallDurationSeconds: 0.85,
+            decodedDurationSeconds: 0.82,
+            fileSizeBytes: 8_192,
+            decodedFrameCount: 13_120,
+            writeErrorDescription: nil,
+            encodedAudioBytes: 2_400,
+            peakPowerDecibels: -54
+        )
+    )
+
+    #expect(recovery == .transcribe)
+}
+
 @Test func normalTranscriptDoesNotTriggerASecondProviderCall() async throws {
     let transcriber = CountingTranscriber(results: [
         TranscriptionResult(
