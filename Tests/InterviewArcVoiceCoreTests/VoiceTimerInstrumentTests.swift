@@ -55,6 +55,42 @@ import Testing
     #expect(FloatingWidgetWindowPolicy.recorderIsBottomSurface)
     #expect(FloatingWidgetWindowPolicy.expandsUpward)
     #expect(FloatingWidgetWindowPolicy.timerDisclosureAvailableDuringPlayback)
+    #expect(FloatingWidgetWindowPolicy.timerPanelContentAnchorsToCapsule)
+}
+
+@Test func recordingPreservesTheExistingTimerDisclosureState() {
+    let openTimer = FloatingWidgetDisclosureState(
+        timerPanelExpanded: true,
+        finishingActivityID: "activity-1",
+        activityPickerExpanded: false
+    )
+    #expect(
+        FloatingWidgetWindowPolicy.disclosureStateWhenRecordingStarts(
+            current: openTimer
+        ) == openTimer
+    )
+
+    let closedTimer = FloatingWidgetDisclosureState(
+        timerPanelExpanded: false,
+        finishingActivityID: nil,
+        activityPickerExpanded: false
+    )
+    #expect(
+        FloatingWidgetWindowPolicy.disclosureStateWhenRecordingStarts(
+            current: closedTimer
+        ) == closedTimer
+    )
+
+    let openPicker = FloatingWidgetDisclosureState(
+        timerPanelExpanded: true,
+        finishingActivityID: nil,
+        activityPickerExpanded: true
+    )
+    #expect(
+        FloatingWidgetWindowPolicy.disclosureStateWhenRecordingStarts(
+            current: openPicker
+        ) == openPicker
+    )
 }
 
 @Test func connectedSessionWithoutRunningActivityUsesGeneralFallbackPresentation() {

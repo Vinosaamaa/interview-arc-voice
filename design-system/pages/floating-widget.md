@@ -76,8 +76,10 @@ controls. Long activity names truncate on one line.
 
 - The recorder capsule is the stable bottom surface. Expanding reveals one
   second frosted surface above it in the same transparent `NSPanel`.
-- Preserve a real 10-point transparent gap. The surfaces must read as two
-  coordinated components, not one opaque card.
+- Preserve a real 10-point visible transparent gap. Any unused height in the
+  expanded host belongs above the timer surface, never between the timer and
+  recorder. The surfaces must read as two coordinated components, not one
+  opaque card.
 - Expansion is right-edge and bottom-edge anchored. The timer, activity picker,
   and result drawer all grow upward. Collapsing restores the 250-by-40 capsule
   without moving it.
@@ -123,8 +125,10 @@ controls. Long activity names truncate on one line.
 - Link off: hollow dark-blue broken chain and “General dictation.”
 - Recording: microphone halo brightens and the activity label yields to live
   audio feedback and elapsed time.
-- Starting a recording collapses the timer surface. Timer disclosure is not
-  available during capture.
+- Starting a recording preserves the timer surface exactly as the user left
+  it. An open timer, activity picker, or finish drawer remains open; a closed
+  timer remains closed. Timer disclosure is not available during capture, so
+  recording never changes that state accidentally.
 - Playback retains seek, pause/resume, explicit Stop, and timer disclosure.
   Opening or closing the timer surface must not stop playback.
 - Processing: show a compact progress mark only after meaningful elapsed
@@ -178,6 +182,10 @@ controls. Long activity names truncate on one line.
 - Pausing the only running activity immediately changes the compact capsule to
   the amber general-dictation state. General captures in this state never
   create activity transcript, audio, or coaching records in D1 or R2.
+- Starting or stopping a recording does not change the timer surface, activity
+  picker, or finish-drawer disclosure state.
+- The visible gap between the timer surface and recorder is exactly 10 points;
+  oversized transparent host slack remains above both surfaces.
 - Playback exposes both Stop and timer disclosure; expanding the timer leaves
   playback position and transport state intact.
 - Session and activity overtime remain legible and do not resize their columns.

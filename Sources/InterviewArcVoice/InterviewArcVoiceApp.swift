@@ -1174,9 +1174,17 @@ final class VoiceBridgeModel: ObservableObject {
         }
         do {
             try await recorder.start(at: destination)
-            timerPanelExpanded = false
-            cancelFinishDrawer()
-            activityPickerExpanded = false
+            let disclosure = FloatingWidgetWindowPolicy
+                .disclosureStateWhenRecordingStarts(
+                    current: FloatingWidgetDisclosureState(
+                        timerPanelExpanded: timerPanelExpanded,
+                        finishingActivityID: finishingActivityID,
+                        activityPickerExpanded: activityPickerExpanded
+                    )
+                )
+            timerPanelExpanded = disclosure.timerPanelExpanded
+            finishingActivityID = disclosure.finishingActivityID
+            activityPickerExpanded = disclosure.activityPickerExpanded
             phase = .recording
             if linkToInterviewArc {
                 Task { await refreshContext(showProgress: false) }

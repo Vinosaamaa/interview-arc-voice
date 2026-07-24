@@ -48,9 +48,11 @@ The compact recorder uses a layered material surface. Playback widens it,
 exposes a seekable timeline, elapsed/duration text, explicit Stop, and timer
 disclosure, and collapses smoothly after playback completes or Stop is chosen.
 The recorder capsule remains the bottom anchor while its timer surface,
-activity picker, and finish drawer grow upward. Saving uses the native macOS
-save panel: the user chooses the name and location, the `.m4a` suffix remains
-canonical, and a sibling `.txt` transcript is optional.
+activity picker, and finish drawer grow upward. Starting or stopping capture
+does not alter the current disclosure state, and unused host height stays above
+the timer so the visible timer-to-recorder gap remains 10 points. Saving uses
+the native macOS save panel: the user chooses the name and location, the
+`.m4a` suffix remains canonical, and a sibling `.txt` transcript is optional.
 
 The user sends the inserted text through the visible Codex task. The rendered
 message shows the answer while the specialist receives the comment envelope and

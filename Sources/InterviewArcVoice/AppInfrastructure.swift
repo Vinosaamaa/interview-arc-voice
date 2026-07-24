@@ -1099,7 +1099,7 @@ private struct FloatingTimerInstrumentPanel: View {
                 - FloatingWidgetWindowPolicy.capsuleHeight
                 - FloatingWidgetWindowPolicy.timerGap
                 - 16,
-            alignment: .top
+            alignment: .bottom
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Interview Arc timers")
