@@ -119,3 +119,16 @@ A second packaged-app control recording lasted 46.844 seconds, contained
 282,369 AAC audio bytes at 48,087 bits per second, and returned the complete
 deterministic paragraph. This separated a transient microphone-signal failure
 from the normal recorder and provider path.
+
+The signed follow-up build then completed an end-to-end foreground test:
+
+- 39.932 seconds captured through the installed application;
+- 237,142 AAC audio bytes at 47,352 bits per second;
+- the full opening, technical terms, and final “sapphire lighthouse” marker
+  returned from transcription; and
+- the resulting transcript inserted directly into the focused disposable
+  TextEdit document.
+
+The same build was launched cleanly with linking off. Its dark-blue chain with
+a diagonal break rendered visibly on a pale-blue circle, and no memo controls
+appeared until the first valid recording existed.
