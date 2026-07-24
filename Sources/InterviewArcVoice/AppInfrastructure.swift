@@ -874,18 +874,13 @@ private struct FailureRecoveryPopover: View {
                 VStack(spacing: 6) {
                     ForEach(failure.actions, id: \.self) { action in
                         if action == .openSettings {
-                            SettingsLink {
-                                Label(actionLabel(action), systemImage: actionSymbol(action))
-                                    .lineLimit(1)
-                                    .frame(maxWidth: .infinity)
+                            if action == failure.actions.first {
+                                settingsActionLink(action)
+                                    .buttonStyle(.borderedProminent)
+                            } else {
+                                settingsActionLink(action)
+                                    .buttonStyle(.bordered)
                             }
-                            .buttonStyle(
-                                action == failure.actions.first
-                                    ? .borderedProminent
-                                    : .bordered
-                            )
-                            .tint(Color(red: 0.08, green: 0.44, blue: 0.39))
-                            .voiceHoverFeedback(cornerRadius: 8, tint: .teal)
                         } else if action == failure.actions.first {
                             failureActionButton(action)
                                 .buttonStyle(.borderedProminent)
@@ -914,6 +909,16 @@ private struct FailureRecoveryPopover: View {
         Button {
             model.performFailureAction(action)
         } label: {
+            Label(actionLabel(action), systemImage: actionSymbol(action))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+        }
+        .tint(Color(red: 0.08, green: 0.44, blue: 0.39))
+        .voiceHoverFeedback(cornerRadius: 8, tint: .teal)
+    }
+
+    private func settingsActionLink(_ action: VoiceFailureAction) -> some View {
+        SettingsLink {
             Label(actionLabel(action), systemImage: actionSymbol(action))
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)
