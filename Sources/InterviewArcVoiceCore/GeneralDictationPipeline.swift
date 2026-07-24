@@ -19,7 +19,10 @@ public actor GeneralDictationPipeline {
         defer { try? fileManager.removeItem(at: recordingURL) }
         return try await transcriber.transcribe(
             fileURL: recordingURL,
-            prompt: "Verbatim general dictation. Preserve punctuation, names, acronyms, and technical terminology.",
+            // Whisper's `prompt` is prior transcript context, not an
+            // instruction channel. Supplying prose instructions here caused
+            // those instructions to leak into user transcripts.
+            prompt: "",
             temporaryDirectory: temporaryDirectory
         )
     }

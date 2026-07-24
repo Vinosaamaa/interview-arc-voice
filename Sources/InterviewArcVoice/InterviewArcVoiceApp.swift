@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Carbon
 import SwiftUI
 import InterviewArcVoiceCore
@@ -101,6 +102,10 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var shortcutCapturing = false
     @Published var accessibilityNeeded = false
     @Published var deliveryStates: [VoiceDeliveryComponent: VoiceDeliveryComponentState] = [:]
+    @Published private(set) var hasLastAudio = false
+    @Published private(set) var isPlayingLastAudio = false
+    @Published private(set) var canRetryLastTranscription = false
+    @Published private(set) var processingElapsedSeconds: TimeInterval = 0
 
     let recorder = AnswerRecorder()
 
@@ -119,6 +124,12 @@ final class VoiceBridgeModel: ObservableObject {
     private var wakeObserver: NSObjectProtocol?
     private var activationObserver: NSObjectProtocol?
     private var lastExternalApplicationPID: pid_t?
+    private var lastAudioData: Data?
+    private var lastAudioDuration: TimeInterval = 0
+    private var lastMemoCreatedAt = Date()
+    private var audioPlayer: AVAudioPlayer?
+    private var playbackTimer: Timer?
+    private var processingTimer: Timer?
 
     var isRecording: Bool { phase == .recording }
     var isBusy: Bool { [.refreshing, .transcribing, .sending, .inserting].contains(phase) }
@@ -152,6 +163,16 @@ final class VoiceBridgeModel: ObservableObject {
         return phase.label
     }
     var showsDeliverySteps: Bool { !deliveryStates.isEmpty }
+    var hasLastMemo: Bool { hasLastAudio || !lastTranscript.isEmpty }
+    var lastMemoDetails: String {
+        let words = lastTranscript.split(whereSeparator: \.isWhitespace).count
+        let duration = clock(lastAudioDuration)
+        if words == 0 { return duration }
+        return "\(words) words · \(duration)"
+    }
+    var processingStatus: String {
+        "\(phase.label) · \(clock(processingElapsedSeconds))"
+    }
 
     init() {
         let defaults = UserDefaults.standard
@@ -211,6 +232,103 @@ final class VoiceBridgeModel: ObservableObject {
             stopAndProcess()
         } else {
             Task { await prepareAndStartRecording() }
+        }
+    }
+
+    func copyLastTranscript() {
+        guard !lastTranscript.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(lastTranscript, forType: .string)
+        contextMessage = "Transcript copied."
+    }
+
+    func toggleLastAudioPlayback() {
+        guard let lastAudioData else { return }
+        if let audioPlayer, audioPlayer.isPlaying {
+            audioPlayer.pause()
+            isPlayingLastAudio = false
+            playbackTimer?.invalidate()
+            playbackTimer = nil
+            return
+        }
+        do {
+            let player = try AVAudioPlayer(data: lastAudioData)
+            player.prepareToPlay()
+            player.play()
+            audioPlayer = player
+            isPlayingLastAudio = true
+            playbackTimer?.invalidate()
+            playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if self.audioPlayer?.isPlaying != true {
+                        self.isPlayingLastAudio = false
+                        self.playbackTimer?.invalidate()
+                        self.playbackTimer = nil
+                    }
+                }
+            }
+        } catch {
+            phase = .failed("The last recording could not be played.")
+        }
+    }
+
+    func exportLastMemo() {
+        guard hasLastMemo else { return }
+        let panel = NSOpenPanel()
+        panel.title = "Save Voice Memo"
+        panel.message = "Choose a folder for the original audio and verbatim transcript."
+        panel.prompt = "Save"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let directory = panel.url else { return }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        let basename = "Interview Arc Voice \(formatter.string(from: lastMemoCreatedAt))"
+        do {
+            if let lastAudioData {
+                try lastAudioData.write(
+                    to: directory.appending(path: basename + ".m4a"),
+                    options: .atomic
+                )
+            }
+            if !lastTranscript.isEmpty {
+                try lastTranscript.write(
+                    to: directory.appending(path: basename + ".txt"),
+                    atomically: true,
+                    encoding: .utf8
+                )
+            }
+            contextMessage = "Voice memo saved."
+        } catch {
+            phase = .failed("The voice memo could not be saved: \(error.localizedDescription)")
+        }
+    }
+
+    func retryLastTranscription() {
+        guard canRetryLastTranscription,
+              let lastAudioData,
+              let recordingStore else { return }
+        let retryURL = recordingStore.nextTemporaryRecordingURL()
+        do {
+            try lastAudioData.write(to: retryURL, options: .atomic)
+            targetApplicationPID = currentInsertionTargetPID()
+            canRetryLastTranscription = false
+            beginProcessing()
+            phase = .transcribing
+            Task {
+                await processGeneral(
+                    recording: (retryURL, lastAudioDuration),
+                    rememberAudio: false
+                )
+            }
+        } catch {
+            phase = .failed("The recording could not be prepared for retry.")
         }
     }
 
@@ -382,6 +500,7 @@ final class VoiceBridgeModel: ObservableObject {
         }
         targetApplicationPID = currentInsertionTargetPID()
         deliveryStates = [:]
+        canRetryLastTranscription = false
 
         if linkToInterviewArc { await refreshContext(showProgress: true) }
         let route = routingPolicy.route(
@@ -421,13 +540,15 @@ final class VoiceBridgeModel: ObservableObject {
         }
         do {
             let recording = try recorder.stop()
+            rememberLastAudio(recording)
+            beginProcessing()
             phase = .transcribing
             Task {
                 switch captureDestination {
                 case .linked(let activity, let startedAt):
                     await processLinked(recording: recording, activity: activity, startedAt: startedAt)
                 case .general:
-                    await processGeneral(recording: recording)
+                    await processGeneral(recording: recording, rememberAudio: false)
                 }
                 self.captureDestination = nil
             }
@@ -436,11 +557,16 @@ final class VoiceBridgeModel: ObservableObject {
         }
     }
 
-    private func processGeneral(recording: (url: URL, duration: TimeInterval)) async {
+    private func processGeneral(
+        recording: (url: URL, duration: TimeInterval),
+        rememberAudio: Bool = true
+    ) async {
         guard let recordingStore else {
+            endProcessing()
             phase = .failed("Voice settings are incomplete.")
             return
         }
+        if rememberAudio { rememberLastAudio(recording) }
         do {
             let generalPipeline = GeneralDictationPipeline(
                 transcriber: GroqTranscriber(apiKey: groqKeyDraft),
@@ -448,12 +574,16 @@ final class VoiceBridgeModel: ObservableObject {
             )
             let result = try await generalPipeline.process(recordingURL: recording.url)
             let inserted = await insertTranscript(result.text, editorText: result.text, showDeliveryStep: false)
+            canRetryLastTranscription = false
+            endProcessing()
             phase = inserted ? .delivered : .failed("Voice could not find the focused text editor. Click the editor and try again.")
             contextMessage = inserted
                 ? "Dictation inserted at the cursor. Press Send when ready."
                 : "No editable cursor was available."
         } catch {
             try? FileManager.default.removeItem(at: recording.url)
+            canRetryLastTranscription = hasLastAudio
+            endProcessing()
             phase = .failed(error.localizedDescription)
         }
     }
@@ -484,6 +614,7 @@ final class VoiceBridgeModel: ObservableObject {
                 }
             )
             await updateRetryCount()
+            endProcessing()
             if !lastInsertionSucceeded {
                 phase = .failed("The answer was saved, but Voice could not find the focused text editor.")
                 contextMessage = "Click the editor, then use Insert again from Last transcript."
@@ -494,6 +625,7 @@ final class VoiceBridgeModel: ObservableObject {
                     : "Inserted at the cursor. Press Send when ready."
             }
         } catch {
+            endProcessing()
             phase = .failed(error.localizedDescription)
         }
     }
@@ -596,6 +728,42 @@ final class VoiceBridgeModel: ObservableObject {
         shortcutCapturing = false
     }
 
+    private func rememberLastAudio(_ recording: (url: URL, duration: TimeInterval)) {
+        playbackTimer?.invalidate()
+        playbackTimer = nil
+        audioPlayer?.stop()
+        audioPlayer = nil
+        isPlayingLastAudio = false
+        lastAudioData = try? Data(contentsOf: recording.url, options: .mappedIfSafe)
+        hasLastAudio = lastAudioData != nil
+        lastAudioDuration = recording.duration
+        lastMemoCreatedAt = Date()
+        lastTranscript = ""
+        lastInsertionText = ""
+    }
+
+    private func beginProcessing() {
+        processingTimer?.invalidate()
+        processingElapsedSeconds = 0
+        let startedAt = Date()
+        processingTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.processingElapsedSeconds = Date().timeIntervalSince(startedAt)
+            }
+        }
+    }
+
+    private func endProcessing() {
+        processingTimer?.invalidate()
+        processingTimer = nil
+    }
+
+    private func clock(_ seconds: TimeInterval) -> String {
+        let value = max(0, Int(seconds.rounded()))
+        return String(format: "%02d:%02d", value / 60, value % 60)
+    }
+
     private func specialtyLabel(_ specialty: PracticeSpecialty) -> String {
         switch specialty {
         case .coding: "Coding"
@@ -614,7 +782,7 @@ private struct VoiceBridgeMenu: View {
             modeCard
             recordingControl
             if model.showsDeliverySteps { deliveryProgress }
-            if !model.lastTranscript.isEmpty { transcriptPreview }
+            if model.hasLastMemo { transcriptPreview }
             if model.pendingRetryCount > 0 { retryRow }
             settings
             providerFooter
@@ -680,8 +848,18 @@ private struct VoiceBridgeMenu: View {
     private var recordingControl: some View {
         Button(action: model.toggleRecording) {
             HStack(spacing: 7) {
-                Image(systemName: model.isRecording ? "stop.fill" : "mic.fill")
-                Text(model.isRecording ? "Stop" : "Record")
+                if model.isBusy {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: model.isRecording ? "stop.fill" : "mic.fill")
+                }
+                Text(
+                    model.isBusy
+                        ? model.processingStatus
+                        : (model.isRecording ? "Stop" : "Record")
+                )
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
                 if model.isRecording {
                     Spacer()
                     RecordingClock(recorder: model.recorder, compact: true)
@@ -706,16 +884,82 @@ private struct VoiceBridgeMenu: View {
     }
 
     private var transcriptPreview: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("LAST TRANSCRIPT").font(.caption2.weight(.bold)).tracking(0.8).foregroundStyle(.secondary)
                 Spacer()
-                Button("Insert again", action: model.reinsertLastTranscript)
-                    .buttonStyle(.borderless)
-                    .font(.caption2)
+                memoAction(
+                    symbol: "doc.on.doc",
+                    label: "Copy transcript",
+                    disabled: model.lastTranscript.isEmpty,
+                    action: model.copyLastTranscript
+                )
+                memoAction(
+                    symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
+                    label: model.isPlayingLastAudio ? "Pause recording" : "Play recording",
+                    disabled: !model.hasLastAudio,
+                    action: model.toggleLastAudioPlayback
+                )
+                memoAction(
+                    symbol: "square.and.arrow.down",
+                    label: "Save audio and transcript",
+                    disabled: !model.hasLastMemo,
+                    action: model.exportLastMemo
+                )
+                memoAction(
+                    symbol: "text.cursor",
+                    label: "Insert transcript again",
+                    disabled: model.lastTranscript.isEmpty,
+                    action: model.reinsertLastTranscript
+                )
             }
-            Text(model.lastTranscript).font(.caption).lineLimit(2).textSelection(.enabled)
+            if !model.lastTranscript.isEmpty {
+                ScrollView {
+                    Text(model.lastTranscript)
+                        .font(.caption)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.trailing, 4)
+                }
+                .frame(maxHeight: 118)
+            } else {
+                Text("The recording is safe in memory. Retry transcription when ready.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                Text(model.lastMemoDetails)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if model.canRetryLastTranscription {
+                    Button(action: model.retryLastTranscription) {
+                        Label("Retry", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption2.weight(.semibold))
+                    .disabled(model.isBusy || model.isRecording)
+                }
+            }
         }
+        .padding(9)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func memoAction(
+        symbol: String,
+        label: String,
+        disabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .frame(width: 20, height: 20)
+        }
+        .buttonStyle(.borderless)
+        .disabled(disabled)
+        .accessibilityLabel(label)
+        .help(label)
     }
 
     private var retryRow: some View {

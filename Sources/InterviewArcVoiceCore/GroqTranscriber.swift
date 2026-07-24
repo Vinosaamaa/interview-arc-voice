@@ -107,7 +107,10 @@ public actor GroqTranscriber: SpeechTranscribing {
         body.appendGroqField("response_format", "verbose_json", boundary: boundary)
         body.appendGroqField("timestamp_granularities[]", "word", boundary: boundary)
         body.appendGroqField("timestamp_granularities[]", "segment", boundary: boundary)
-        body.appendGroqField("prompt", prompt, boundary: boundary)
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedPrompt.isEmpty {
+            body.appendGroqField("prompt", trimmedPrompt, boundary: boundary)
+        }
         body.appendGroqFile(
             filename: chunk.url.lastPathComponent,
             mimeType: "audio/mp4",
@@ -217,15 +220,18 @@ public enum TranscriptAssembler {
                 assembledWords.append(adjusted)
             }
         }
-        if !assembledWords.isEmpty {
-            let text = assembleWordText(assembledWords.map(\.word))
-            return (text, assembledWords)
-        }
+
+        // Groq's top-level `text` is the canonical transcription. Word
+        // timestamps are a separate alignment product and can be sparse near
+        // pauses or at the end of a long recording. Rebuilding user-visible
+        // prose from that alignment silently truncated otherwise complete
+        // transcripts. Keep aligned words for delivery coaching, but assemble
+        // the verbatim transcript from each chunk's complete text.
         var text = ""
         for (_, response) in responses {
             text = appendRemovingOverlap(text, response.text)
         }
-        return (text.trimmingCharacters(in: .whitespacesAndNewlines), [])
+        return (text.trimmingCharacters(in: .whitespacesAndNewlines), assembledWords)
     }
 
     private static func appendRemovingOverlap(_ current: String, _ next: String) -> String {
@@ -247,27 +253,6 @@ public enum TranscriptAssembler {
         value.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 
-    private static func assembleWordText(_ words: [String]) -> String {
-        var result = ""
-        let closingPunctuation = CharacterSet(charactersIn: ".,!?;:%)]}\u{2019}\u{201D}")
-        let openingPunctuation = CharacterSet(charactersIn: "([{‘}“")
-
-        for rawWord in words {
-            let word = rawWord.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !word.isEmpty else { continue }
-            guard !result.isEmpty else {
-                result = word
-                continue
-            }
-
-            let firstScalar = word.unicodeScalars.first
-            let lastScalar = result.unicodeScalars.last
-            let attachesToPrevious = firstScalar.map(closingPunctuation.contains) ?? false
-            let previousOpens = lastScalar.map(openingPunctuation.contains) ?? false
-            result += attachesToPrevious || previousOpens ? word : " \(word)"
-        }
-        return result
-    }
 }
 
 private extension Data {

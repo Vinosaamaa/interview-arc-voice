@@ -151,6 +151,8 @@ job for every pull request. See `docs/architecture.md` and
 The complete engineering record for the universal-insertion failure and repair
 is in
 [`docs/postmortems/2026-07-23-universal-dictation-insertion.md`](docs/postmortems/2026-07-23-universal-dictation-insertion.md).
+The long-dictation integrity analysis and repair record is in
+[`docs/postmortems/2026-07-24-long-dictation-transcript-integrity.md`](docs/postmortems/2026-07-24-long-dictation-transcript-integrity.md).
 
 ## Provider and terminology references
 
