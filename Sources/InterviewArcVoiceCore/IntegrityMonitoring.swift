@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import AudioToolbox
 import Foundation
 
 public enum RecordingIntegrityReason: String, Codable, Equatable, Sendable {
@@ -6,6 +7,7 @@ public enum RecordingIntegrityReason: String, Codable, Equatable, Sendable {
     case emptyFile
     case noDecodedFrames
     case durationMismatch
+    case insufficientSignal
 }
 
 public struct RecordingIntegrityEvidence: Equatable, Sendable {
@@ -14,19 +16,22 @@ public struct RecordingIntegrityEvidence: Equatable, Sendable {
     public let fileSizeBytes: Int
     public let decodedFrameCount: Int64
     public let writeErrorDescription: String?
+    public let encodedAudioBytes: Int?
 
     public init(
         wallDurationSeconds: Double,
         decodedDurationSeconds: Double,
         fileSizeBytes: Int,
         decodedFrameCount: Int64,
-        writeErrorDescription: String?
+        writeErrorDescription: String?,
+        encodedAudioBytes: Int? = nil
     ) {
         self.wallDurationSeconds = wallDurationSeconds
         self.decodedDurationSeconds = decodedDurationSeconds
         self.fileSizeBytes = fileSizeBytes
         self.decodedFrameCount = decodedFrameCount
         self.writeErrorDescription = writeErrorDescription
+        self.encodedAudioBytes = encodedAudioBytes
     }
 }
 
@@ -49,6 +54,9 @@ public enum RecordingRecoveryPolicy {
         if integrity.isComplete {
             return .transcribe
         }
+        if integrity.reasons.contains(.insufficientSignal) {
+            return .recordAgain
+        }
         if evidence.fileSizeBytes >= 512,
            evidence.decodedFrameCount > 0,
            evidence.decodedDurationSeconds > 0 {
@@ -68,6 +76,14 @@ public enum RecordingIntegrityEvaluator {
            evidence.decodedDurationSeconds + 1.0 < evidence.wallDurationSeconds * 0.85 {
             reasons.append(.durationMismatch)
         }
+        if evidence.decodedDurationSeconds >= 2,
+           let encodedAudioBytes = evidence.encodedAudioBytes {
+            let encodedBitsPerSecond =
+                Double(encodedAudioBytes) * 8 / evidence.decodedDurationSeconds
+            if encodedBitsPerSecond < 1_500 {
+                reasons.append(.insufficientSignal)
+            }
+        }
         return RecordingIntegrityResult(reasons: reasons)
     }
 }
@@ -84,8 +100,34 @@ public enum RecordingFileInspector {
             decodedDurationSeconds: decodedDuration,
             fileSizeBytes: resources.fileSize ?? 0,
             decodedFrameCount: max(decodedFrames, capture.writtenFrameCount),
-            writeErrorDescription: capture.writeErrorDescription
+            writeErrorDescription: capture.writeErrorDescription,
+            encodedAudioBytes: encodedAudioByteCount(at: capture.url)
         )
+    }
+
+    private static func encodedAudioByteCount(at url: URL) -> Int? {
+        var audioFile: AudioFileID?
+        guard AudioFileOpenURL(
+            url as CFURL,
+            .readPermission,
+            0,
+            &audioFile
+        ) == noErr, let audioFile else {
+            return nil
+        }
+        defer { AudioFileClose(audioFile) }
+
+        var byteCount: UInt64 = 0
+        var propertySize = UInt32(MemoryLayout<UInt64>.size)
+        guard AudioFileGetProperty(
+            audioFile,
+            kAudioFilePropertyAudioDataByteCount,
+            &propertySize,
+            &byteCount
+        ) == noErr else {
+            return nil
+        }
+        return Int(clamping: byteCount)
     }
 }
 

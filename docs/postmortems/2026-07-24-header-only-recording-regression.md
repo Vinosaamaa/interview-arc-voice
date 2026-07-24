@@ -90,3 +90,32 @@ the floating recorder. Direct cursor insertion therefore remains verified by
 the deterministic insertion suite and the existing signed-app insertion
 postmortem rather than by claiming that this particular UI harness preserved
 focus when it did not.
+
+## Follow-up: timed near-silent AAC accepted as speech
+
+The first repair distinguished a header-only file from a decodable file, but
+it still accepted one additional failure shape. A real failed capture exported
+from the packaged app reported 4.988 seconds and 79,808 valid decoded frames,
+yet `afinfo` showed only 320 bytes of AAC audio data across 80 four-byte
+packets—a 500-bit-per-second near-silent payload. Groq returned the guessed
+single word “you.”
+
+Two assumptions allowed this:
+
+1. The `AVAudioRecorder` fallback converted its wall-clock duration into a
+   synthetic written-frame count. That made elapsed time look like evidence
+   that microphone frames had been written.
+2. A decodable duration was treated as sufficient even though AAC can encode
+   silence into tiny packets while still advancing the media timeline.
+
+The follow-up repair removes the synthetic frame count and reads
+`kAudioFilePropertyAudioDataByteCount` from the finalized container. Captures
+lasting at least two seconds whose encoded payload is below 1,500 bits per
+second are classified as insufficient signal, kept away from Groq, and ask the
+user to record again. The interface does not expose Retry or insert a guessed
+transcript for that capture.
+
+A second packaged-app control recording lasted 46.844 seconds, contained
+282,369 AAC audio bytes at 48,087 bits per second, and returned the complete
+deterministic paragraph. This separated a transient microphone-signal failure
+from the normal recorder and provider path.
