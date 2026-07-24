@@ -181,7 +181,9 @@ final class VoiceBridgeModel: ObservableObject {
         return context?.focusedActivity == nil ? "link.circle" : "link.circle.fill"
     }
     var linkStatusColor: Color {
-        if !linkToInterviewArc { return .secondary }
+        if !linkToInterviewArc {
+            return Color(red: 0.90, green: 0.35, blue: 0.30)
+        }
         if context?.focusedActivity == nil {
             return Color(red: 0.92, green: 0.64, blue: 0.22)
         }
@@ -361,17 +363,23 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func setLinkMode(_ enabled: Bool) {
-        guard !isRecording, !isBusy else { return }
+        guard !isRecording else { return }
         linkToInterviewArc = enabled
         UserDefaults.standard.set(enabled, forKey: "voice.linkToInterviewArc")
-        deliveryStates = [:]
+        if !isBusy {
+            deliveryStates = [:]
+        }
         if enabled {
             contextMessage = "Auto-link will check the current activity before recording."
-            phase = hasGroqCredential ? .idle : .setup
+            if !isBusy {
+                phase = hasGroqCredential ? .idle : .setup
+            }
             Task { await refreshContext(showProgress: false) }
         } else {
             contextMessage = "General dictation will not touch Interview Arc."
-            phase = hasGroqCredential ? .idle : .setup
+            if !isBusy {
+                phase = hasGroqCredential ? .idle : .setup
+            }
         }
     }
 
@@ -560,7 +568,10 @@ final class VoiceBridgeModel: ObservableObject {
                 Task { await refreshContext(showProgress: false) }
             }
         } catch {
+            self.captureDestination = nil
+            canRetryLastTranscription = false
             phase = .failed(error.localizedDescription)
+            contextMessage = "Voice could not start the microphone."
         }
     }
 
@@ -573,7 +584,23 @@ final class VoiceBridgeModel: ObservableObject {
             let recording = try recorder.stop()
             let generation = captureGeneration
             self.captureDestination = nil
-            rememberLastAudio(recording)
+            let recovery = try recordingRecoveryAction(for: recording)
+            switch recovery {
+            case .transcribe:
+                rememberLastAudio(recording)
+            case .preserveWithoutRetry:
+                rememberLastAudio(recording)
+                canRetryLastTranscription = false
+                phase = .failed("Recording ended early.")
+                contextMessage = "The playable portion is preserved. Record again for a complete transcript."
+                return
+            case .recordAgain:
+                clearLastMemo()
+                canRetryLastTranscription = false
+                phase = .failed("No playable audio was recorded.")
+                contextMessage = "Check the microphone, then record again. Retranscription cannot recover missing audio."
+                return
+            }
             beginProcessing()
             phase = .transcribing
             Task {
@@ -590,7 +617,11 @@ final class VoiceBridgeModel: ObservableObject {
                 }
             }
         } catch {
-            phase = .failed(error.localizedDescription)
+            self.captureDestination = nil
+            clearLastMemo()
+            canRetryLastTranscription = false
+            phase = .failed("No playable audio was recorded.")
+            contextMessage = "Check the microphone, then record again. Retranscription cannot recover missing audio."
         }
     }
 
@@ -606,6 +637,13 @@ final class VoiceBridgeModel: ObservableObject {
         if rememberAudio { rememberLastAudio(recording) }
         do {
             try validateRecording(recording)
+        } catch {
+            canRetryLastTranscription = false
+            endProcessing()
+            phase = .failed("The saved recording is not playable. Record again.")
+            return
+        }
+        do {
             let generalPipeline = GeneralDictationPipeline(
                 transcriber: GroqTranscriber(apiKey: groqKeyDraft),
                 temporaryDirectory: recordingStore.temporaryDirectory
@@ -641,6 +679,14 @@ final class VoiceBridgeModel: ObservableObject {
     ) async {
         do {
             try validateRecording(recording)
+        } catch {
+            guard generation == captureGeneration else { return }
+            canRetryLastTranscription = false
+            endProcessing()
+            phase = .failed("The saved recording is not playable. Record again.")
+            return
+        }
+        do {
             lastInsertionSucceeded = false
             let builtPipeline = try makeLinkedPipeline()
             pipeline = builtPipeline
@@ -803,6 +849,19 @@ final class VoiceBridgeModel: ObservableObject {
         lastInsertionText = ""
     }
 
+    private func clearLastMemo() {
+        playbackTimer?.invalidate()
+        playbackTimer = nil
+        audioPlayer?.stop()
+        audioPlayer = nil
+        isPlayingLastAudio = false
+        lastAudioData = nil
+        hasLastAudio = false
+        lastAudioDuration = 0
+        lastTranscript = ""
+        lastInsertionText = ""
+    }
+
     private func beginProcessing() {
         processingTimer?.invalidate()
         processingIndicatorTask?.cancel()
@@ -836,11 +895,18 @@ final class VoiceBridgeModel: ObservableObject {
 
     private func validateRecording(_ recording: RecordedCapture) throws {
         let evidence = try RecordingFileInspector.inspect(recording)
-        let integrity = RecordingIntegrityEvaluator.evaluate(evidence)
-        guard integrity.isComplete else {
-            canRetryLastTranscription = hasLastAudio
+        let recovery = RecordingRecoveryPolicy.action(for: evidence)
+        guard recovery == .transcribe else {
+            let integrity = RecordingIntegrityEvaluator.evaluate(evidence)
             throw VoiceBridgeError.incompleteRecording(integrity.reasons)
         }
+    }
+
+    private func recordingRecoveryAction(
+        for recording: RecordedCapture
+    ) throws -> RecordingRecoveryAction {
+        let evidence = try RecordingFileInspector.inspect(recording)
+        return RecordingRecoveryPolicy.action(for: evidence)
     }
 
     private func clock(_ seconds: TimeInterval) -> String {
@@ -893,10 +959,12 @@ private struct VoiceBridgeMenu: View {
             Button(action: model.toggleFloatingPanel) { Image(systemName: "macwindow.on.rectangle") }
                 .buttonStyle(.borderless)
                 .frame(width: 26, height: 26)
+                .voiceHoverFeedback(cornerRadius: 7)
                 .accessibilityLabel("Show or hide floating recorder")
             Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }
                 .buttonStyle(.borderless)
                 .frame(width: 26, height: 26)
+                .voiceHoverFeedback(enabled: !model.isRecording && !model.isBusy, cornerRadius: 7)
                 .disabled(model.isRecording || model.isBusy)
                 .accessibilityLabel("Refresh focused activity")
         }
@@ -912,10 +980,11 @@ private struct VoiceBridgeMenu: View {
                 )
             )
             .toggleStyle(.switch)
-            .disabled(model.isRecording || model.isBusy)
+            .voiceHoverFeedback(enabled: !model.isRecording, cornerRadius: 8)
+            .disabled(model.isRecording)
             HStack(alignment: .center, spacing: 7) {
-                Image(systemName: model.linkToInterviewArc && model.context?.focusedActivity != nil ? "link.circle.fill" : "text.cursor")
-                    .foregroundStyle(model.linkToInterviewArc && model.context?.focusedActivity != nil ? .teal : .secondary)
+                Image(systemName: model.linkStatusSymbol)
+                    .foregroundStyle(model.linkStatusColor)
                 Text(model.linkToInterviewArc && model.context?.focusedActivity != nil
                      ? model.floatingTitle
                      : "Inserts at the cursor")
@@ -954,6 +1023,11 @@ private struct VoiceBridgeMenu: View {
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
         .tint(model.isRecording ? .red : Color(red: 0.08, green: 0.34, blue: 0.22))
+        .voiceHoverFeedback(
+            enabled: model.isRecording || model.canRecord,
+            cornerRadius: 10,
+            tint: model.isRecording ? .red : .teal
+        )
         .disabled(!model.isRecording && !model.canRecord)
     }
 
@@ -1022,6 +1096,7 @@ private struct VoiceBridgeMenu: View {
                     }
                     .buttonStyle(.borderless)
                     .font(.caption2.weight(.semibold))
+                    .voiceHoverFeedback(enabled: !model.isBusy && !model.isRecording, cornerRadius: 6)
                     .disabled(model.isBusy || model.isRecording)
                 }
             }
@@ -1041,6 +1116,7 @@ private struct VoiceBridgeMenu: View {
                 .frame(width: 20, height: 20)
         }
         .buttonStyle(.borderless)
+        .voiceHoverFeedback(enabled: !disabled, cornerRadius: 6)
         .disabled(disabled)
         .accessibilityLabel(label)
         .help(label)
@@ -1051,7 +1127,9 @@ private struct VoiceBridgeMenu: View {
             Label("\(model.pendingRetryCount) background retry\(model.pendingRetryCount == 1 ? "" : "ies")", systemImage: "clock.arrow.circlepath")
                 .font(.caption)
             Spacer()
-            Button("Retry now", action: model.retryPending).disabled(model.isBusy || model.isRecording)
+            Button("Retry now", action: model.retryPending)
+                .voiceHoverFeedback(enabled: !model.isBusy && !model.isRecording, cornerRadius: 6)
+                .disabled(model.isBusy || model.isRecording)
         }
         .padding(10)
         .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
@@ -1066,10 +1144,12 @@ private struct VoiceBridgeMenu: View {
                     Button(model.shortcutCapturing ? "Press shortcut…" : model.shortcut.displayName) {
                         model.beginShortcutCapture()
                     }
+                    .voiceHoverFeedback(cornerRadius: 6)
                 }
                 if model.accessibilityNeeded {
                     Button("Enable Accessibility for insertion", action: model.requestAccessibilityPermission)
                         .font(.caption)
+                        .voiceHoverFeedback(cornerRadius: 6)
                 } else {
                     Label("Direct insertion enabled", systemImage: "checkmark.circle.fill")
                         .font(.caption)
@@ -1081,7 +1161,9 @@ private struct VoiceBridgeMenu: View {
                 TextField("Interview Arc API", text: $model.apiBaseURL).textFieldStyle(.roundedBorder)
                 TextField("Interview Arc repository", text: $model.workspacePath).textFieldStyle(.roundedBorder)
                 TextField("Codex executable", text: $model.codexPath).textFieldStyle(.roundedBorder)
-                Button("Save secure settings", action: model.saveSettings).buttonStyle(.borderedProminent)
+                Button("Save secure settings", action: model.saveSettings)
+                    .buttonStyle(.borderedProminent)
+                    .voiceHoverFeedback(cornerRadius: 7)
             }
             .padding(.top, 10)
         } label: {

@@ -7,7 +7,9 @@
 2. Resolve a deterministic vocabulary prompt from explicit terms, stored pack
    IDs, metadata triggers, and the specialty base pack.
 3. Open the microphone immediately from the cached routing snapshot and record
-   one user answer as a continuous local M4A file.
+   one user answer as a continuous local M4A file. The system recorder owns
+   file finalization; a capture is not eligible for transcription until the
+   finalized file reopens with decoded frames.
 4. Reopen the finalized file and verify nonzero frames, write success, and
    media duration against recording wall time.
 5. Produce a speech-optimized transcription derivative and send it with the

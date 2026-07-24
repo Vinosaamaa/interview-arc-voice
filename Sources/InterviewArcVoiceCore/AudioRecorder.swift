@@ -112,12 +112,11 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
     public func start(at url: URL) async throws {
         guard await requestPermission() else { throw VoiceBridgeError.microphoneDenied }
         destinationURL = url
-        do {
-            try startVoiceProcessedCapture(at: url)
-        } catch {
-            stopVoiceProcessedCapture()
-            try startRecorderFallback(at: url)
-        }
+        // AVAudioRecorder owns file finalization and has proven reliable across
+        // signed app replacements. The prior voice-processing tap could start
+        // successfully while never delivering writable frames, leaving a
+        // header-only M4A that looked like a provider failure.
+        try startRecorderFallback(at: url)
         startedAt = Date()
         elapsedSeconds = 0
         averagePower = -60

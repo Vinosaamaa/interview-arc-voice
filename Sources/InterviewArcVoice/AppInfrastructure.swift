@@ -445,21 +445,23 @@ struct FloatingRecorderView: View {
                 processingLabel
             } else {
                 activityLabel
-                memoButton(
-                    symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
-                    label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
-                    action: model.toggleLastAudioPlayback
-                )
-                memoButton(
-                    symbol: "doc.on.doc",
-                    label: "Copy last transcript",
-                    action: model.copyLastTranscript
-                )
-                memoButton(
-                    symbol: "square.and.arrow.down",
-                    label: "Save last audio and transcript",
-                    action: model.exportLastMemo
-                )
+                if model.hasLastMemo {
+                    memoButton(
+                        symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
+                        label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
+                        action: model.toggleLastAudioPlayback
+                    )
+                    memoButton(
+                        symbol: "doc.on.doc",
+                        label: "Copy last transcript",
+                        action: model.copyLastTranscript
+                    )
+                    memoButton(
+                        symbol: "square.and.arrow.down",
+                        label: "Save last audio and transcript",
+                        action: model.exportLastMemo
+                    )
+                }
             }
             recordButton
         }
@@ -474,13 +476,27 @@ struct FloatingRecorderView: View {
 
     private var linkButton: some View {
         Button(action: model.toggleLinkMode) {
-            Image(systemName: model.linkStatusSymbol)
-                .font(.system(size: 23, weight: .semibold))
-                .foregroundStyle(model.linkStatusColor)
+            ZStack {
+                Circle()
+                    .fill(
+                        model.linkToInterviewArc
+                            ? model.linkStatusColor.opacity(0.14)
+                            : Color(red: 0.90, green: 0.35, blue: 0.30).opacity(0.18)
+                    )
+                Image(systemName: model.linkStatusSymbol)
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(model.linkStatusColor)
+            }
+            .frame(width: 28, height: 28)
         }
         .buttonStyle(.plain)
         .frame(width: 28, height: 36)
-        .disabled(model.isRecording || model.isBusy)
+        .voiceHoverFeedback(
+            enabled: !model.isRecording,
+            cornerRadius: 14,
+            tint: model.linkStatusColor
+        )
+        .disabled(model.isRecording)
         .help(model.linkStatusAccessibilityLabel)
         .accessibilityLabel(model.linkStatusAccessibilityLabel)
     }
@@ -520,8 +536,9 @@ struct FloatingRecorderView: View {
                 .frame(width: 19, height: 26)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(model.hasLastMemo ? Color.primary : Color.secondary.opacity(0.35))
-        .disabled(!model.hasLastMemo || model.isBusy)
+        .foregroundStyle(Color.primary)
+        .voiceHoverFeedback(enabled: !model.isBusy, cornerRadius: 7)
+        .disabled(model.isBusy)
         .help(label)
         .accessibilityLabel(label)
     }
@@ -545,6 +562,11 @@ struct FloatingRecorderView: View {
             .frame(width: 36, height: 36)
         }
         .buttonStyle(.plain)
+        .voiceHoverFeedback(
+            enabled: model.isRecording || model.canRecord,
+            cornerRadius: 18,
+            tint: model.isRecording ? .red : .teal
+        )
         .disabled(!model.isRecording && !model.canRecord)
         .accessibilityLabel(
             model.isBusy
@@ -553,6 +575,44 @@ struct FloatingRecorderView: View {
         )
     }
 
+}
+
+private struct VoiceHoverFeedbackModifier: ViewModifier {
+    let enabled: Bool
+    let cornerRadius: CGFloat
+    let tint: Color
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(tint.opacity(isHovering && enabled ? 0.13 : 0))
+                    .allowsHitTesting(false)
+            }
+            .scaleEffect(isHovering && enabled ? 1.045 : 1)
+            .animation(.easeOut(duration: 0.12), value: isHovering)
+            .onHover { hovering in
+                isHovering = hovering
+            }
+    }
+}
+
+extension View {
+    func voiceHoverFeedback(
+        enabled: Bool = true,
+        cornerRadius: CGFloat = 8,
+        tint: Color = .accentColor
+    ) -> some View {
+        modifier(
+            VoiceHoverFeedbackModifier(
+                enabled: enabled,
+                cornerRadius: cornerRadius,
+                tint: tint
+            )
+        )
+    }
 }
 
 private struct LiveVoiceWaveform: View {

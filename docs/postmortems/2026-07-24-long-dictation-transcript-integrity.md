@@ -147,8 +147,10 @@ as authoritative introduced silent data loss.
   icon actions with accessibility labels.
 - Export is user initiated and writes a matching `.m4a` and `.txt`; General
   Dictation still performs no automatic persistent storage.
-- Recording uses Apple's voice-processing input path for echo cancellation and
-  noise suppression, with the original recorder as a compatibility fallback.
+- Recording uses Apple's system recorder as the encoding and finalization
+  boundary. A later packaged-app regression showed that successful
+  voice-processing engine startup did not guarantee writable frames; see the
+  header-only recording postmortem.
 - The audio tap writes through an explicitly sendable, non-actor helper; only
   meter updates cross back to `MainActor`.
 

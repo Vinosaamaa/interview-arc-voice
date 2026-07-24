@@ -33,6 +33,48 @@ import Testing
     #expect(result.reasons.contains(.durationMismatch))
 }
 
+@Test func headerOnlyRecordingRequiresANewCaptureInsteadOfRetranscription() {
+    let recovery = RecordingRecoveryPolicy.action(
+        for: RecordingIntegrityEvidence(
+            wallDurationSeconds: 12,
+            decodedDurationSeconds: 0,
+            fileSizeBytes: 4_096,
+            decodedFrameCount: 0,
+            writeErrorDescription: nil
+        )
+    )
+
+    #expect(recovery == .recordAgain)
+}
+
+@Test func interruptedButPlayableRecordingIsPreservedWithoutOfferingRetranscription() {
+    let recovery = RecordingRecoveryPolicy.action(
+        for: RecordingIntegrityEvidence(
+            wallDurationSeconds: 30,
+            decodedDurationSeconds: 8,
+            fileSizeBytes: 64_000,
+            decodedFrameCount: 128_000,
+            writeErrorDescription: "The audio device disconnected."
+        )
+    )
+
+    #expect(recovery == .preserveWithoutRetry)
+}
+
+@Test func completeRecordingContinuesToTranscription() {
+    let recovery = RecordingRecoveryPolicy.action(
+        for: RecordingIntegrityEvidence(
+            wallDurationSeconds: 30,
+            decodedDurationSeconds: 29.8,
+            fileSizeBytes: 180_000,
+            decodedFrameCount: 476_800,
+            writeErrorDescription: nil
+        )
+    )
+
+    #expect(recovery == .transcribe)
+}
+
 @Test func normalTranscriptDoesNotTriggerASecondProviderCall() async throws {
     let transcriber = CountingTranscriber(results: [
         TranscriptionResult(

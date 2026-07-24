@@ -35,6 +35,29 @@ public struct RecordingIntegrityResult: Equatable, Sendable {
     public var isComplete: Bool { reasons.isEmpty }
 }
 
+public enum RecordingRecoveryAction: Equatable, Sendable {
+    case transcribe
+    case preserveWithoutRetry
+    case recordAgain
+}
+
+public enum RecordingRecoveryPolicy {
+    public static func action(
+        for evidence: RecordingIntegrityEvidence
+    ) -> RecordingRecoveryAction {
+        let integrity = RecordingIntegrityEvaluator.evaluate(evidence)
+        if integrity.isComplete {
+            return .transcribe
+        }
+        if evidence.fileSizeBytes >= 512,
+           evidence.decodedFrameCount > 0,
+           evidence.decodedDurationSeconds > 0 {
+            return .preserveWithoutRetry
+        }
+        return .recordAgain
+    }
+}
+
 public enum RecordingIntegrityEvaluator {
     public static func evaluate(_ evidence: RecordingIntegrityEvidence) -> RecordingIntegrityResult {
         var reasons: [RecordingIntegrityReason] = []
