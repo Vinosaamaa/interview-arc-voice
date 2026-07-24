@@ -133,6 +133,8 @@ public enum VoiceBridgeError: LocalizedError, Sendable {
     case microphoneDenied
     case recordingUnavailable
     case emptyTranscript
+    case incompleteRecording([RecordingIntegrityReason])
+    case suspiciousTranscript([TranscriptionIntegrityReason])
     case codexUnavailable(String)
 
     public var errorDescription: String? {
@@ -145,6 +147,10 @@ public enum VoiceBridgeError: LocalizedError, Sendable {
         case .microphoneDenied: return "Microphone access is required to record an answer."
         case .recordingUnavailable: return "The recording could not be created."
         case .emptyTranscript: return "No speech was detected in this recording."
+        case .incompleteRecording:
+            return "Recording ended early. The original audio was preserved; use Play or Save before trying again."
+        case .suspiciousTranscript:
+            return "The transcript may be incomplete. The original audio was preserved; use Play, Save, or Retry."
         case .codexUnavailable(let detail): return "Codex could not receive the answer: \(detail)"
         }
     }

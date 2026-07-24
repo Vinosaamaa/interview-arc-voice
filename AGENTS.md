@@ -33,13 +33,47 @@ instructions, website playback, and journal publication.
   user's clipboard, overwrite a newer clipboard change, or submit or resume the
   visible specialist task automatically. Treat an Accessibility write as
   successful only after read-back verification.
-- Refresh Interview Arc context immediately before recording. Linking on with
-  missing activity/specialist must fall back to general dictation rather than
-  blocking or crashing.
+- Refresh Interview Arc context continuously while idle. Record must use that
+  cached snapshot and open the microphone without waiting for a network
+  request. Linking on with missing activity/specialist must fall back to
+  general dictation rather than blocking or crashing.
+- Treat the original finalized M4A as the evidence boundary. Before calling
+  speech-to-text, verify file finalization, decodable frames, write errors, and
+  wall-time versus media duration. Never attempt to "repair" speech that was
+  not recorded.
+- Run one provider request in the normal path. A second unprompted request is
+  allowed only after a concrete provider failure or transcript-integrity
+  signal. Preserve the original recording and expose Play, Save, and Retry when
+  neither result is trustworthy.
+- Foreground insertion completion and background Interview Arc delivery are
+  separate states. Stop the floating recorder's busy indication as soon as
+  insertion completes; R2 upload and delivery coaching may continue quietly.
+
+## Reliability change protocol
+
+For every recording, transcription, insertion, or packaged-app reliability
+change:
+
+1. Reproduce the reported failure before changing production behavior.
+2. Inspect each boundary independently: original audio, provider response,
+   transcript assembly, and final editor insertion.
+3. Add a regression test for the proven failure mode before the repair.
+4. Use deterministic fixtures and a non-user text sink during development.
+   Do not repeatedly take over the user's active cursor.
+5. Exercise the exact signed packaged application after CI succeeds. A source
+   build alone is not release evidence.
+6. For data loss, transcript contamination, crash, or silent delivery failure,
+   update or add a blameless postmortem with evidence, root cause, prevention,
+   and packaged-app verification.
+7. Install and test the artifact produced from merged `main`; never declare a
+   release complete from an unmerged branch build.
 
 ## Verification
 
 Run `swift test` after every core or client change. Also run
 `swiftc -frontend -parse Sources/InterviewArcVoiceCore/*.swift Sources/InterviewArcVoice/*.swift Tests/InterviewArcVoiceCoreTests/*.swift`
-for a fast syntax pass. When Xcode is available, package the application and
-verify microphone, Keychain, task resumption, R2 playback, and retry behavior.
+for a fast syntax pass. CI's macOS Xcode runner is the canonical package
+environment; local development must not require a full Xcode installation.
+Verify microphone, Keychain, task resumption, R2 playback, and retry behavior
+with the signed CI artifact. Keep any real-cursor smoke test short and perform
+it only after fixture-driven tests pass.

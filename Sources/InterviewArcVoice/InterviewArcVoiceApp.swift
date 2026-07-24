@@ -106,6 +106,7 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var isPlayingLastAudio = false
     @Published private(set) var canRetryLastTranscription = false
     @Published private(set) var processingElapsedSeconds: TimeInterval = 0
+    @Published private(set) var showProcessingIndicator = false
 
     let recorder = AnswerRecorder()
 
@@ -116,6 +117,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var recordingStore: RecordingStore?
     private var pipeline: VoicePipeline?
     private var captureDestination: CaptureDestination?
+    private var captureGeneration = UUID()
     private var targetApplicationPID: pid_t?
     private var lastInsertionText = ""
     private var shortcutMonitor: Any?
@@ -130,6 +132,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var audioPlayer: AVAudioPlayer?
     private var playbackTimer: Timer?
     private var processingTimer: Timer?
+    private var processingIndicatorTask: Task<Void, Never>?
 
     var isRecording: Bool { phase == .recording }
     var isBusy: Bool { [.refreshing, .transcribing, .sending, .inserting].contains(phase) }
@@ -172,6 +175,22 @@ final class VoiceBridgeModel: ObservableObject {
     }
     var processingStatus: String {
         "\(phase.label) · \(clock(processingElapsedSeconds))"
+    }
+    var linkStatusSymbol: String {
+        if !linkToInterviewArc { return "link.badge.minus" }
+        return context?.focusedActivity == nil ? "link.circle" : "link.circle.fill"
+    }
+    var linkStatusColor: Color {
+        if !linkToInterviewArc { return .secondary }
+        if context?.focusedActivity == nil {
+            return Color(red: 0.92, green: 0.64, blue: 0.22)
+        }
+        return Color(red: 0.40, green: 0.84, blue: 0.79)
+    }
+    var linkStatusAccessibilityLabel: String {
+        if !linkToInterviewArc { return "General dictation. Interview Arc linking is off." }
+        if let activity = context?.focusedActivity { return "Linked to \(activity.title)." }
+        return "Auto-link is on. No activity is focused, so recording will use general dictation."
     }
 
     init() {
@@ -323,7 +342,12 @@ final class VoiceBridgeModel: ObservableObject {
             phase = .transcribing
             Task {
                 await processGeneral(
-                    recording: (retryURL, lastAudioDuration),
+                    recording: RecordedCapture(
+                        url: retryURL,
+                        duration: lastAudioDuration,
+                        writtenFrameCount: 1,
+                        writeErrorDescription: nil
+                    ),
                     rememberAudio: false
                 )
             }
@@ -343,6 +367,7 @@ final class VoiceBridgeModel: ObservableObject {
         deliveryStates = [:]
         if enabled {
             contextMessage = "Auto-link will check the current activity before recording."
+            phase = hasGroqCredential ? .idle : .setup
             Task { await refreshContext(showProgress: false) }
         } else {
             contextMessage = "General dictation will not touch Interview Arc."
@@ -479,7 +504,7 @@ final class VoiceBridgeModel: ObservableObject {
         contextPollTask?.cancel()
         contextPollTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(4))
+                try? await Task.sleep(for: .seconds(1))
                 guard let self, self.linkToInterviewArc, !self.isRecording, !self.isBusy else { continue }
                 await self.refreshContext(showProgress: false)
             }
@@ -501,8 +526,11 @@ final class VoiceBridgeModel: ObservableObject {
         targetApplicationPID = currentInsertionTargetPID()
         deliveryStates = [:]
         canRetryLastTranscription = false
+        captureGeneration = UUID()
 
-        if linkToInterviewArc { await refreshContext(showProgress: true) }
+        // Context is refreshed continuously while idle. Opening the
+        // microphone must not wait for a network round trip because that
+        // loses the first words of an answer.
         let route = routingPolicy.route(
             linkToInterviewArc: linkToInterviewArc,
             hasFocusedActivity: context?.focusedActivity != nil
@@ -528,6 +556,9 @@ final class VoiceBridgeModel: ObservableObject {
         do {
             try await recorder.start(at: destination)
             phase = .recording
+            if linkToInterviewArc {
+                Task { await refreshContext(showProgress: false) }
+            }
         } catch {
             phase = .failed(error.localizedDescription)
         }
@@ -540,17 +571,23 @@ final class VoiceBridgeModel: ObservableObject {
         }
         do {
             let recording = try recorder.stop()
+            let generation = captureGeneration
+            self.captureDestination = nil
             rememberLastAudio(recording)
             beginProcessing()
             phase = .transcribing
             Task {
                 switch captureDestination {
                 case .linked(let activity, let startedAt):
-                    await processLinked(recording: recording, activity: activity, startedAt: startedAt)
+                    await processLinked(
+                        recording: recording,
+                        activity: activity,
+                        startedAt: startedAt,
+                        generation: generation
+                    )
                 case .general:
                     await processGeneral(recording: recording, rememberAudio: false)
                 }
-                self.captureDestination = nil
             }
         } catch {
             phase = .failed(error.localizedDescription)
@@ -558,7 +595,7 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     private func processGeneral(
-        recording: (url: URL, duration: TimeInterval),
+        recording: RecordedCapture,
         rememberAudio: Bool = true
     ) async {
         guard let recordingStore else {
@@ -568,12 +605,21 @@ final class VoiceBridgeModel: ObservableObject {
         }
         if rememberAudio { rememberLastAudio(recording) }
         do {
+            try validateRecording(recording)
             let generalPipeline = GeneralDictationPipeline(
                 transcriber: GroqTranscriber(apiKey: groqKeyDraft),
                 temporaryDirectory: recordingStore.temporaryDirectory
             )
-            let result = try await generalPipeline.process(recordingURL: recording.url)
-            let inserted = await insertTranscript(result.text, editorText: result.text, showDeliveryStep: false)
+            let result = try await generalPipeline.process(
+                recordingURL: recording.url,
+                durationSeconds: recording.duration
+            )
+            let transcript = result.transcription.text
+            let inserted = await insertTranscript(
+                transcript,
+                editorText: transcript,
+                showDeliveryStep: false
+            )
             canRetryLastTranscription = false
             endProcessing()
             phase = inserted ? .delivered : .failed("Voice could not find the focused text editor. Click the editor and try again.")
@@ -581,7 +627,6 @@ final class VoiceBridgeModel: ObservableObject {
                 ? "Dictation inserted at the cursor. Press Send when ready."
                 : "No editable cursor was available."
         } catch {
-            try? FileManager.default.removeItem(at: recording.url)
             canRetryLastTranscription = hasLastAudio
             endProcessing()
             phase = .failed(error.localizedDescription)
@@ -589,11 +634,13 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     private func processLinked(
-        recording: (url: URL, duration: TimeInterval),
+        recording: RecordedCapture,
         activity: FocusedVoiceActivity,
-        startedAt: Date
+        startedAt: Date,
+        generation: UUID
     ) async {
         do {
+            try validateRecording(recording)
             lastInsertionSucceeded = false
             let builtPipeline = try makeLinkedPipeline()
             pipeline = builtPipeline
@@ -608,12 +655,14 @@ final class VoiceBridgeModel: ObservableObject {
                         editorText: capture.editorText,
                         showDeliveryStep: true
                     )
+                    await self.finishForegroundInsertion()
                 },
                 progress: { update in
-                    await self.applyDeliveryUpdate(update)
+                    await self.applyDeliveryUpdate(update, generation: generation)
                 }
             )
             await updateRetryCount()
+            guard generation == captureGeneration else { return }
             endProcessing()
             if !lastInsertionSucceeded {
                 phase = .failed("The answer was saved, but Voice could not find the focused text editor.")
@@ -625,6 +674,8 @@ final class VoiceBridgeModel: ObservableObject {
                     : "Inserted at the cursor. Press Send when ready."
             }
         } catch {
+            guard generation == captureGeneration else { return }
+            canRetryLastTranscription = hasLastAudio
             endProcessing()
             phase = .failed(error.localizedDescription)
         }
@@ -636,9 +687,19 @@ final class VoiceBridgeModel: ObservableObject {
         pendingRetryCount = (try? await queue.items().count) ?? 0
     }
 
-    private func applyDeliveryUpdate(_ update: VoicePipelineUpdate) {
+    private func applyDeliveryUpdate(_ update: VoicePipelineUpdate, generation: UUID) {
+        guard generation == captureGeneration else { return }
         deliveryStates[update.component] = update.state
+        guard !lastInsertionSucceeded else { return }
         phase = update.component == .transcript ? .transcribing : .sending
+    }
+
+    private func finishForegroundInsertion() {
+        endProcessing()
+        if lastInsertionSucceeded {
+            phase = .delivered
+            contextMessage = "Inserted at the cursor. Press Send when ready."
+        }
     }
 
     func reinsertLastTranscript() {
@@ -728,7 +789,7 @@ final class VoiceBridgeModel: ObservableObject {
         shortcutCapturing = false
     }
 
-    private func rememberLastAudio(_ recording: (url: URL, duration: TimeInterval)) {
+    private func rememberLastAudio(_ recording: RecordedCapture) {
         playbackTimer?.invalidate()
         playbackTimer = nil
         audioPlayer?.stop()
@@ -744,7 +805,9 @@ final class VoiceBridgeModel: ObservableObject {
 
     private func beginProcessing() {
         processingTimer?.invalidate()
+        processingIndicatorTask?.cancel()
         processingElapsedSeconds = 0
+        showProcessingIndicator = false
         let startedAt = Date()
         processingTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -752,11 +815,32 @@ final class VoiceBridgeModel: ObservableObject {
                 self.processingElapsedSeconds = Date().timeIntervalSince(startedAt)
             }
         }
+        processingIndicatorTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(900))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self, self.isBusy else { return }
+                self.showProcessingIndicator = true
+            }
+        }
     }
 
     private func endProcessing() {
+        processingIndicatorTask?.cancel()
+        processingIndicatorTask = nil
         processingTimer?.invalidate()
         processingTimer = nil
+        processingElapsedSeconds = 0
+        showProcessingIndicator = false
+    }
+
+    private func validateRecording(_ recording: RecordedCapture) throws {
+        let evidence = try RecordingFileInspector.inspect(recording)
+        let integrity = RecordingIntegrityEvaluator.evaluate(evidence)
+        guard integrity.isComplete else {
+            canRetryLastTranscription = hasLastAudio
+            throw VoiceBridgeError.incompleteRecording(integrity.reasons)
+        }
     }
 
     private func clock(_ seconds: TimeInterval) -> String {

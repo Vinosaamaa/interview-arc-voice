@@ -171,9 +171,9 @@ import Testing
         temporaryDirectory: root
     )
 
-    let result = try await pipeline.process(recordingURL: recording)
+    let result = try await pipeline.process(recordingURL: recording, durationSeconds: 1)
 
-    #expect(result.text == "verbatim test transcript")
+    #expect(result.transcription.text == "verbatim test transcript")
     #expect(!FileManager.default.fileExists(atPath: recording.path))
 }
 

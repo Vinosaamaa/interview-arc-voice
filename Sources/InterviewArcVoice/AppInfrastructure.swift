@@ -338,13 +338,14 @@ final class DictationTextInjector {
         keyUp.post(tap: .cghidEventTap)
 
         // Renderer-backed editors consume the HID shortcut asynchronously.
-        // Restoring the clipboard after only a few hundred milliseconds can
-        // make Chromium paste the user's previous clipboard value instead of
-        // the transcript. Keep the transient value alive through that event
-        // handoff, then restore it only if nobody changed the clipboard.
-        try? await Task.sleep(for: .milliseconds(1_500))
-        if pasteboard.changeCount == transientChangeCount {
-            snapshot.restore(to: pasteboard)
+        // Keep the transient value alive through that handoff, but do not make
+        // the visible completion state wait 1.5 seconds after text has already
+        // appeared in the editor.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1_500))
+            if pasteboard.changeCount == transientChangeCount {
+                snapshot.restore(to: pasteboard)
+            }
         }
         return true
     }
@@ -440,10 +441,25 @@ struct FloatingRecorderView: View {
             if model.isRecording {
                 LiveVoiceWaveform(recorder: model.recorder)
                 RecordingClock(recorder: model.recorder, compact: true)
-            } else if model.isBusy {
+            } else if model.isBusy, model.showProcessingIndicator {
                 processingLabel
             } else {
                 activityLabel
+                memoButton(
+                    symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
+                    label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
+                    action: model.toggleLastAudioPlayback
+                )
+                memoButton(
+                    symbol: "doc.on.doc",
+                    label: "Copy last transcript",
+                    action: model.copyLastTranscript
+                )
+                memoButton(
+                    symbol: "square.and.arrow.down",
+                    label: "Save last audio and transcript",
+                    action: model.exportLastMemo
+                )
             }
             recordButton
         }
@@ -458,14 +474,15 @@ struct FloatingRecorderView: View {
 
     private var linkButton: some View {
         Button(action: model.toggleLinkMode) {
-            Image(systemName: model.linkToInterviewArc ? "link.circle.fill" : "link.circle")
+            Image(systemName: model.linkStatusSymbol)
                 .font(.system(size: 23, weight: .semibold))
-                .foregroundStyle(model.linkToInterviewArc ? Color(red: 0.40, green: 0.84, blue: 0.79) : Color.secondary)
+                .foregroundStyle(model.linkStatusColor)
         }
         .buttonStyle(.plain)
         .frame(width: 28, height: 36)
         .disabled(model.isRecording || model.isBusy)
-        .accessibilityLabel(model.linkToInterviewArc ? "Disconnect from Interview Arc activity" : "Connect to Interview Arc activity")
+        .help(model.linkStatusAccessibilityLabel)
+        .accessibilityLabel(model.linkStatusAccessibilityLabel)
     }
 
     private var activityLabel: some View {
@@ -482,16 +499,31 @@ struct FloatingRecorderView: View {
     }
 
     private var processingLabel: some View {
-        HStack(spacing: 6) {
+        HStack {
+            Spacer()
             ProgressView()
                 .controlSize(.small)
-            Text(model.processingStatus)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+            Spacer()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
         .accessibilityLabel(model.processingStatus)
+    }
+
+    private func memoButton(
+        symbol: String,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 19, height: 26)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(model.hasLastMemo ? Color.primary : Color.secondary.opacity(0.35))
+        .disabled(!model.hasLastMemo || model.isBusy)
+        .help(label)
+        .accessibilityLabel(label)
     }
 
     private var recordButton: some View {
