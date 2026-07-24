@@ -65,15 +65,33 @@ Timer values must never change width as they count.
 
 ## Information hierarchy
 
-When space permits, the order is:
-
-```text
-[link] [activity title] [activity elapsed] | [SESSION + countdown] [pause] [mic]
-```
-
 The compact state prioritizes the link state, activity/general-dictation
-identity, and microphone. Linked recording and playback may widen to reveal
-timing or transport controls. Long activity names truncate on one line.
+identity, previous-capture actions, and microphone. When an open D1 timer
+instrument exists, the activity title includes a quiet disclosure chevron.
+Linked recording and playback may widen to reveal timing or transport
+controls. Long activity names truncate on one line.
+
+## Expanded timer instrument
+
+- Expanding keeps the recorder capsule as the first surface and reveals one
+  second frosted surface below it in the same transparent `NSPanel`.
+- Preserve a real 10-point transparent gap. The surfaces must read as two
+  coordinated components, not one opaque card.
+- Expansion is right-edge and top-edge anchored. Collapsing restores the
+  250-by-40 capsule without moving it.
+- Session and activity rows use the same three columns: identity/title, stable
+  monospaced time, and controls.
+- Normal timer rows contain only Pause/Resume and Finish.
+- The session is a countdown and may render `+HH:MM:SS` overtime. The activity
+  is an elapsed stopwatch and may also exceed its allocation.
+- A paused last-focused activity remains visible and resumable while its
+  session continues or is paused.
+- Finish on an activity opens an inline drawer inside the second surface. Only
+  this drawer contains the explicit result flags and problem star control.
+- The next-activity picker contains activity identity plus Start, Resume, or
+  Start-and-open controls. It never contains result flags or stars.
+- Timer digits advance locally from the latest server timestamp. D1 receives
+  state transitions, not one write per displayed second.
 
 ## Link icon family
 
@@ -119,6 +137,8 @@ timing or transport controls. Long activity names truncate on one line.
   shifting neighboring layout.
 - Press: compress the control by about three percent.
 - Width changes: 200–260 ms ease-in-out, anchored to the widget’s right edge.
+- Timer expansion changes both width and height over the same 200–260 ms
+  interval, anchored to the widget’s top-right corner.
 - Respect Reduce Motion by replacing movement with short opacity changes.
 - Every icon-only control has an accessibility label and a tooltip.
 - A Record press must react immediately; cached activity routing must not add a
@@ -138,6 +158,11 @@ timing or transport controls. Long activity names truncate on one line.
   routes.
 - Silent input does not produce a guessed transcript.
 - Previous-capture controls appear only when corresponding content exists.
+- Timer rows expose no result or star controls until Finish opens its drawer.
+- The next-activity picker exposes no result or star controls.
+- Pausing a session freezes both clocks and preserves the last-focused
+  activity; resuming it never changes to the broken-chain state.
+- Session and activity overtime remain legible and do not resize their columns.
 - Hover, keyboard focus, press feedback, Reduce Motion, and accessibility
   labels are verified.
 - The signed artifact from merged `main` is installed and exercised; a source

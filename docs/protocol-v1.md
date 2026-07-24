@@ -15,6 +15,28 @@ or specialist is a normal, user-visible state. The timestamps allow the native
 client to repair a briefly stale cache without ever attaching a recording to
 an activity that began later.
 
+The response also includes a lightweight `timerInstrument` snapshot. It keeps
+the focused session, paused last-focused activity, remaining session
+activities, timer revisions, and the server clock needed by the floating
+instrument. D1 records state transitions only. The app advances visible clocks
+locally between snapshots instead of writing once per second.
+
+## Control the timer instrument
+
+`POST /voice/timers`
+
+The native widget may start, resume, pause, or finish the current session and
+may start, resume, or pause one of that session's activities. Starting an
+activity resumes its parent session and pauses any competing activity through
+the same D1 transition rules as the website and Chrome companion.
+
+An activity cannot use the generic `finish` mutation. Clicking Finish in the
+widget opens an inline drawer; the client then sends one `finish-activity`
+mutation containing the explicit result and current star choice. The server
+stores that choice, finishes the timer, and schedules or clears review state.
+The normal timer rows and next-activity picker never expose result or star
+controls.
+
 ## Persist a captured answer
 
 `POST /voice/captures`
