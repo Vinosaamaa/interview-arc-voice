@@ -3,13 +3,18 @@
 ## Linked practice flow
 
 1. Refresh and cache the focused Interview Arc activity through the
-   authenticated API while idle.
+   authenticated API continuously, including during recording and processing.
+   A transient refresh failure retains the last verified display context.
 2. Resolve a deterministic vocabulary prompt from explicit terms, stored pack
    IDs, metadata triggers, and the specialty base pack.
-3. Open the microphone immediately from the cached routing snapshot and record
+3. Open the microphone immediately from the fresh cached routing snapshot and record
    one user answer as a continuous local M4A file. The system recorder owns
    file finalization; a capture is not eligible for transcription until the
    finalized file reopens with decoded frames.
+   If the cached snapshot was briefly behind, the active refresh may late-bind
+   the capture only when the server proves that activity's stopwatch began
+   before recording started. An already linked recording never changes
+   activity, and an activity started later never receives an earlier clip.
 4. Reopen the finalized file and verify nonzero frames, write success, media
    duration against recording wall time, and a plausible encoded-audio payload
    rate. AAC containers that advance in time while carrying near-silent
@@ -38,6 +43,12 @@ incomplete provider result, implausible duration, known prompt leakage, or
 missing output triggers exactly one unprompted retry. If the retry is also
 suspicious, Voice does not claim success; it retains the original audio and
 offers Play, Save, and Retry.
+
+The compact recorder uses a layered material surface. Playback expands it from
+250 to 360 points, exposes a seekable timeline and elapsed/duration text, and
+collapses smoothly after playback completes. Saving uses the native macOS save
+panel: the user chooses the name and location, the `.m4a` suffix remains
+canonical, and a sibling `.txt` transcript is optional.
 
 The user sends the inserted text through the visible Codex task. The rendered
 message shows the answer while the specialist receives the comment envelope and

@@ -28,6 +28,40 @@ public struct FocusedVoiceActivity: Codable, Equatable, Sendable {
     public let projects: [String]
     public let vocabularyPackIds: [String]
     public let speechTerms: [String]
+    public let startedAt: Int64?
+    public let runningSince: Int64?
+
+    public init(
+        activityId: String,
+        questionId: String?,
+        specialty: PracticeSpecialty,
+        interviewArcSpecialty: String,
+        title: String,
+        prompt: String?,
+        topics: [String],
+        tags: [String],
+        companies: [String],
+        projects: [String],
+        vocabularyPackIds: [String],
+        speechTerms: [String],
+        startedAt: Int64? = nil,
+        runningSince: Int64? = nil
+    ) {
+        self.activityId = activityId
+        self.questionId = questionId
+        self.specialty = specialty
+        self.interviewArcSpecialty = interviewArcSpecialty
+        self.title = title
+        self.prompt = prompt
+        self.topics = topics
+        self.tags = tags
+        self.companies = companies
+        self.projects = projects
+        self.vocabularyPackIds = vocabularyPackIds
+        self.speechTerms = speechTerms
+        self.startedAt = startedAt
+        self.runningSince = runningSince
+    }
 
     public var vocabularyContext: ActivityContext {
         ActivityContext(

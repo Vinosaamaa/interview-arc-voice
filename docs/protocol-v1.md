@@ -9,8 +9,11 @@ bridge. The token identifies the owner; client-provided owner IDs are ignored.
 `GET /voice/context`
 
 Returns the focused activity, its stable `activityId`, question metadata used
-for vocabulary selection, and the registered long-lived specialist task. A
-missing activity or specialist is a normal, user-visible state.
+for vocabulary selection, its activity-timer `startedAt` and `runningSince`
+timestamps, and the registered long-lived specialist task. A missing activity
+or specialist is a normal, user-visible state. The timestamps allow the native
+client to repair a briefly stale cache without ever attaching a recording to
+an activity that began later.
 
 ## Persist a captured answer
 

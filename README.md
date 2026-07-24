@@ -75,11 +75,13 @@ Save, and Retry instead of being discarded.
 - The global shortcut defaults to `Control-Option-Space` and is configurable in
   Settings.
 - The menu panel is fixed at 260 points wide. The always-on-top recorder is a
-  fixed 250-by-40-point capsule. It uses a filled teal chain for an active
+  layered 250-by-40-point capsule that smoothly widens to 360 points for
+  seekable playback, then returns to its compact state. It uses a filled teal chain for an active
   Interview Arc link, an amber chain for general fallback, and a dark-blue
   broken chain when linking is off. The capsule exposes Play, Copy, and Save for the
-  latest capture and replaces its activity label with a live waveform while
-  recording.
+  latest capture, offers a native filename/location save dialog with an
+  optional sibling transcript, and replaces its activity label with a live
+  waveform while recording.
 - Cheap local audio checks run for every capture. Normal audio uses exactly one
   speech-to-text request. Only a provider failure or concrete integrity signal
   triggers one unprompted retry.

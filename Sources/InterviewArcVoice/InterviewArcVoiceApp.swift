@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Carbon
 import SwiftUI
+import UniformTypeIdentifiers
 import InterviewArcVoiceCore
 
 private struct SecureCredentialSnapshot: Sendable {
@@ -83,7 +84,7 @@ final class VoiceBridgeModel: ObservableObject {
 
     private enum CaptureDestination {
         case linked(FocusedVoiceActivity, startedAt: Date)
-        case general
+        case general(startedAt: Date)
     }
 
     @Published var phase: Phase = .setup
@@ -104,6 +105,9 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var deliveryStates: [VoiceDeliveryComponent: VoiceDeliveryComponentState] = [:]
     @Published private(set) var hasLastAudio = false
     @Published private(set) var isPlayingLastAudio = false
+    @Published private(set) var isPlaybackExpanded = false
+    @Published private(set) var playbackCurrentTime: TimeInterval = 0
+    @Published private(set) var playbackDuration: TimeInterval = 0
     @Published private(set) var canRetryLastTranscription = false
     @Published private(set) var processingElapsedSeconds: TimeInterval = 0
     @Published private(set) var showProcessingIndicator = false
@@ -112,6 +116,8 @@ final class VoiceBridgeModel: ObservableObject {
 
     private let keychain = KeychainStore()
     private let routingPolicy = CaptureRoutingPolicy()
+    private let contextRetentionPolicy = VoiceContextRetentionPolicy()
+    private let lateBindingPolicy = LateCaptureBindingPolicy()
     private let hotKeyManager = GlobalHotKeyManager()
     private let textInjector = DictationTextInjector()
     private var recordingStore: RecordingStore?
@@ -123,12 +129,14 @@ final class VoiceBridgeModel: ObservableObject {
     private var shortcutMonitor: Any?
     private var lastInsertionSucceeded = false
     private var contextPollTask: Task<Void, Never>?
+    private var contextLastVerifiedAt: Date?
     private var wakeObserver: NSObjectProtocol?
     private var activationObserver: NSObjectProtocol?
     private var lastExternalApplicationPID: pid_t?
     private var lastAudioData: Data?
     private var lastAudioDuration: TimeInterval = 0
     private var lastMemoCreatedAt = Date()
+    private var lastMemoActivityTitle: String?
     private var audioPlayer: AVAudioPlayer?
     private var playbackTimer: Timer?
     private var processingTimer: Timer?
@@ -172,6 +180,13 @@ final class VoiceBridgeModel: ObservableObject {
         let duration = clock(lastAudioDuration)
         if words == 0 { return duration }
         return "\(words) words · \(duration)"
+    }
+    var playbackProgress: Double {
+        guard playbackDuration > 0 else { return 0 }
+        return min(1, max(0, playbackCurrentTime / playbackDuration))
+    }
+    var playbackTimeLabel: String {
+        "\(clock(playbackCurrentTime)) / \(clock(playbackDuration))"
     }
     var processingStatus: String {
         "\(phase.label) · \(clock(processingElapsedSeconds))"
@@ -274,17 +289,32 @@ final class VoiceBridgeModel: ObservableObject {
             return
         }
         do {
-            let player = try AVAudioPlayer(data: lastAudioData)
-            player.prepareToPlay()
+            let player: AVAudioPlayer
+            if let audioPlayer {
+                player = audioPlayer
+            } else {
+                player = try AVAudioPlayer(data: lastAudioData)
+                player.prepareToPlay()
+                audioPlayer = player
+                playbackDuration = player.duration
+            }
+            if player.currentTime >= max(0, player.duration - 0.05) {
+                player.currentTime = 0
+            }
             player.play()
-            audioPlayer = player
             isPlayingLastAudio = true
+            isPlaybackExpanded = true
+            playbackCurrentTime = player.currentTime
             playbackTimer?.invalidate()
-            playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     guard let self else { return }
+                    self.playbackCurrentTime = self.audioPlayer?.currentTime ?? 0
                     if self.audioPlayer?.isPlaying != true {
                         self.isPlayingLastAudio = false
+                        if self.playbackCurrentTime >= max(0, self.playbackDuration - 0.05) {
+                            self.isPlaybackExpanded = false
+                        }
                         self.playbackTimer?.invalidate()
                         self.playbackTimer = nil
                     }
@@ -295,32 +325,45 @@ final class VoiceBridgeModel: ObservableObject {
         }
     }
 
+    func seekLastAudio(to progress: Double) {
+        guard let audioPlayer else { return }
+        let time = min(1, max(0, progress)) * audioPlayer.duration
+        audioPlayer.currentTime = time
+        playbackCurrentTime = time
+    }
+
     func exportLastMemo() {
         guard hasLastMemo else { return }
-        let panel = NSOpenPanel()
+        let plan = VoiceMemoExportPlan(
+            activityTitle: lastMemoActivityTitle,
+            createdAt: lastMemoCreatedAt
+        )
+        let panel = NSSavePanel()
         panel.title = "Save Voice Memo"
-        panel.message = "Choose a folder for the original audio and verbatim transcript."
+        panel.message = lastMemoActivityTitle.map { "Linked to \($0)" }
+            ?? "General dictation · not linked to Interview Arc"
         panel.prompt = "Save"
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
-        guard panel.runModal() == .OK, let directory = panel.url else { return }
+        panel.allowedContentTypes = [.mpeg4Audio]
+        panel.nameFieldStringValue = plan.suggestedAudioFilename
+        let transcriptCheckbox = NSButton(
+            checkboxWithTitle: "Also save transcript as .txt",
+            target: nil,
+            action: nil
+        )
+        transcriptCheckbox.state = lastTranscript.isEmpty ? .off : .on
+        transcriptCheckbox.isEnabled = !lastTranscript.isEmpty
+        transcriptCheckbox.toolTip = "The transcript uses the same filename as the audio."
+        panel.accessoryView = transcriptCheckbox
+        guard panel.runModal() == .OK, let audioURL = panel.url else { return }
 
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
-        let basename = "Interview Arc Voice \(formatter.string(from: lastMemoCreatedAt))"
         do {
             if let lastAudioData {
-                try lastAudioData.write(
-                    to: directory.appending(path: basename + ".m4a"),
-                    options: .atomic
-                )
+                try lastAudioData.write(to: audioURL, options: .atomic)
             }
-            if !lastTranscript.isEmpty {
+            if transcriptCheckbox.state == .on, !lastTranscript.isEmpty {
                 try lastTranscript.write(
-                    to: directory.appending(path: basename + ".txt"),
+                    to: plan.transcriptURL(forAudioURL: audioURL),
                     atomically: true,
                     encoding: .utf8
                 )
@@ -490,20 +533,28 @@ final class VoiceBridgeModel: ObservableObject {
         if showProgress { phase = .refreshing }
         do {
             let loaded = try await InterviewArcAPIClient(baseURL: baseURL, token: token).context()
-            context = loaded
+            context = contextRetentionPolicy.context(previous: context, refreshed: loaded)
+            contextLastVerifiedAt = Date()
+            applyLateCaptureBinding(from: loaded)
             if let activity = loaded.focusedActivity {
-                contextMessage = "Linked to \(activity.title)"
+                if !isRecording && !isBusy { contextMessage = "Linked to \(activity.title)" }
             } else {
-                contextMessage = "No focused activity — using general dictation."
+                if !isRecording && !isBusy { contextMessage = "No focused activity — using general dictation." }
             }
-            pipeline = try? makeLinkedPipeline()
-            await updateRetryCount()
-            if pendingRetryCount > 0, pipeline != nil {
-                Task { await retryPendingInBackground() }
+            if !isRecording && !isBusy {
+                pipeline = try? makeLinkedPipeline()
+                await updateRetryCount()
+                if pendingRetryCount > 0, pipeline != nil {
+                    Task { await retryPendingInBackground() }
+                }
             }
         } catch {
-            context = nil
-            contextMessage = "Interview Arc is unavailable — using general dictation."
+            context = contextRetentionPolicy.context(previous: context, refreshed: nil)
+            if !isRecording && !isBusy {
+                contextMessage = context?.focusedActivity == nil
+                    ? "Interview Arc is unavailable — using general dictation."
+                    : "Interview Arc refresh delayed — keeping the last verified activity."
+            }
         }
         settlePhaseAfterContextRefresh(force: showProgress)
     }
@@ -513,7 +564,7 @@ final class VoiceBridgeModel: ObservableObject {
         contextPollTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
-                guard let self, self.linkToInterviewArc, !self.isRecording, !self.isBusy else { continue }
+                guard let self, self.linkToInterviewArc else { continue }
                 await self.refreshContext(showProgress: false)
             }
         }
@@ -539,16 +590,17 @@ final class VoiceBridgeModel: ObservableObject {
         // Context is refreshed continuously while idle. Opening the
         // microphone must not wait for a network round trip because that
         // loses the first words of an answer.
+        let recordingStartedAt = Date()
         let route = routingPolicy.route(
             linkToInterviewArc: linkToInterviewArc,
-            hasFocusedActivity: context?.focusedActivity != nil
+            hasFocusedActivity: context?.focusedActivity != nil && contextIsFreshForCapture
         )
         switch route {
         case .linked:
             guard let activity = context?.focusedActivity else { return }
-            captureDestination = .linked(activity, startedAt: Date())
+            captureDestination = .linked(activity, startedAt: recordingStartedAt)
         case .general:
-            captureDestination = .general
+            captureDestination = .general(startedAt: recordingStartedAt)
         }
 
         guard let recordingStore else {
@@ -581,15 +633,28 @@ final class VoiceBridgeModel: ObservableObject {
             return
         }
         do {
-            let recording = try recorder.stop()
+            var recording = try recorder.stop()
             let generation = captureGeneration
+            let memoActivityTitle: String?
+            switch captureDestination {
+            case .linked(let activity, _):
+                memoActivityTitle = activity.title
+                if let recordingStore {
+                    recording = try recordingStore.promoteToLinkedRecording(
+                        recording,
+                        activityID: activity.activityId
+                    )
+                }
+            case .general:
+                memoActivityTitle = nil
+            }
             self.captureDestination = nil
             let recovery = try recordingRecoveryAction(for: recording)
             switch recovery {
             case .transcribe:
-                rememberLastAudio(recording)
+                rememberLastAudio(recording, activityTitle: memoActivityTitle)
             case .preserveWithoutRetry:
-                rememberLastAudio(recording)
+                rememberLastAudio(recording, activityTitle: memoActivityTitle)
                 canRetryLastTranscription = false
                 phase = .failed("Recording ended early.")
                 contextMessage = "The playable portion is preserved. Record again for a complete transcript."
@@ -835,16 +900,23 @@ final class VoiceBridgeModel: ObservableObject {
         shortcutCapturing = false
     }
 
-    private func rememberLastAudio(_ recording: RecordedCapture) {
+    private func rememberLastAudio(
+        _ recording: RecordedCapture,
+        activityTitle: String? = nil
+    ) {
         playbackTimer?.invalidate()
         playbackTimer = nil
         audioPlayer?.stop()
         audioPlayer = nil
         isPlayingLastAudio = false
+        isPlaybackExpanded = false
+        playbackCurrentTime = 0
         lastAudioData = try? Data(contentsOf: recording.url, options: .mappedIfSafe)
         hasLastAudio = lastAudioData != nil
         lastAudioDuration = recording.duration
+        playbackDuration = recording.duration
         lastMemoCreatedAt = Date()
+        lastMemoActivityTitle = activityTitle
         lastTranscript = ""
         lastInsertionText = ""
     }
@@ -855,9 +927,13 @@ final class VoiceBridgeModel: ObservableObject {
         audioPlayer?.stop()
         audioPlayer = nil
         isPlayingLastAudio = false
+        isPlaybackExpanded = false
+        playbackCurrentTime = 0
+        playbackDuration = 0
         lastAudioData = nil
         hasLastAudio = false
         lastAudioDuration = 0
+        lastMemoActivityTitle = nil
         lastTranscript = ""
         lastInsertionText = ""
     }
@@ -920,6 +996,24 @@ final class VoiceBridgeModel: ObservableObject {
         case .systemDesign: "System design"
         case .behavioral: "Behavioral"
         }
+    }
+
+    private var contextIsFreshForCapture: Bool {
+        guard let contextLastVerifiedAt else { return false }
+        return Date().timeIntervalSince(contextLastVerifiedAt) <= 3
+    }
+
+    private func applyLateCaptureBinding(from refreshed: VoiceContextResponse) {
+        guard linkToInterviewArc,
+              case .general(let recordingStartedAt) = captureDestination,
+              let activity = lateBindingPolicy.activity(
+                initiallyLinkedActivityID: nil,
+                recordingStartedAtMilliseconds: Int64(recordingStartedAt.timeIntervalSince1970 * 1_000),
+                refreshedActivity: refreshed.focusedActivity
+              ) else {
+            return
+        }
+        captureDestination = .linked(activity, startedAt: recordingStartedAt)
     }
 }
 

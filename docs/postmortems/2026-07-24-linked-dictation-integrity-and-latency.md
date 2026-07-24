@@ -1,6 +1,6 @@
 # Linked Dictation Integrity and Capture-Latency Incident
 
-- **Status:** Repair in verification
+- **Status:** Repair implemented; signed-package verification pending
 - **Detected:** July 24, 2026 (Pacific time)
 - **Affected product:** Interview Arc Voice for macOS
 - **Impact:** Critical transcript truncation/contamination; moderate capture latency
@@ -26,6 +26,13 @@ The failures crossed three independent boundaries:
 The completion lag had a fourth cause: the pasteboard safety path deliberately
 held the method open for 1.5 seconds after dispatching Command-V, even though
 the editor had already received the text.
+
+Production observation later exposed a fifth boundary failure: the one-second
+context loop skipped every refresh while recording or processing. If the user
+started a stopwatch shortly before Record and the cached snapshot had not yet
+advanced, that capture remained general for its entire duration. Transient
+Cloudflare 503 responses also cleared the last verified context, making the
+widget flicker into fallback.
 
 ## User impact
 
@@ -57,6 +64,12 @@ itself a contributing cause.
 
 - Refresh activity context every second while idle and use the cached snapshot
   at Record time.
+- Continue the one-second context refresh during recording and processing.
+- Retain the last verified context across transient service failures, while
+  requiring a recent verification before routing a new capture.
+- Add timer timestamps to `/voice/context`. A general capture may late-bind
+  only when `runningSince` proves the activity was already active when Record
+  began. Never move an already linked capture or bind to a later activity.
 - Start the microphone without awaiting Interview Arc.
 - Record audio-write errors and written frame counts.
 - Reopen every finalized M4A and compare decoded duration, frames, file size,
