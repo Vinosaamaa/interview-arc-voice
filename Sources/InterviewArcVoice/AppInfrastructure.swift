@@ -664,11 +664,23 @@ struct FloatingRecorderView: View {
                 FailureRecoveryPopover(model: model)
             }
             ForEach(Array((model.failureNotice?.actions ?? []).prefix(2)), id: \.self) { action in
-                memoButton(
-                    symbol: failureSymbol(action),
-                    label: failureLabel(action),
-                    action: { model.performFailureAction(action) }
-                )
+                if action == .openSettings {
+                    SettingsLink {
+                        Image(systemName: failureSymbol(action))
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 22, height: 22)
+                    }
+                    .buttonStyle(.plain)
+                    .voiceHoverFeedback(cornerRadius: 11, tint: .teal)
+                    .help(failureLabel(action))
+                    .accessibilityLabel(failureLabel(action))
+                } else {
+                    memoButton(
+                        symbol: failureSymbol(action),
+                        label: failureLabel(action),
+                        action: { model.performFailureAction(action) }
+                    )
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -861,7 +873,15 @@ private struct FailureRecoveryPopover: View {
 
                 VStack(spacing: 6) {
                     ForEach(failure.actions, id: \.self) { action in
-                        if action == failure.actions.first {
+                        if action == .openSettings {
+                            if action == failure.actions.first {
+                                settingsActionLink(action)
+                                    .buttonStyle(.borderedProminent)
+                            } else {
+                                settingsActionLink(action)
+                                    .buttonStyle(.bordered)
+                            }
+                        } else if action == failure.actions.first {
                             failureActionButton(action)
                                 .buttonStyle(.borderedProminent)
                         } else {
@@ -889,6 +909,16 @@ private struct FailureRecoveryPopover: View {
         Button {
             model.performFailureAction(action)
         } label: {
+            Label(actionLabel(action), systemImage: actionSymbol(action))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+        }
+        .tint(Color(red: 0.08, green: 0.44, blue: 0.39))
+        .voiceHoverFeedback(cornerRadius: 8, tint: .teal)
+    }
+
+    private func settingsActionLink(_ action: VoiceFailureAction) -> some View {
+        SettingsLink {
             Label(actionLabel(action), systemImage: actionSymbol(action))
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)
@@ -969,13 +999,6 @@ struct LinkStatusIcon: View {
                     .frame(width: 3.2, height: size + 8)
                     .rotationEffect(.degrees(42))
                     .blendMode(.destinationOut)
-            }
-            if state == .waiting {
-                Circle()
-                    .fill(color)
-                    .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1))
-                    .frame(width: max(5, size * 0.30), height: max(5, size * 0.30))
-                    .offset(x: size * 0.36, y: -size * 0.36)
             }
         }
         .compositingGroup()

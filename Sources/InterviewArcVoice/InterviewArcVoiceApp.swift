@@ -62,6 +62,10 @@ struct InterviewArcVoiceApp: App {
                 .accessibilityLabel(model.isRecording ? "Interview Arc Voice recording" : "Interview Arc Voice")
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            VoiceSettingsWindow(model: model)
+        }
     }
 }
 
@@ -809,6 +813,16 @@ final class VoiceBridgeModel: ObservableObject {
                 detail: errorDescription,
                 actions: [.openSettings]
             )
+        } else if CredentialReadinessPolicy().readiness(
+            groqAPIKey: snapshot.groqAPIKey
+        ) == .missingGroqAPIKey {
+            reportFailure(
+                kind: .configuration,
+                title: "Settings need attention",
+                message: "Add your Groq API key to start recording",
+                detail: "Open Voice settings, enter the Groq API key, and save it. Voice verifies the saved Keychain value before enabling recording.",
+                actions: [.openSettings]
+            )
         } else {
             reconcilePersistedCredentialFailure()
             phase = failureNotice.map { .failed($0.title) }
@@ -1400,6 +1414,62 @@ final class VoiceBridgeModel: ObservableObject {
             return
         }
         captureDestination = .linked(activity, startedAt: recordingStartedAt)
+    }
+}
+
+private struct VoiceSettingsWindow: View {
+    @ObservedObject var model: VoiceBridgeModel
+
+    var body: some View {
+        Form {
+            Section("Recording") {
+                SecureField("Groq API key", text: $model.groqKeyDraft)
+                    .textFieldStyle(.roundedBorder)
+                Text("Required for Groq Whisper transcription. The key is stored only in macOS Keychain.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Interview Arc") {
+                SecureField("Interview Arc token", text: $model.connectionTokenDraft)
+                    .textFieldStyle(.roundedBorder)
+                TextField("Interview Arc API", text: $model.apiBaseURL)
+                    .textFieldStyle(.roundedBorder)
+                TextField("Interview Arc repository", text: $model.workspacePath)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            Section("Input") {
+                HStack {
+                    Text("Global shortcut")
+                    Spacer()
+                    Button(model.shortcutCapturing ? "Press shortcut…" : model.shortcut.displayName) {
+                        model.beginShortcutCapture()
+                    }
+                }
+                if model.accessibilityNeeded {
+                    Button("Enable Accessibility for insertion", action: model.requestAccessibilityPermission)
+                } else {
+                    Label("Direct insertion enabled", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+            }
+
+            Section("Advanced") {
+                TextField("Codex executable", text: $model.codexPath)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            HStack {
+                Spacer()
+                Button("Save secure settings", action: model.saveSettings)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .formStyle(.grouped)
+        .padding(16)
+        .frame(width: 520)
     }
 }
 
