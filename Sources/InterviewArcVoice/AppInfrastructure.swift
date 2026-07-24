@@ -337,10 +337,12 @@ final class DictationTextInjector {
         try? await Task.sleep(for: .milliseconds(35))
         keyUp.post(tap: .cghidEventTap)
 
-        // Give Chromium, Electron, and terminal renderers time to consume the
-        // pasteboard before restoring it. Do not overwrite a newer clipboard
-        // value created by the user or another app during this window.
-        try? await Task.sleep(for: .milliseconds(280))
+        // Renderer-backed editors consume the HID shortcut asynchronously.
+        // Restoring the clipboard after only a few hundred milliseconds can
+        // make Chromium paste the user's previous clipboard value instead of
+        // the transcript. Keep the transient value alive through that event
+        // handoff, then restore it only if nobody changed the clipboard.
+        try? await Task.sleep(for: .milliseconds(1_500))
         if pasteboard.changeCount == transientChangeCount {
             snapshot.restore(to: pasteboard)
         }
