@@ -24,6 +24,7 @@ enum VoiceWidgetPalette {
     static let divider = Color(red: 0.729, green: 0.800, blue: 0.804)
     static let coolShadow = Color(red: 0.333, green: 0.482, blue: 0.490).opacity(0.16)
     static let linkOff = Color(red: 0.090, green: 0.227, blue: 0.408)
+    static let connectedIdle = Color(red: 0.651, green: 0.365, blue: 0.110)
     static let warning = Color(red: 0.722, green: 0.353, blue: 0.196)
 }
 
@@ -471,11 +472,11 @@ final class FloatingPanelController {
                 || abs(panel.frame.height - height) > 0.5 else { return }
         var frame = panel.frame
         let rightEdge = frame.maxX
-        let topEdge = frame.maxY
+        let bottomEdge = frame.minY
         frame.size.width = width
         frame.size.height = height
         frame.origin.x = rightEdge - width
-        frame.origin.y = topEdge - height
+        frame.origin.y = bottomEdge
         if reduceMotion {
             panel.setFrame(frame, display: true)
         } else {
@@ -584,7 +585,6 @@ struct FloatingRecorderView: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: FloatingWidgetWindowPolicy.timerGap) {
-            recorderCapsule
             if model.timerPanelExpanded,
                model.hasTimerInstrument,
                let instrument = model.timerInstrument {
@@ -596,15 +596,16 @@ struct FloatingRecorderView: View {
                 .transition(
                     reduceMotion
                         ? .opacity
-                        : .opacity.combined(with: .move(edge: .top))
+                        : .opacity.combined(with: .move(edge: .bottom))
                 )
             }
+            recorderCapsule
         }
         .padding(.vertical, 8)
         .frame(
             width: model.floatingWidth,
             height: model.floatingHeight,
-            alignment: .topTrailing
+            alignment: .bottomTrailing
         )
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: model.floatingWidth)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: model.floatingHeight)
@@ -710,7 +711,7 @@ struct FloatingRecorderView: View {
                     HStack(spacing: 4) {
                         Text(model.floatingTitle)
                             .lineLimit(1)
-                        Image(systemName: model.timerPanelExpanded ? "chevron.up" : "chevron.down")
+                        Image(systemName: model.timerPanelExpanded ? "chevron.down" : "chevron.up")
                             .font(.system(size: 9, weight: .bold))
                     }
                     .font(.system(size: 12, weight: .semibold, design: .default))
@@ -810,6 +811,11 @@ struct FloatingRecorderView: View {
                 label: model.isPlayingLastAudio ? "Pause last recording" : "Resume last recording",
                 action: model.toggleLastAudioPlayback
             )
+            memoButton(
+                symbol: "stop.fill",
+                label: "Stop playback",
+                action: model.stopLastAudioPlayback
+            )
             Text(model.playbackTimeLabel)
                 .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .foregroundStyle(.secondary)
@@ -833,6 +839,13 @@ struct FloatingRecorderView: View {
                 label: "Save last audio and transcript",
                 action: model.exportLastMemo
             )
+            if model.hasTimerInstrument {
+                memoButton(
+                    symbol: model.timerPanelExpanded ? "chevron.down" : "chevron.up",
+                    label: model.timerPanelExpanded ? "Hide timers" : "Show timers",
+                    action: model.toggleTimerPanel
+                )
+            }
         }
         .transition(.opacity.combined(with: .scale(scale: 0.97)))
     }

@@ -78,11 +78,14 @@ Save, and Retry instead of being discarded.
   layered 250-by-40-point capsule that smoothly widens to 360 points for
   seekable playback, then returns to its compact state. It uses one hollow
   chain icon family: an intact teal chain for an active Interview Arc link, a
-  quieter intact chain while link mode waits for a focused activity, and a
+  quieter intact chain while link mode waits with no open session, a deep-amber
+  intact chain when a session is connected but no activity is running, and a
   dark-blue hollow broken chain when linking is off. The capsule exposes Play, Copy, and Save for the
   latest capture, offers a native filename/location save dialog with an
   optional sibling transcript, and replaces its activity label with a live
-  waveform while recording.
+  waveform while recording. Its timer surface, activity picker, and finish
+  drawer grow upward from the fixed bottom capsule. Playback keeps seek,
+  pause/resume, Stop, and timer-disclosure controls available.
 - The permanent widget visual and interaction contract is
   [`design-system/pages/floating-widget.md`](design-system/pages/floating-widget.md).
 - Agents changing any visible Voice interface must begin with

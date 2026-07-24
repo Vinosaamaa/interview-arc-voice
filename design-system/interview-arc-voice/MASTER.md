@@ -36,6 +36,7 @@ neumorphism, and flat white rectangles.
 | `divider` | `#BACCCD` | Quiet separator |
 | `coolShadow` | `#557B7D` at 12–18% | Broad shaped shadow |
 | `linkOff` | `#173A68` | Unlinked hollow-chain mark |
+| `connectedIdle` | `#A65D1C` | Connected session with no running activity |
 | `warning` | `#B85A32` | Actionable warning or failure |
 | `recording` | `#B84E4E` | Active stop/recording state only |
 

@@ -44,10 +44,12 @@ missing output triggers exactly one unprompted retry. If the retry is also
 suspicious, Voice does not claim success; it retains the original audio and
 offers Play, Save, and Retry.
 
-The compact recorder uses a layered material surface. Playback expands it from
-250 to 360 points, exposes a seekable timeline and elapsed/duration text, and
-collapses smoothly after playback completes. Saving uses the native macOS save
-panel: the user chooses the name and location, the `.m4a` suffix remains
+The compact recorder uses a layered material surface. Playback widens it,
+exposes a seekable timeline, elapsed/duration text, explicit Stop, and timer
+disclosure, and collapses smoothly after playback completes or Stop is chosen.
+The recorder capsule remains the bottom anchor while its timer surface,
+activity picker, and finish drawer grow upward. Saving uses the native macOS
+save panel: the user chooses the name and location, the `.m4a` suffix remains
 canonical, and a sibling `.txt` transcript is optional.
 
 The user sends the inserted text through the visible Codex task. The rendered
