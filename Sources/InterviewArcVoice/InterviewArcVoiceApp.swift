@@ -118,6 +118,7 @@ final class VoiceBridgeModel: ObservableObject {
     private let routingPolicy = CaptureRoutingPolicy()
     private let contextRetentionPolicy = VoiceContextRetentionPolicy()
     private let lateBindingPolicy = LateCaptureBindingPolicy()
+    private let playbackCompletionPolicy = PlaybackCompletionPolicy()
     private let hotKeyManager = GlobalHotKeyManager()
     private let textInjector = DictationTextInjector()
     private var recordingStore: RecordingStore?
@@ -309,10 +310,18 @@ final class VoiceBridgeModel: ObservableObject {
             playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     guard let self else { return }
-                    self.playbackCurrentTime = self.audioPlayer?.currentTime ?? 0
+                    let previousTime = self.playbackCurrentTime
+                    let currentTime = self.audioPlayer?.currentTime ?? 0
+                    self.playbackCurrentTime = currentTime
                     if self.audioPlayer?.isPlaying != true {
                         self.isPlayingLastAudio = false
-                        if self.playbackCurrentTime >= max(0, self.playbackDuration - 0.05) {
+                        if self.playbackCompletionPolicy.didFinish(
+                            previousTime: previousTime,
+                            currentTime: currentTime,
+                            duration: self.playbackDuration
+                        ) {
+                            self.audioPlayer?.currentTime = 0
+                            self.playbackCurrentTime = 0
                             self.isPlaybackExpanded = false
                         }
                         self.playbackTimer?.invalidate()

@@ -57,3 +57,17 @@ public struct VoiceMemoExportPlan: Equatable, Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
+
+public struct PlaybackCompletionPolicy: Sendable {
+    public init() {}
+
+    public func didFinish(
+        previousTime: TimeInterval,
+        currentTime: TimeInterval,
+        duration: TimeInterval
+    ) -> Bool {
+        guard duration > 0 else { return false }
+        if previousTime >= max(0, duration - 0.15) { return true }
+        return currentTime <= 0.01 && previousTime >= duration * 0.8
+    }
+}
