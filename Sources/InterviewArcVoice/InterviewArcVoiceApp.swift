@@ -38,6 +38,19 @@ struct InterviewArcVoiceApp: App {
                 exit(EXIT_FAILURE)
             }
         }
+        if ProcessInfo.processInfo.arguments.contains("--credential-status") {
+            let keychain = KeychainStore()
+            do {
+                let groqKey = try keychain.value(for: .groqAPIKey) ?? ""
+                let interviewArcToken = try keychain.value(for: .interviewArcToken) ?? ""
+                print("groq-api-key: \(groqKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "missing" : "saved")")
+                print("interview-arc-token: \(interviewArcToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "missing" : "saved")")
+                exit(EXIT_SUCCESS)
+            } catch {
+                fputs("Interview Arc Voice could not read secure settings: \(error.localizedDescription)\n", stderr)
+                exit(EXIT_FAILURE)
+            }
+        }
         _model = StateObject(wrappedValue: VoiceBridgeModel())
     }
 
@@ -515,8 +528,27 @@ final class VoiceBridgeModel: ObservableObject {
 
     func saveSettings() {
         do {
-            try keychain.set(connectionTokenDraft.trimmingCharacters(in: .whitespacesAndNewlines), for: .interviewArcToken)
-            try keychain.set(groqKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines), for: .groqAPIKey)
+            let submittedToken = connectionTokenDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            let submittedGroqKey = groqKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            try keychain.set(submittedToken, for: .interviewArcToken)
+            try keychain.set(submittedGroqKey, for: .groqAPIKey)
+            let savedToken = try keychain.value(for: .interviewArcToken)
+            let savedGroqKey = try keychain.value(for: .groqAPIKey)
+            let verification = CredentialSaveVerificationPolicy()
+            guard verification.isVerified(
+                submittedValue: submittedToken,
+                retrievedValue: savedToken
+            ) else {
+                throw CredentialPersistenceError(credential: .interviewArcToken)
+            }
+            guard verification.isVerified(
+                submittedValue: submittedGroqKey,
+                retrievedValue: savedGroqKey
+            ) else {
+                throw CredentialPersistenceError(credential: .groqAPIKey)
+            }
+            connectionTokenDraft = savedToken ?? ""
+            groqKeyDraft = savedGroqKey ?? ""
             UserDefaults.standard.set(apiBaseURL, forKey: "voice.apiBaseURL")
             UserDefaults.standard.set(workspacePath, forKey: "voice.workspacePath")
             UserDefaults.standard.set(codexPath, forKey: "voice.codexPath")
