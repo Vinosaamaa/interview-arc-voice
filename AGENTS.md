@@ -28,8 +28,11 @@ instructions, website playback, and journal publication.
 - Keep UI controls keyboard accessible and expose meaningful accessibility
   labels for every icon-only control.
 - Insert every successful transcription directly at the captured editor cursor.
-  Never use the clipboard and never submit or resume the visible specialist
-  task automatically.
+  Renderer-backed editors may require a transient `NSPasteboard` snapshot and
+  restore so they receive a real paste event. Never leave the transcript on the
+  user's clipboard, overwrite a newer clipboard change, or submit or resume the
+  visible specialist task automatically. Treat an Accessibility write as
+  successful only after read-back verification.
 - Refresh Interview Arc context immediately before recording. Linking on with
   missing activity/specialist must fall back to general dictation rather than
   blocking or crashing.
