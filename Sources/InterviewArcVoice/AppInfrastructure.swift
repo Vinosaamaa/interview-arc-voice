@@ -190,8 +190,13 @@ final class DictationTextInjector {
             focused,
             kAXValueAttribute as CFString,
             &currentValue
+        )
+        guard valueRead == .success else {
+            textInjectionLogger.debug(
+                "Focused editor exposes a writable value but reading it failed: \(valueRead.rawValue)"
+            )
+            return false
         }
-        guard valueRead == .success else { return false }
 
         let currentText: String
         if let string = currentValue as? String {
@@ -209,7 +214,7 @@ final class DictationTextInjector {
             focused,
             kAXSelectedTextRangeAttribute as CFString,
             &selectedRangeValue
-        }
+        )
 
         let currentNSString = currentText as NSString
         var selectedRange = CFRange(location: currentNSString.length, length: 0)
@@ -219,6 +224,10 @@ final class DictationTextInjector {
                   AXValueGetValue(selectedRangeAXValue, .cfRange, &selectedRange) else {
                 return false
             }
+        } else {
+            textInjectionLogger.debug(
+                "Focused editor omitted its selection range; inserting at the end of its value"
+            )
         }
         guard selectedRange.location >= 0,
               selectedRange.length >= 0,
