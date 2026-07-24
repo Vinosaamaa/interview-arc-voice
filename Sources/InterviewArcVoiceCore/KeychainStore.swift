@@ -33,14 +33,14 @@ public struct KeychainStore: Sendable {
     }
 
     public func value(for credential: VoiceCredential) throws -> String? {
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecUseDataProtectionKeychain as String: true,
             kSecAttrService as String: service,
             kSecAttrAccount as String: credential.rawValue,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
+        query[kSecUseKeychain as String] = try defaultKeychain()
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         if status == errSecItemNotFound { return nil }
@@ -52,12 +52,12 @@ public struct KeychainStore: Sendable {
 
     public func set(_ value: String, for credential: VoiceCredential) throws {
         let data = Data(value.utf8)
-        let lookup: [String: Any] = [
+        var lookup: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecUseDataProtectionKeychain as String: true,
             kSecAttrService as String: service,
             kSecAttrAccount as String: credential.rawValue,
         ]
+        lookup[kSecUseKeychain as String] = try defaultKeychain()
         let updateAttributes: [String: Any] = [
             kSecValueData as String: data,
         ]
@@ -78,16 +78,25 @@ public struct KeychainStore: Sendable {
     }
 
     public func remove(_ credential: VoiceCredential) throws {
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecUseDataProtectionKeychain as String: true,
             kSecAttrService as String: service,
             kSecAttrAccount as String: credential.rawValue,
         ]
+        query[kSecUseKeychain as String] = try defaultKeychain()
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError(status: status)
         }
+    }
+
+    private func defaultKeychain() throws -> SecKeychain {
+        var keychain: SecKeychain?
+        let status = SecKeychainCopyDefault(&keychain)
+        guard status == errSecSuccess, let keychain else {
+            throw KeychainError(status: status)
+        }
+        return keychain
     }
 }
 
