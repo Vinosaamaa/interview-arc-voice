@@ -127,7 +127,7 @@ final class DictationTextInjector {
             textInjectionLogger.error("Insertion has no valid external target")
             return .noFocusedEditor
         }
-        target.activate(options: [])
+        target.activate(options: [.activateIgnoringOtherApps])
         try? await Task.sleep(for: .milliseconds(220))
 
         let application = AXUIElementCreateApplication(targetPID)
@@ -169,39 +169,57 @@ final class DictationTextInjector {
         return inserted ? .inserted : .noFocusedEditor
     }
 
-    /// Chromium and Electron frequently expose an editable value and cursor
-    /// range while rejecting `AXSelectedText` writes. Replace precisely the
-    /// selected UTF-16 range so dictation lands at the cursor without
-    /// overwriting the rest of the editor.
+    /// Chromium and Electron frequently expose an editable value while
+    /// rejecting `AXSelectedText` writes. Prefer their UTF-16 selection range
+    /// when one is available. Some web controls (including empty search boxes)
+    /// omit that range even though their value is writable; append in that
+    /// case so the insertion still lands in the focused editor.
     private func replaceFocusedValue(_ text: String, in focused: AXUIElement) -> Bool {
+        var valueSettable = DarwinBoolean(false)
+        guard AXUIElementIsAttributeSettable(
+            focused,
+            kAXValueAttribute as CFString,
+            &valueSettable
+        ) == .success,
+        valueSettable.boolValue else {
+            return false
+        }
+
         var currentValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
+        let valueRead = AXUIElementCopyAttributeValue(
             focused,
             kAXValueAttribute as CFString,
             &currentValue
-        ) == .success,
-        let currentText = currentValue as? String else {
+        }
+        guard valueRead == .success else { return false }
+
+        let currentText: String
+        if let string = currentValue as? String {
+            currentText = string
+        } else if let attributedString = currentValue as? NSAttributedString {
+            currentText = attributedString.string
+        } else if currentValue == nil {
+            currentText = ""
+        } else {
             return false
         }
 
         var selectedRangeValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
+        let selectedRangeRead = AXUIElementCopyAttributeValue(
             focused,
             kAXSelectedTextRangeAttribute as CFString,
             &selectedRangeValue
-        ) == .success,
-        let selectedRangeValue else {
-            return false
-        }
-        let selectedRangeAXValue = selectedRangeValue as! AXValue
-        guard AXValueGetType(selectedRangeAXValue) == .cfRange else { return false }
-
-        var selectedRange = CFRange()
-        guard AXValueGetValue(selectedRangeAXValue, .cfRange, &selectedRange) else {
-            return false
         }
 
         let currentNSString = currentText as NSString
+        var selectedRange = CFRange(location: currentNSString.length, length: 0)
+        if selectedRangeRead == .success, let selectedRangeValue {
+            let selectedRangeAXValue = selectedRangeValue as! AXValue
+            guard AXValueGetType(selectedRangeAXValue) == .cfRange,
+                  AXValueGetValue(selectedRangeAXValue, .cfRange, &selectedRange) else {
+                return false
+            }
+        }
         guard selectedRange.location >= 0,
               selectedRange.length >= 0,
               selectedRange.location + selectedRange.length <= currentNSString.length else {
@@ -288,7 +306,7 @@ final class DictationTextInjector {
         guard let target = NSRunningApplication(processIdentifier: targetPID) else {
             return false
         }
-        target.activate(options: [])
+        target.activate(options: [.activateIgnoringOtherApps])
         for _ in 0..<6 {
             if NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID {
                 return true
