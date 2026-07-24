@@ -127,6 +127,14 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: temporaryURL.path))
 }
 
+@Test func playbackCompletionRecognizesAVFoundationClockReset() {
+    let policy = PlaybackCompletionPolicy()
+
+    #expect(policy.didFinish(previousTime: 40.9, currentTime: 0, duration: 41))
+    #expect(!policy.didFinish(previousTime: 12, currentTime: 12, duration: 41))
+    #expect(!policy.didFinish(previousTime: 12, currentTime: 0, duration: 41))
+}
+
 private func voiceContext(
     activityID: String,
     runningSince: Int64
