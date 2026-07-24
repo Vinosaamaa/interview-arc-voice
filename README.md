@@ -85,6 +85,9 @@ Save, and Retry instead of being discarded.
   waveform while recording.
 - The permanent widget visual and interaction contract is
   [`design-system/pages/floating-widget.md`](design-system/pages/floating-widget.md).
+- Agents changing any visible Voice interface must begin with
+  [`design-system/AGENTS.md`](design-system/AGENTS.md), then read the current
+  global master and the applicable page contract.
 - Cheap local audio checks run for every capture. Normal audio uses exactly one
   speech-to-text request. Only a provider failure or concrete integrity signal
   triggers one unprompted retry.

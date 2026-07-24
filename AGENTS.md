@@ -3,10 +3,20 @@
 Read `README.md`, `docs/architecture.md`, and `docs/protocol-v1.md` before
 changing this repository.
 
+Before changing any visible interface, read and follow:
+
+1. `design-system/AGENTS.md`
+2. `design-system/interview-arc-voice/MASTER.md`
+3. the matching file under `design-system/pages/`, when one exists
+
 Before changing the always-on-top recorder, its status icons, macOS panel
-shape, playback expansion, or recovery popover, also read and follow
-`design-system/pages/floating-widget.md`. That page-specific contract overrides
-the generic design-system master for the widget.
+shape, playback expansion, or recovery popover, reading
+`design-system/pages/floating-widget.md` is mandatory. Page-specific contracts
+override the global master.
+
+Do not merge an interface change based only on a SwiftUI preview or source
+inspection. Package the merged `main` artifact, install it, and exercise the
+actual macOS windows on both light and dark backgrounds.
 
 ## Scope
 

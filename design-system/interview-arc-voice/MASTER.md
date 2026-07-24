@@ -1,226 +1,180 @@
-# Design System Master File
+# Interview Arc Voice Design System
 
-> **LOGIC:** When building a specific page, first check `design-system/pages/[page-name].md`.
-> If that file exists, its rules **override** this Master file.
-> If not, strictly follow the rules below.
+This is the global visual contract for the native macOS application.
+Page-specific contracts under `../pages/` override this file.
 
----
+## Product character
 
-**Project:** Interview Arc Voice
-**Generated:** 2026-07-21 22:10:59
-**Category:** Voice Recorder & Memo
-**Design Dials:** Variance 4/10 (Balanced / Modern) | Motion 4/10 (Standard) | Density 8/10 (Dense / Dashboard)
+Interview Arc Voice should feel like a precise, quiet interview instrument:
+compact, reliable, calm, and clearly native to macOS.
 
----
+The approved direction combines:
 
-## Global Rules
+- pale frosted glass;
+- cool teal instrumentation;
+- dark blue-gray type;
+- subtle layered depth;
+- dense, disciplined spacing;
+- one strongly elevated primary action.
 
-### Color Palette
+Avoid generic SaaS cards, colorful consumer voice-memo styling, heavy
+neumorphism, and flat white rectangles.
 
-| Role | Hex | CSS Variable |
-|------|-----|--------------|
-| Primary | `#DC2626` | `--color-primary` |
-| On Primary | `#FFFFFF` | `--color-on-primary` |
-| Secondary | `#EF4444` | `--color-secondary` |
-| Accent/CTA | `#2563EB` | `--color-accent` |
-| Background | `#FFFFFF` | `--color-background` |
-| Foreground | `#0F172A` | `--color-foreground` |
-| Muted | `#FCF1F1` | `--color-muted` |
-| Border | `#FAE4E4` | `--color-border` |
-| Destructive | `#DC2626` | `--color-destructive` |
-| Ring | `#DC2626` | `--color-ring` |
+## Core palette
 
-**Color Notes:** Recording red + waveform blue
+| Token | Value | Purpose |
+| --- | --- | --- |
+| `glass` | `#F4FAFA` at 88–94% | Primary translucent surface |
+| `glassHighlight` | `#FFFFFF` at 65–80% | Inner rim and raised face |
+| `coolBorder` | `#C8DADB` | Structural outline |
+| `timerSurface` | `#E5F3F2` | Inset timing and status surface |
+| `teal` | `#148E89` | Primary instrumentation |
+| `tealDark` | `#087B77` | High-contrast teal symbol or value |
+| `tealGlow` | `#BFEDE8` at 35–55% | Primary-control halo |
+| `ink` | `#172A32` | Primary text |
+| `secondaryInk` | `#587074` | Supporting labels |
+| `divider` | `#BACCCD` | Quiet separator |
+| `coolShadow` | `#557B7D` at 12–18% | Broad shaped shadow |
+| `linkOff` | `#173A68` | Unlinked hollow-chain mark |
+| `warning` | `#B85A32` | Actionable warning or failure |
+| `recording` | `#B84E4E` | Active stop/recording state only |
 
-### Typography
+Do not introduce unrelated pink, purple, bright blue, amber, or green in normal
+states. A status color must communicate an actual product state.
 
-- **Heading Font:** Lora
-- **Body Font:** Raleway
-- **Mood:** calm, wellness, health, relaxing, natural, organic
-- **Google Fonts:** [Lora + Raleway](https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap)
+## Typography
 
-**CSS Import:**
-```css
-@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap');
-```
+Use native system fonts:
 
-### Spacing Variables
+- activity names: SF Pro Display, medium or semibold;
+- body and controls: SF Pro Text;
+- compact labels: SF Pro Text, semibold, uppercase, increased tracking;
+- timers: SF Mono, medium, tabular digits.
 
-*Density: 8/10 — Dense / Dashboard*
+Do not load web fonts into the native application. Timer values must not shift
+width while counting. Supporting copy must remain readable at compact sizes.
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--space-xs` | `2px` / `0.125rem` | Tight gaps |
-| `--space-sm` | `4px` / `0.25rem` | Icon gaps, inline spacing |
-| `--space-md` | `8px` / `0.5rem` | Standard padding |
-| `--space-lg` | `12px` / `0.75rem` | Section padding |
-| `--space-xl` | `16px` / `1rem` | Large gaps |
-| `--space-2xl` | `24px` / `1.5rem` | Section margins |
-| `--space-3xl` | `32px` / `2rem` | Hero padding |
+## Geometry
 
-### Shadow Depths
+| Element | Geometry |
+| --- | --- |
+| Floating recorder | 250 × 40 pt resting capsule |
+| Floating host | 250 × 56 pt transparent window |
+| Menu-bar panel | 260 pt fixed width |
+| Recovery popover | 220–236 pt target width |
+| Compact icon control | 28–32 pt visual target |
+| Primary microphone | Circular, layered, visually elevated |
+| Standard corner radius | 8–12 pt |
+| Instrument capsule radius | Half of its height |
 
-| Level | Value | Usage |
-|-------|-------|-------|
-| `--shadow-sm` | `0 1px 2px rgba(0,0,0,0.05)` | Subtle lift |
-| `--shadow-md` | `0 4px 6px rgba(0,0,0,0.1)` | Cards, buttons |
-| `--shadow-lg` | `0 10px 15px rgba(0,0,0,0.1)` | Modals, dropdowns |
-| `--shadow-xl` | `0 20px 25px rgba(0,0,0,0.15)` | Hero images, featured cards |
+Use four-point spacing increments whenever practical. Keep controls vertically
+stable as content changes.
 
----
+## Material and depth
 
-## Component Specs
+1. Use a pale translucent surface with a restrained cool border.
+2. Add one fine white inner highlight where it improves material separation.
+3. Use one broad, low-opacity shadow that follows the component silhouette.
+4. Put the strongest halo and elevation on the primary microphone control.
+5. Keep secondary buttons quiet and avoid stacking multiple heavy shadows.
+6. Never allow an opaque host rectangle to sit behind a rounded or shaped
+   visible surface.
 
-### Buttons
+## Iconography
 
-```css
-/* Primary Button */
-.btn-primary {
-  background: #2563EB;
-  color: white;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
+- Use SF Symbols or a custom family derived from one rounded, stroke-led
+  geometry.
+- Keep optical size and stroke weight consistent.
+- Equivalent states must use the same base symbol family.
+- Linked and unlinked use intact and broken variants of the same hollow chain.
+- Icon-only controls require a tooltip and accessibility label.
+- Do not use emoji or filled decorative illustrations as controls.
 
-.btn-primary:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
+## Component behavior
 
-/* Secondary Button */
-.btn-secondary {
-  background: transparent;
-  color: #DC2626;
-  border: 2px solid #DC2626;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
-```
+### Primary actions
 
-### Cards
+- Use a bright translucent face, structural rim, and diffuse teal halo.
+- Hover slightly brightens and lifts without moving adjacent content.
+- Press compresses subtly.
+- Destructive or stop states may use restrained recording red.
 
-```css
-.card {
-  background: #FFFFFF;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: var(--shadow-md);
-  transition: all 200ms ease;
-  cursor: pointer;
-}
+### Secondary icon buttons
 
-.card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
-}
-```
+- Share one size, hit target, border, hover, press, focus, and disabled system.
+- Disabled controls are absent when their absence is meaningful; otherwise
+  reduce contrast without making the symbol illegible.
+- Do not mix circular and rectangular treatments for equivalent actions.
 
-### Inputs
+### Status and recovery
 
-```css
-.input {
-  padding: 12px 16px;
-  border: 1px solid #E2E8F0;
-  border-radius: 8px;
-  font-size: 16px;
-  transition: border-color 200ms ease;
-}
+- Name the failed boundary: microphone, credentials, transcription, insertion,
+  connection, or delivery.
+- Keep primary explanations to one or two lines.
+- Expose diagnostics progressively.
+- Show only actions that can resolve the current state.
 
-.input:focus {
-  border-color: #DC2626;
-  outline: none;
-  box-shadow: 0 0 0 3px #DC262620;
-}
-```
+### Settings
 
-### Modals
-
-```css
-.modal-overlay {
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-}
-
-.modal {
-  background: white;
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: var(--shadow-xl);
-  max-width: 500px;
-  width: 90%;
-}
-```
-
----
-
-## Style Guidelines
-
-**Style:** Soft UI Evolution
-
-**Keywords:** Evolved soft UI, better contrast, modern aesthetics, subtle depth, accessibility-focused, improved shadows, hybrid
-
-**Best For:** Modern enterprise apps, SaaS platforms, health/wellness, modern business tools, professional, hybrid
-
-**Key Effects:** Improved shadows (softer than flat, clearer than neumorphism), modern (200-300ms), focus visible, WCAG AA/AAA
-
-### Page Pattern
-
-**Pattern Name:** Marketplace / Directory
-
-- **Conversion Strategy:** Search bar is the CTA. Reduce friction to search. Popular searches suggestions.
-- **CTA Placement:** Hero Search Bar + Navbar 'List your item'
-- **Section Order:** 1. Hero (Search focused), 2. Categories, 3. Featured Listings, 4. Trust/Safety, 5. CTA (Become a host/seller)
-
----
+- Group related settings with clear labels and short supporting copy.
+- Secure fields must visibly confirm saved state without exposing secrets.
+- Keep advanced or diagnostic configuration subordinate to the normal flow.
+- Do not make the settings surface look like a separate product.
 
 ## Motion
 
-**Stagger List** (Standard) — Trigger: load or scroll | Duration: 300-450ms | Easing: `back.out(1.4)`
+- Standard transition: 200–260 ms ease-in-out.
+- Hover lift: at most one point.
+- Press scale: approximately 0.97.
+- Width expansion anchors to the stable edge defined by the page contract.
+- No overshoot or spring animation on dense status interfaces.
+- Reduce Motion replaces translation and scaling with short opacity changes.
 
-```js
-gsap.from('.grid-item', { opacity: 0, scale: 0.92, y: 16, duration: 0.4, stagger: { each: 0.06, from: 'start', grid: 'auto' }, ease: 'back.out(1.4)' });
-```
+Motion supports continuity; it must never delay microphone capture, text
+insertion, or failure recovery.
 
-**Framework notes:** grid: 'auto' lets GSAP infer rows/columns from a CSS grid layout for a natural wave stagger
+## Accessibility
 
-- ✅ Combine with from: 'center' for a bento-grid layout to draw the eye inward first
-- ❌ Don't use back.out on dense data tables; the overshoot reads as sloppy on informational UI
-- ⚡ Group DOM writes; avoid interleaving layout reads (getBoundingClientRect) between staggered tweens
+- Maintain at least 4.5:1 contrast for ordinary text.
+- Provide visible keyboard focus.
+- Give every icon-only control an accessibility label and tooltip.
+- Do not communicate state by color alone.
+- Keep click targets usable even when their visual symbol is compact.
+- Verify VoiceOver reading order after restructuring a control group.
 
----
+## Responsive native behavior
 
-## Anti-Patterns (Do NOT Use)
+The Voice application uses fixed compact surfaces rather than web breakpoints.
+When content exceeds available width:
 
-- ❌ Excessive decoration
+1. preserve the primary action;
+2. preserve current state;
+3. truncate the activity title;
+4. reveal secondary actions progressively;
+5. widen only within the page contract;
+6. never clip, overlap, or add horizontal scrolling.
 
-### Additional Forbidden Patterns
+## Global anti-patterns
 
-- ❌ **Emojis as icons** — Use SVG icons (Heroicons, Lucide, Simple Icons)
-- ❌ **Missing cursor:pointer** — All clickable elements must have cursor:pointer
-- ❌ **Layout-shifting hovers** — Avoid scale transforms that shift layout
-- ❌ **Low contrast text** — Maintain 4.5:1 minimum contrast ratio
-- ❌ **Instant state changes** — Always use transitions (150-300ms)
-- ❌ **Invisible focus states** — Focus states must be visible for a11y
+- Opaque rectangular hosts behind rounded panels.
+- Native window shadows on non-rectangular floating surfaces.
+- Multiple competing palettes.
+- Generic Material, marketplace, or dashboard templates.
+- Web fonts inside the macOS application.
+- Mismatched link-state icons.
+- Decorative gradients unrelated to surface material.
+- Disabled buttons displayed when they should be absent.
+- Instant state changes, jitter, flashing, or ghost imagery.
+- Large recovery dialogs for a small actionable failure.
+- Help text that remains after the action has already completed.
 
----
+## Global release checklist
 
-## Pre-Delivery Checklist
-
-Before delivering any UI code, verify:
-
-- [ ] No emojis used as icons (use SVG instead)
-- [ ] All icons from consistent icon set (Heroicons/Lucide)
-- [ ] `cursor-pointer` on all clickable elements
-- [ ] Hover states with smooth transitions (150-300ms)
-- [ ] Light mode: text contrast 4.5:1 minimum
-- [ ] Focus states visible for keyboard navigation
-- [ ] `prefers-reduced-motion` respected
-- [ ] Responsive: 375px, 768px, 1024px, 1440px
-- [ ] No content hidden behind fixed navbars
-- [ ] No horizontal scroll on mobile
+- Read `design-system/AGENTS.md` and the applicable page contract.
+- Compare the result with the current signed app.
+- Verify all relevant states, not only the resting state.
+- Test pure-white and near-black backgrounds.
+- Verify the host bounds cannot be detected outside the visible silhouette.
+- Verify hover, press, focus, tooltip, accessibility, and Reduce Motion.
+- Run tests and parser validation.
+- Install and exercise the artifact produced from merged `main`.
