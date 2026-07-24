@@ -170,6 +170,7 @@ final class VoiceBridgeModel: ObservableObject {
     private let contextFreshnessPolicy = CaptureContextFreshnessPolicy()
     private let lateBindingPolicy = LateCaptureBindingPolicy()
     private let playbackCompletionPolicy = PlaybackCompletionPolicy()
+    private let compactPresentationPolicy = CompactVoicePresentationPolicy()
     private let hotKeyManager = GlobalHotKeyManager()
     private let textInjector = DictationTextInjector()
     private var recordingStore: RecordingStore?
@@ -220,15 +221,20 @@ final class VoiceBridgeModel: ObservableObject {
         }
     }
     var floatingEyebrow: String {
-        if !linkToInterviewArc { return "GENERAL DICTATION" }
-        if let activity = context?.focusedActivity { return specialtyLabel(activity.specialty).uppercased() + " · LINKED" }
-        return "AUTO-LINK ON · GENERAL FALLBACK"
+        switch compactLinkPresentation.state {
+        case .off:
+            return "GENERAL DICTATION"
+        case .waiting:
+            return "AUTO-LINK ON · GENERAL FALLBACK"
+        case .connectedIdle:
+            return "CONNECTED · GENERAL DICTATION"
+        case .linked:
+            guard let activity = context?.focusedActivity else { return "LINKED" }
+            return specialtyLabel(activity.specialty).uppercased() + " · LINKED"
+        }
     }
     var floatingTitle: String {
-        if !linkToInterviewArc { return "Paste speech into the active app" }
-        if let activity = context?.focusedActivity { return activity.title }
-        if let paused = timerInstrument?.activity { return "\(paused.title) · paused" }
-        return "No focused activity — dictation stays unlinked"
+        compactLinkPresentation.title
     }
     var compactStatus: String {
         if case .failed(let message) = phase { return message }
@@ -262,28 +268,29 @@ final class VoiceBridgeModel: ObservableObject {
         "\(phase.label) · \(clock(processingElapsedSeconds))"
     }
     var linkPresentationState: VoiceLinkPresentationState {
-        if !linkToInterviewArc { return .off }
-        return context?.focusedActivity == nil ? .waiting : .linked
+        switch compactLinkPresentation.state {
+        case .off:
+            return .off
+        case .waiting, .connectedIdle:
+            return .waiting
+        case .linked:
+            return .linked
+        }
     }
     var linkStatusColor: Color {
-        if !linkToInterviewArc {
-            return Color(red: 0.090, green: 0.227, blue: 0.408)
-        }
-        if context?.focusedActivity == nil {
+        switch compactLinkPresentation.state {
+        case .off:
+            return VoiceWidgetPalette.linkOff
+        case .waiting:
             return Color(red: 0.20, green: 0.48, blue: 0.47)
+        case .connectedIdle:
+            return VoiceWidgetPalette.connectedIdle
+        case .linked:
+            return VoiceWidgetPalette.teal
         }
-        return Color(red: 0.078, green: 0.557, blue: 0.537)
     }
     var linkStatusAccessibilityLabel: String {
-        if !linkToInterviewArc { return "General dictation. Interview Arc linking is off." }
-        if let activity = context?.focusedActivity { return "Linked to \(activity.title)." }
-        if let paused = timerInstrument?.activity {
-            return "Interview Arc is connected. \(paused.title) is paused."
-        }
-        if let session = timerInstrument?.session {
-            return "Interview Arc is connected to \(session.label). No activity is running."
-        }
-        return "Auto-link is on. No activity is focused, so recording will use general dictation."
+        compactLinkPresentation.accessibilityLabel
     }
     var isFailurePresented: Bool {
         if case .failed = phase { return failureNotice != nil }
@@ -293,7 +300,9 @@ final class VoiceBridgeModel: ObservableObject {
         if timerPanelExpanded && hasTimerInstrument {
             return FloatingWidgetWindowPolicy.expandedWidth
         }
-        return isPlaybackExpanded ? 360 : FloatingWidgetWindowPolicy.collapsedWidth
+        return isPlaybackExpanded
+            ? FloatingWidgetWindowPolicy.playbackWidth
+            : FloatingWidgetWindowPolicy.collapsedWidth
     }
     var floatingHeight: CGFloat {
         guard timerPanelExpanded && hasTimerInstrument else {
@@ -316,6 +325,14 @@ final class VoiceBridgeModel: ObservableObject {
     }
     var availableTimerActivities: [VoiceTimerActivity] {
         timerInstrument?.activities ?? []
+    }
+    private var compactLinkPresentation: CompactVoicePresentation {
+        compactPresentationPolicy.presentation(
+            linkEnabled: linkToInterviewArc,
+            activeActivityTitle: context?.focusedActivity?.title,
+            hasOpenSession: timerInstrument?.session != nil,
+            sessionIsRunning: timerInstrument?.session?.timer.isRunning == true
+        )
     }
 
     init() {
@@ -376,7 +393,7 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func toggleTimerPanel() {
-        guard hasTimerInstrument else { return }
+        guard hasTimerInstrument, !isRecording else { return }
         timerPanelExpanded.toggle()
         if !timerPanelExpanded {
             cancelFinishDrawer()
@@ -547,6 +564,16 @@ final class VoiceBridgeModel: ObservableObject {
         } catch {
             reportFailure(error, stage: .playback, hasRecoverableAudio: hasLastAudio)
         }
+    }
+
+    func stopLastAudioPlayback() {
+        audioPlayer?.stop()
+        audioPlayer?.currentTime = 0
+        isPlayingLastAudio = false
+        isPlaybackExpanded = false
+        playbackCurrentTime = 0
+        playbackTimer?.invalidate()
+        playbackTimer = nil
     }
 
     func seekLastAudio(to progress: Double) {
@@ -1147,6 +1174,9 @@ final class VoiceBridgeModel: ObservableObject {
         }
         do {
             try await recorder.start(at: destination)
+            timerPanelExpanded = false
+            cancelFinishDrawer()
+            activityPickerExpanded = false
             phase = .recording
             if linkToInterviewArc {
                 Task { await refreshContext(showProgress: false) }
@@ -1731,9 +1761,7 @@ private struct VoiceBridgeMenu: View {
                     color: model.linkStatusColor,
                     size: 14
                 )
-                Text(model.linkToInterviewArc && model.context?.focusedActivity != nil
-                     ? model.floatingTitle
-                     : "Inserts at the cursor")
+                Text(model.floatingTitle)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

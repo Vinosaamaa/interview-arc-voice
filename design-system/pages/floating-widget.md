@@ -31,6 +31,7 @@ and keep the surrounding information calm.
 | `divider` | `#BACCCD` | Structural divider |
 | `coolShadow` | `#557B7D` at 12–18% | Broad capsule shadow |
 | `linkOff` | `#173A68` | Hollow broken-chain mark |
+| `connectedIdle` | `#A65D1C` | Interview Arc connected, but speech is using general dictation |
 | `warning` | `#B85A32` | Compact actionable failure |
 
 Do not introduce unrelated pink, blue, green, or amber accents in normal
@@ -73,12 +74,13 @@ controls. Long activity names truncate on one line.
 
 ## Expanded timer instrument
 
-- Expanding keeps the recorder capsule as the first surface and reveals one
-  second frosted surface below it in the same transparent `NSPanel`.
+- The recorder capsule is the stable bottom surface. Expanding reveals one
+  second frosted surface above it in the same transparent `NSPanel`.
 - Preserve a real 10-point transparent gap. The surfaces must read as two
   coordinated components, not one opaque card.
-- Expansion is right-edge and top-edge anchored. Collapsing restores the
-  250-by-40 capsule without moving it.
+- Expansion is right-edge and bottom-edge anchored. The timer, activity picker,
+  and result drawer all grow upward. Collapsing restores the 250-by-40 capsule
+  without moving it.
 - Session and activity rows use the same three columns: identity/title, stable
   monospaced time, and controls.
 - Normal timer rows contain only Pause/Resume and Finish.
@@ -95,11 +97,13 @@ controls. Long activity names truncate on one line.
 
 ## Link icon family
 
-- All three states use the same hollow chain geometry, size, orientation,
+- All states use the same hollow chain geometry, size, orientation,
   stroke cap, and stroke weight.
 - `linked`: intact hollow teal chain.
-- `waiting`: intact hollow teal chain. Context is communicated by the title and
-  accessibility label rather than by drawing a different badge on the icon.
+- `waiting`: intact hollow quiet-teal chain when no session is open.
+- `connected idle`: the same intact hollow chain in deep amber when a session
+  remains open but no activity is running. This state is still connected; it
+  must never use the broken-chain icon.
 - `off`: the same chain split at its center, rendered as a hollow dark-blue
   broken chain.
 - Never fake the broken state by drawing a filled slash over a chain.
@@ -109,11 +113,20 @@ controls. Long activity names truncate on one line.
 ## State behavior
 
 - Linked activity: teal chain, activity title, and linked instrumentation.
-- Link enabled with no running activity: intact quieter chain and “No focused
-  activity”; recording uses general dictation.
+- Link enabled with no open session or activity: intact quieter chain and
+  “No focused activity · general dictation.”
+- Link enabled with an open session but no running activity: intact amber
+  chain and either “General dictation · no activity running” or “General
+  dictation · session paused.” A paused last-focused activity remains
+  resumable in the expanded timer surface but must not replace this compact
+  general-dictation title.
 - Link off: hollow dark-blue broken chain and “General dictation.”
 - Recording: microphone halo brightens and the activity label yields to live
   audio feedback and elapsed time.
+- Starting a recording collapses the timer surface. Timer disclosure is not
+  available during capture.
+- Playback retains seek, pause/resume, explicit Stop, and timer disclosure.
+  Opening or closing the timer surface must not stop playback.
 - Processing: show a compact progress mark only after meaningful elapsed
   processing time. Do not keep the widget busy after insertion succeeds.
 - No previous capture: Play, Copy, and Save controls are absent, not disabled.
@@ -138,7 +151,7 @@ controls. Long activity names truncate on one line.
 - Press: compress the control by about three percent.
 - Width changes: 200–260 ms ease-in-out, anchored to the widget’s right edge.
 - Timer expansion changes both width and height over the same 200–260 ms
-  interval, anchored to the widget’s top-right corner.
+  interval, anchored to the widget’s bottom-right corner.
 - Respect Reduce Motion by replacing movement with short opacity changes.
 - Every icon-only control has an accessibility label and a tooltip.
 - A Record press must react immediately; cached activity routing must not add a
@@ -162,6 +175,11 @@ controls. Long activity names truncate on one line.
 - The next-activity picker exposes no result or star controls.
 - Pausing a session freezes both clocks and preserves the last-focused
   activity; resuming it never changes to the broken-chain state.
+- Pausing the only running activity immediately changes the compact capsule to
+  the amber general-dictation state. General captures in this state never
+  create activity transcript, audio, or coaching records in D1 or R2.
+- Playback exposes both Stop and timer disclosure; expanding the timer leaves
+  playback position and transport state intact.
 - Session and activity overtime remain legible and do not resize their columns.
 - Hover, keyboard focus, press feedback, Reduce Motion, and accessibility
   labels are verified.

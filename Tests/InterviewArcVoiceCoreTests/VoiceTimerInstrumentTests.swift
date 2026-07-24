@@ -44,10 +44,72 @@ import Testing
 
 @Test func expandedTimerUsesOneTransparentHostForTwoSeparatedSurfaces() {
     #expect(FloatingWidgetWindowPolicy.expandedWidth > FloatingWidgetWindowPolicy.collapsedWidth)
+    #expect(FloatingWidgetWindowPolicy.playbackWidth > FloatingWidgetWindowPolicy.collapsedWidth)
+    #expect(FloatingWidgetWindowPolicy.playbackWidth < FloatingWidgetWindowPolicy.expandedWidth)
     #expect(FloatingWidgetWindowPolicy.timerGap == 10)
     #expect(FloatingWidgetWindowPolicy.expandedHostHeight > FloatingWidgetWindowPolicy.hostHeight)
     #expect(
         FloatingWidgetWindowPolicy.expandedDrawerHostHeight
             > FloatingWidgetWindowPolicy.expandedHostHeight
     )
+    #expect(FloatingWidgetWindowPolicy.recorderIsBottomSurface)
+    #expect(FloatingWidgetWindowPolicy.expandsUpward)
+    #expect(FloatingWidgetWindowPolicy.timerDisclosureAvailableDuringPlayback)
+}
+
+@Test func connectedSessionWithoutRunningActivityUsesGeneralFallbackPresentation() {
+    let policy = CompactVoicePresentationPolicy()
+
+    let runningSession = policy.presentation(
+        linkEnabled: true,
+        activeActivityTitle: nil,
+        hasOpenSession: true,
+        sessionIsRunning: true
+    )
+    #expect(runningSession.state == .connectedIdle)
+    #expect(runningSession.title == "General dictation · no activity running")
+    #expect(runningSession.accessibilityLabel.contains("Recording uses general dictation"))
+
+    let pausedSession = policy.presentation(
+        linkEnabled: true,
+        activeActivityTitle: nil,
+        hasOpenSession: true,
+        sessionIsRunning: false
+    )
+    #expect(pausedSession.state == .connectedIdle)
+    #expect(pausedSession.title == "General dictation · session paused")
+}
+
+@Test func activeActivityAndLinkOffRemainDistinctFromConnectedFallback() {
+    let policy = CompactVoicePresentationPolicy()
+
+    let linked = policy.presentation(
+        linkEnabled: true,
+        activeActivityTitle: "Course Schedule",
+        hasOpenSession: true,
+        sessionIsRunning: true
+    )
+    #expect(linked.state == .linked)
+    #expect(linked.title == "Course Schedule")
+
+    let off = policy.presentation(
+        linkEnabled: false,
+        activeActivityTitle: "Course Schedule",
+        hasOpenSession: true,
+        sessionIsRunning: true
+    )
+    #expect(off.state == .off)
+    #expect(off.title == "General dictation")
+}
+
+@Test func noSessionAndNoActivityUsesWaitingGeneralDictation() {
+    let presentation = CompactVoicePresentationPolicy().presentation(
+        linkEnabled: true,
+        activeActivityTitle: nil,
+        hasOpenSession: false,
+        sessionIsRunning: false
+    )
+
+    #expect(presentation.state == .waiting)
+    #expect(presentation.title == "No focused activity · general dictation")
 }
