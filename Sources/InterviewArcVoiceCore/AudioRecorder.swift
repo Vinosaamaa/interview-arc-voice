@@ -91,6 +91,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
     @Published public private(set) var isRecording = false
     @Published public private(set) var elapsedSeconds: TimeInterval = 0
     @Published public private(set) var averagePower: Float = -60
+    @Published public private(set) var powerHistory: [Float] = []
     @Published public private(set) var signalHealth: MicrophoneSignalHealth = .warmingUp
     @Published public private(set) var inputDeviceName = "Default microphone"
 
@@ -131,6 +132,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         startedAt = Date()
         elapsedSeconds = 0
         averagePower = -60
+        powerHistory = []
         peakPower = -160
         signalHealth = .warmingUp
         isRecording = true
@@ -142,6 +144,10 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
                 if let recorder = self.recorder {
                     recorder.updateMeters()
                     self.averagePower = recorder.averagePower(forChannel: 0)
+                    self.powerHistory.append(self.averagePower)
+                    if self.powerHistory.count > 72 {
+                        self.powerHistory.removeFirst(self.powerHistory.count - 72)
+                    }
                     self.peakPower = max(self.peakPower, self.averagePower)
                     self.signalHealth = self.signalPolicy.health(
                         elapsedSeconds: self.elapsedSeconds,
