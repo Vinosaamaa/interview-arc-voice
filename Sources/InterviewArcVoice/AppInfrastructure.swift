@@ -792,8 +792,8 @@ struct FloatingRecorderView: View {
         }
         .padding(.vertical, 8)
         .frame(
-            width: model.floatingWidth,
-            height: model.floatingHeight,
+            maxWidth: .infinity,
+            maxHeight: .infinity,
             alignment: .bottomTrailing
         )
         .onChange(of: model.floatingSize) { _, _ in resizeWindow() }
@@ -915,33 +915,19 @@ struct FloatingRecorderView: View {
             if model.hasTimerInstrument, !model.isBusy {
                 TimelineView(.periodic(from: .now, by: 1)) { timeline in
                     Button(action: model.toggleTimerPanel) {
-                        HStack(spacing: 5) {
+                        HStack(spacing: 3) {
                             OverflowMarqueeText(
                                 text: model.compactTimerTitle,
                                 font: .system(size: 11, weight: .semibold),
                                 color: palette.ink
                             )
-                            .frame(maxWidth: .infinity, minHeight: 24)
+                            .frame(
+                                minWidth: FloatingWidgetCompactTimerLayoutPolicy.minimumTitleWidth,
+                                maxWidth: .infinity,
+                                minHeight: 24
+                            )
                             .layoutPriority(1)
-                            if let activityTime = model.compactActivityTime(at: timeline.date) {
-                                compactClock(
-                                    activityTime,
-                                    symbol: "stopwatch",
-                                    tint: palette.tealDark
-                                )
-                            }
-                            if let sessionTime = model.compactSessionTime(at: timeline.date) {
-                                Rectangle()
-                                    .fill(palette.divider.opacity(0.75))
-                                    .frame(width: 1, height: 17)
-                                Text(sessionTime)
-                                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                                    .monospacedDigit()
-                                    .foregroundStyle(palette.tealDark)
-                                    .lineLimit(1)
-                                    .fixedSize(horizontal: true, vertical: false)
-                                    .frame(width: 52, alignment: .center)
-                            }
+                            compactTimerCluster(at: timeline.date)
                             Image(systemName: model.timerPanelExpanded ? "chevron.down" : "chevron.up")
                                 .font(.system(size: 8, weight: .bold))
                                 .foregroundStyle(palette.secondaryInk)
@@ -965,23 +951,50 @@ struct FloatingRecorderView: View {
         }
     }
 
+    @ViewBuilder
+    private func compactTimerCluster(at date: Date) -> some View {
+        let activityTime = model.compactActivityTime(at: date)
+        let sessionTime = model.compactSessionTime(at: date)
+        HStack(spacing: FloatingWidgetCompactTimerLayoutPolicy.clusterSpacing) {
+            if let activityTime {
+                compactClock(
+                    activityTime,
+                    width: FloatingWidgetCompactTimerLayoutPolicy.activityClockWidth,
+                    label: "Activity time"
+                )
+            }
+            if activityTime != nil, sessionTime != nil {
+                Rectangle()
+                    .fill(palette.divider.opacity(0.75))
+                    .frame(
+                        width: FloatingWidgetCompactTimerLayoutPolicy.dividerWidth,
+                        height: 15
+                    )
+            }
+            if let sessionTime {
+                compactClock(
+                    sessionTime,
+                    width: FloatingWidgetCompactTimerLayoutPolicy.sessionClockWidth,
+                    label: "Session time"
+                )
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
     private func compactClock(
         _ value: String,
-        symbol: String,
-        tint: Color
+        width: CGFloat,
+        label: String
     ) -> some View {
-        HStack(spacing: 2) {
-            Image(systemName: symbol)
-                .font(.system(size: 8, weight: .semibold))
-            Text(value)
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                .monospacedDigit()
-        }
-        .foregroundStyle(tint)
-        .padding(.horizontal, 4)
-        .frame(width: 64, height: 24)
-        .background(palette.timerSurface.opacity(palette.isDark ? 0.78 : 0.62))
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        Text(value)
+            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .monospacedDigit()
+            .foregroundStyle(palette.tealDark)
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
+            .frame(width: width, height: 24, alignment: .center)
+            .accessibilityLabel("\(label), \(value)")
     }
 
     private var processingLabel: some View {
