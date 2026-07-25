@@ -20,6 +20,7 @@ public enum FloatingWidgetWindowPolicy {
     public static let hostIsOpaque = false
     public static let usesNativeWindowShadow = false
     public static let collapsedWidth: CGFloat = 250
+    public static let recordingWidth: CGFloat = 340
     public static let playbackWidth: CGFloat = 410
     public static let expandedWidth: CGFloat = 430
     public static let capsuleHeight: CGFloat = 40
@@ -36,5 +37,19 @@ public enum FloatingWidgetWindowPolicy {
         current: FloatingWidgetDisclosureState
     ) -> FloatingWidgetDisclosureState {
         current
+    }
+}
+
+public enum FloatingWidgetGeometryPolicy {
+    public static func anchoredFrame(
+        currentFrame: CGRect,
+        targetSize: CGSize
+    ) -> CGRect {
+        CGRect(
+            x: currentFrame.maxX - targetSize.width,
+            y: currentFrame.minY,
+            width: targetSize.width,
+            height: targetSize.height
+        )
     }
 }

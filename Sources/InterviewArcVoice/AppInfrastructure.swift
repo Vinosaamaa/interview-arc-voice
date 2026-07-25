@@ -572,13 +572,11 @@ final class FloatingPanelController {
         guard let panel else { return }
         guard abs(panel.frame.width - width) > 0.5
                 || abs(panel.frame.height - height) > 0.5 else { return }
-        var frame = panel.frame
-        let rightEdge = frame.maxX
-        let bottomEdge = frame.minY
-        frame.size.width = width
-        frame.size.height = height
-        frame.origin.x = rightEdge - width
-        frame.origin.y = bottomEdge
+        let frame = FloatingWidgetGeometryPolicy.anchoredFrame(
+            currentFrame: panel.frame,
+            targetSize: CGSize(width: width, height: height)
+        )
+        panel.contentView?.layer?.removeAllAnimations()
         if reduceMotion {
             panel.setFrame(frame, display: true)
         } else {
@@ -618,6 +616,7 @@ private final class TransparentHostingView<Content: View>: NSHostingView<Content
 
 private struct FrostedInstrumentCapsule: View {
     let palette: VoiceWidgetPalette
+    let isRecording: Bool
 
     var body: some View {
         ZStack {
@@ -635,10 +634,19 @@ private struct FrostedInstrumentCapsule: View {
                     )
                 )
             Capsule(style: .continuous)
-                .stroke(palette.coolBorder.opacity(0.90), lineWidth: 0.9)
+                .stroke(
+                    isRecording
+                        ? palette.warning.opacity(0.92)
+                        : palette.coolBorder.opacity(0.90),
+                    lineWidth: isRecording ? 1.3 : 0.9
+                )
             Capsule(style: .continuous)
                 .inset(by: 1.4)
                 .stroke(palette.glassHighlight.opacity(palette.isDark ? 0.40 : 0.72), lineWidth: 0.7)
+            if isRecording {
+                Capsule(style: .continuous)
+                    .fill(palette.warning.opacity(palette.isDark ? 0.10 : 0.07))
+            }
         }
         .clipShape(Capsule(style: .continuous))
     }
@@ -716,10 +724,7 @@ struct FloatingRecorderView: View {
             height: model.floatingHeight,
             alignment: .bottomTrailing
         )
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: model.floatingWidth)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: model.floatingHeight)
-        .onChange(of: model.floatingWidth) { _, _ in resizeWindow() }
-        .onChange(of: model.floatingHeight) { _, _ in resizeWindow() }
+        .onChange(of: model.floatingSize) { _, _ in resizeWindow() }
     }
 
     private var recorderCapsule: some View {
@@ -731,14 +736,30 @@ struct FloatingRecorderView: View {
                     radius: 7,
                     y: 3
                 )
-            FrostedInstrumentCapsule(palette: palette)
+            FrostedInstrumentCapsule(
+                palette: palette,
+                isRecording: model.dynamicRecordingInterfaceActive && model.isRecording
+            )
             HStack(spacing: 6) {
                 linkButton
                 if model.isRecording {
+                    if model.dynamicRecordingInterfaceActive {
+                        Circle()
+                            .fill(palette.warning)
+                            .frame(width: 7, height: 7)
+                            .shadow(color: palette.warning.opacity(0.65), radius: 4)
+                            .accessibilityLabel("Recording live")
+                    }
                     if model.recorder.signalHealth == .absent {
                         microphoneSignalWarning
                     } else {
-                        LiveVoiceWaveform(recorder: model.recorder, color: palette.teal)
+                        LiveVoiceWaveform(
+                            recorder: model.recorder,
+                            color: model.dynamicRecordingInterfaceActive
+                                ? palette.warning
+                                : palette.teal,
+                            historical: model.dynamicRecordingInterfaceActive
+                        )
                     }
                     RecordingClock(
                         recorder: model.recorder,
@@ -753,21 +774,21 @@ struct FloatingRecorderView: View {
                     processingLabel
                 } else {
                     activityLabel
-                    if model.hasLastAudio {
+                    if !model.hasTimerInstrument, model.hasLastAudio {
                         memoButton(
                             symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
                             label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
                             action: model.toggleLastAudioPlayback
                         )
                     }
-                    if !model.lastTranscript.isEmpty {
+                    if !model.hasTimerInstrument, !model.lastTranscript.isEmpty {
                         memoButton(
                             symbol: "doc.on.doc",
                             label: "Copy last transcript",
                             action: model.copyLastTranscript
                         )
                     }
-                    if model.hasLastAudio {
+                    if !model.hasTimerInstrument, model.hasLastAudio {
                         memoButton(
                             symbol: "square.and.arrow.down",
                             label: "Save last audio and transcript",
@@ -820,21 +841,44 @@ struct FloatingRecorderView: View {
     private var activityLabel: some View {
         Group {
             if model.hasTimerInstrument, !model.isBusy {
-                Button(action: model.toggleTimerPanel) {
-                    HStack(spacing: 4) {
-                        Text(model.floatingTitle)
-                            .lineLimit(1)
-                        Image(systemName: model.timerPanelExpanded ? "chevron.down" : "chevron.up")
-                            .font(.system(size: 9, weight: .bold))
+                TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                    Button(action: model.toggleTimerPanel) {
+                        HStack(spacing: 5) {
+                            Text(model.compactTimerTitle)
+                                .font(.system(size: 11, weight: .semibold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.72)
+                            Spacer(minLength: 1)
+                            if let activityTime = model.compactActivityTime(at: timeline.date) {
+                                compactClock(
+                                    activityTime,
+                                    symbol: "stopwatch",
+                                    tint: palette.tealDark
+                                )
+                            }
+                            if let sessionTime = model.compactSessionTime(at: timeline.date) {
+                                Rectangle()
+                                    .fill(palette.divider.opacity(0.75))
+                                    .frame(width: 1, height: 17)
+                                Text(sessionTime)
+                                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                    .monospacedDigit()
+                                    .foregroundStyle(palette.tealDark)
+                                    .lineLimit(1)
+                            }
+                            Image(systemName: model.timerPanelExpanded ? "chevron.down" : "chevron.up")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(palette.secondaryInk)
+                                .frame(width: 10, alignment: .trailing)
+                        }
+                        .foregroundStyle(palette.ink)
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
                     }
-                    .font(.system(size: 12, weight: .semibold, design: .default))
-                    .foregroundStyle(palette.ink)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .voiceHoverFeedback(cornerRadius: 7, tint: palette.teal)
+                    .help(model.timerPanelExpanded ? "Hide timers" : "Show timers")
                 }
-                .buttonStyle(.plain)
-                .voiceHoverFeedback(cornerRadius: 7, tint: palette.teal)
-                .help(model.timerPanelExpanded ? "Hide timers" : "Show timers")
             } else {
                 Text(model.floatingTitle)
                     .font(.system(size: 12, weight: .semibold, design: .default))
@@ -843,6 +887,25 @@ struct FloatingRecorderView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+
+    private func compactClock(
+        _ value: String,
+        symbol: String,
+        tint: Color
+    ) -> some View {
+        HStack(spacing: 2) {
+            Image(systemName: symbol)
+                .font(.system(size: 8, weight: .semibold))
+            Text(value)
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .monospacedDigit()
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 4)
+        .frame(height: 24)
+        .background(palette.timerSurface.opacity(palette.isDark ? 0.78 : 0.62))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 
     private var processingLabel: some View {
@@ -1096,7 +1159,8 @@ private struct FloatingTimerInstrumentPanel: View {
         VStack(spacing: 0) {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 VStack(spacing: 0) {
-                    if let session = instrument.session {
+                    if let session = instrument.session,
+                       !(model.dynamicRecordingInterfaceActive && model.isRecording) {
                         timerRow(
                             eyebrow: "SESSION",
                             title: session.label,
@@ -1122,7 +1186,8 @@ private struct FloatingTimerInstrumentPanel: View {
                             }
                         )
                     }
-                    if instrument.session != nil {
+                    if instrument.session != nil,
+                       !(model.dynamicRecordingInterfaceActive && model.isRecording) {
                         Divider().overlay(palette.divider.opacity(0.65))
                     }
                     if let activity = instrument.activity {
@@ -1787,24 +1852,37 @@ extension View {
 private struct LiveVoiceWaveform: View {
     @ObservedObject var recorder: AnswerRecorder
     let color: Color
-    private let shape: [CGFloat] = [0.42, 0.70, 0.52, 0.88, 0.60, 0.78, 1.00, 0.62, 0.84, 0.56, 0.76, 0.48, 0.68, 0.40]
+    let historical: Bool
+    private let idleShape: [Float] = [
+        -48, -39, -45, -34, -42, -37, -31,
+        -41, -35, -44, -38, -47, -40, -49,
+    ]
 
     var body: some View {
         HStack(spacing: 2) {
-            ForEach(Array(shape.enumerated()), id: \.offset) { index, multiplier in
+            ForEach(Array(displayedLevels.enumerated()), id: \.offset) { index, level in
                 Capsule(style: .continuous)
                     .fill(color)
-                    .frame(width: 2.5, height: barHeight(multiplier, index: index))
+                    .frame(width: 2.5, height: barHeight(level, index: index))
             }
         }
         .frame(maxWidth: .infinity)
-        .animation(.linear(duration: 0.09), value: recorder.averagePower)
+        .animation(.linear(duration: 0.09), value: recorder.powerHistory)
         .accessibilityLabel("Live microphone level")
     }
 
-    private func barHeight(_ multiplier: CGFloat, index: Int) -> CGFloat {
-        let normalized = max(0.08, min(1, CGFloat((recorder.averagePower + 55) / 45)))
+    private var displayedLevels: [Float] {
+        if !historical { return idleShape }
+        let count = 24
+        return Array(
+            (Array(repeating: Float(-60), count: count) + recorder.powerHistory)
+                .suffix(count)
+        )
+    }
+
+    private func barHeight(_ level: Float, index: Int) -> CGFloat {
+        let normalized = max(0.08, min(1, CGFloat((level + 55) / 45)))
         let pulse = 0.82 + 0.18 * sin(recorder.elapsedSeconds * 11 + Double(index) * 0.72)
-        return max(3, 27 * normalized * multiplier * pulse)
+        return max(3, 27 * normalized * pulse)
     }
 }

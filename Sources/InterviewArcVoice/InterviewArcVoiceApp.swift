@@ -148,6 +148,10 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var pendingRetryCount = 0
     @Published var linkToInterviewArc: Bool
     @Published var widgetTheme: VoiceWidgetTheme
+    @Published var backgroundAudioMode: BackgroundAudioRecordingMode
+    @Published var backgroundAudioRelativeLevel: Double
+    @Published var dynamicRecordingInterfaceEnabled: Bool
+    @Published private(set) var dynamicRecordingInterfaceActive = false
     @Published var shortcut: HotKeyShortcut
     @Published var shortcutCapturing = false
     @Published var accessibilityNeeded = false
@@ -174,6 +178,7 @@ final class VoiceBridgeModel: ObservableObject {
     private let compactPresentationPolicy = CompactVoicePresentationPolicy()
     private let hotKeyManager = GlobalHotKeyManager()
     private let textInjector = DictationTextInjector()
+    private let outputVolumeController = SystemOutputVolumeController()
     private var recordingStore: RecordingStore?
     private var pipeline: VoicePipeline?
     private var captureDestination: CaptureDestination?
@@ -188,6 +193,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var timerInstrumentReceivedAt = Date()
     private var wakeObserver: NSObjectProtocol?
     private var activationObserver: NSObjectProtocol?
+    private var terminationObserver: NSObjectProtocol?
     private var lastExternalApplicationPID: pid_t?
     private var lastAudioData: Data?
     private var lastAudioURL: URL?
@@ -305,9 +311,15 @@ final class VoiceBridgeModel: ObservableObject {
         if timerPanelExpanded && hasTimerInstrument {
             return FloatingWidgetWindowPolicy.expandedWidth
         }
+        if dynamicRecordingInterfaceActive {
+            return FloatingWidgetWindowPolicy.recordingWidth
+        }
         return isPlaybackExpanded
             ? FloatingWidgetWindowPolicy.playbackWidth
             : FloatingWidgetWindowPolicy.collapsedWidth
+    }
+    var floatingSize: CGSize {
+        CGSize(width: floatingWidth, height: floatingHeight)
     }
     var floatingHeight: CGFloat {
         guard timerPanelExpanded && hasTimerInstrument else {
@@ -331,6 +343,25 @@ final class VoiceBridgeModel: ObservableObject {
     var availableTimerActivities: [VoiceTimerActivity] {
         timerInstrument?.activities ?? []
     }
+    var compactTimerTitle: String {
+        timerInstrument?.activity?.title
+            ?? timerInstrument?.session?.label
+            ?? floatingTitle
+    }
+
+    func compactActivityTime(at now: Date) -> String? {
+        guard let timer = timerInstrument?.activity?.timer else { return nil }
+        return compactClock(elapsedSeconds(for: timer, now: now))
+    }
+
+    func compactSessionTime(at now: Date) -> String? {
+        guard let session = timerInstrument?.session else { return nil }
+        let elapsed = elapsedSeconds(for: session.timer, now: now)
+        let remaining = session.allocatedSeconds - elapsed
+        return remaining >= 0
+            ? compactClock(remaining)
+            : "+\(compactClock(abs(remaining)))"
+    }
     private var compactLinkPresentation: CompactVoicePresentation {
         compactPresentationPolicy.presentation(
             linkEnabled: linkToInterviewArc,
@@ -340,6 +371,19 @@ final class VoiceBridgeModel: ObservableObject {
         )
     }
 
+    private func compactClock(_ seconds: Int) -> String {
+        let safe = max(0, seconds)
+        if safe >= 3_600 {
+            return String(
+                format: "%02d:%02d:%02d",
+                safe / 3_600,
+                (safe % 3_600) / 60,
+                safe % 60
+            )
+        }
+        return String(format: "%02d:%02d", safe / 60, safe % 60)
+    }
+
     init() {
         let defaults = UserDefaults.standard
         apiBaseURL = defaults.string(forKey: "voice.apiBaseURL") ?? "https://limitless-mcp.vinosama.workers.dev"
@@ -347,6 +391,15 @@ final class VoiceBridgeModel: ObservableObject {
         codexPath = defaults.string(forKey: "voice.codexPath") ?? "/Applications/ChatGPT.app/Contents/Resources/codex"
         linkToInterviewArc = defaults.object(forKey: "voice.linkToInterviewArc") as? Bool ?? true
         widgetTheme = VoiceWidgetTheme.load(from: defaults)
+        backgroundAudioMode = BackgroundAudioRecordingMode(
+            rawValue: defaults.string(forKey: "voice.backgroundAudioMode") ?? ""
+        ) ?? .lower
+        backgroundAudioRelativeLevel = defaults.object(
+            forKey: "voice.backgroundAudioRelativeLevel"
+        ) as? Double ?? BackgroundAudioPolicy.defaultRelativeLevel
+        dynamicRecordingInterfaceEnabled = defaults.object(
+            forKey: "voice.dynamicRecordingInterfaceEnabled"
+        ) as? Bool ?? false
         if let data = defaults.data(forKey: "voice.shortcut"),
            let saved = try? JSONDecoder().decode(HotKeyShortcut.self, from: data) {
             shortcut = saved
@@ -368,6 +421,7 @@ final class VoiceBridgeModel: ObservableObject {
         Task {
             await Task.yield()
             FloatingPanelController.shared.show(model: self)
+            outputVolumeController.recoverInterruptedSessionIfNeeded()
             hotKeyManager.register(shortcut) { [weak self] in self?.toggleRecording() }
             await loadSecureSettings()
             startContextPolling()
@@ -390,6 +444,15 @@ final class VoiceBridgeModel: ObservableObject {
             }
             Task { @MainActor in
                 self?.lastExternalApplicationPID = application.processIdentifier
+            }
+        }
+        terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.outputVolumeController.restoreNow()
             }
         }
     }
@@ -678,6 +741,27 @@ final class VoiceBridgeModel: ObservableObject {
         guard widgetTheme != theme else { return }
         widgetTheme = theme
         theme.save()
+    }
+
+    func setBackgroundAudioMode(_ mode: BackgroundAudioRecordingMode) {
+        backgroundAudioMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: "voice.backgroundAudioMode")
+    }
+
+    func setBackgroundAudioRelativeLevel(_ level: Double) {
+        backgroundAudioRelativeLevel = max(0.05, min(0.50, level))
+        UserDefaults.standard.set(
+            backgroundAudioRelativeLevel,
+            forKey: "voice.backgroundAudioRelativeLevel"
+        )
+    }
+
+    func setDynamicRecordingInterfaceEnabled(_ enabled: Bool) {
+        dynamicRecordingInterfaceEnabled = enabled
+        UserDefaults.standard.set(
+            enabled,
+            forKey: "voice.dynamicRecordingInterfaceEnabled"
+        )
     }
 
     func setLinkMode(_ enabled: Bool) {
@@ -1185,7 +1269,12 @@ final class VoiceBridgeModel: ObservableObject {
         case nil: return
         }
         do {
+            outputVolumeController.lowerForRecording(
+                mode: backgroundAudioMode,
+                relativeLevel: backgroundAudioRelativeLevel
+            )
             try await recorder.start(at: destination)
+            dynamicRecordingInterfaceActive = dynamicRecordingInterfaceEnabled
             let disclosure = FloatingWidgetWindowPolicy
                 .disclosureStateWhenRecordingStarts(
                     current: FloatingWidgetDisclosureState(
@@ -1202,6 +1291,8 @@ final class VoiceBridgeModel: ObservableObject {
                 Task { await refreshContext(showProgress: false) }
             }
         } catch {
+            dynamicRecordingInterfaceActive = false
+            outputVolumeController.restoreAfterRouteSettles()
             self.captureDestination = nil
             canRetryLastTranscription = false
             reportFailure(error, stage: .microphone)
@@ -1218,6 +1309,10 @@ final class VoiceBridgeModel: ObservableObject {
         }
         do {
             var recording = try recorder.stop()
+            // The experiment is scoped to live capture. Transcription returns
+            // immediately to the prior disclosure and uses the existing spinner.
+            dynamicRecordingInterfaceActive = false
+            outputVolumeController.restoreAfterRouteSettles()
             let generation = captureGeneration
             let memoActivityTitle: String?
             switch captureDestination {
@@ -1241,6 +1336,23 @@ final class VoiceBridgeModel: ObservableObject {
             )
             switch recovery {
             case .transcribe:
+                let speechEvidence = try LocalSpeechEvidenceAnalyzer.inspect(recording.url)
+                voiceBridgeLogger.info(
+                    "Local speech evidence: speech=\(speechEvidence.containsSpeech, privacy: .public) duration=\(speechEvidence.analyzedDurationSeconds, privacy: .public)s frames=\(speechEvidence.speechLikeFrameCount, privacy: .public) run=\(speechEvidence.longestSpeechRunFrames, privacy: .public) floor=\(speechEvidence.noiseFloorDecibels, privacy: .public)dB peak=\(speechEvidence.peakFrameDecibels, privacy: .public)dB"
+                )
+                guard speechEvidence.containsSpeech else {
+                    try? FileManager.default.removeItem(at: recording.url)
+                    lastRetryDestination = nil
+                    canRetryLastTranscription = false
+                    reportFailure(
+                        kind: .recording,
+                        title: "No speech detected",
+                        message: "Nothing was inserted or sent · record again when ready",
+                        detail: "Local speech detection found no sustained speech-shaped frames in the finalized recording.",
+                        actions: [.recordAgain]
+                    )
+                    return
+                }
                 rememberLastAudio(recording, activityTitle: memoActivityTitle)
             case .preserveWithoutRetry:
                 rememberLastAudio(recording, activityTitle: memoActivityTitle)
@@ -1283,6 +1395,8 @@ final class VoiceBridgeModel: ObservableObject {
             }
         } catch {
             self.captureDestination = nil
+            dynamicRecordingInterfaceActive = false
+            outputVolumeController.restoreAfterRouteSettles()
             canRetryLastTranscription = false
             reportFailure(error, stage: .recording, hasRecoverableAudio: hasLastAudio)
         }
@@ -1688,6 +1802,47 @@ private struct VoiceSettingsWindow: View {
                 SecureField("Groq API key", text: $model.groqKeyDraft)
                     .textFieldStyle(.roundedBorder)
                 Text("Required for Groq Whisper transcription. The key is stored only in macOS Keychain.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Picker(
+                    "Background audio",
+                    selection: Binding(
+                        get: { model.backgroundAudioMode },
+                        set: model.setBackgroundAudioMode
+                    )
+                ) {
+                    ForEach(BackgroundAudioRecordingMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                if model.backgroundAudioMode == .lower {
+                    HStack {
+                        Text("Recording level")
+                        Slider(
+                            value: Binding(
+                                get: { model.backgroundAudioRelativeLevel },
+                                set: model.setBackgroundAudioRelativeLevel
+                            ),
+                            in: 0.05...0.50,
+                            step: 0.05
+                        )
+                        Text("\(Int(model.backgroundAudioRelativeLevel * 100))%")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 34, alignment: .trailing)
+                    }
+                }
+                Text("Uses the current output volume as the baseline, keeps the selected microphone, and restores only when you have not changed volume yourself.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle(
+                    "Experimental dynamic recording interface",
+                    isOn: Binding(
+                        get: { model.dynamicRecordingInterfaceEnabled },
+                        set: model.setDynamicRecordingInterfaceEnabled
+                    )
+                )
+                Text("Expands the compact capsule during live recording. In the expanded timer view it keeps the outer frame stable, emphasizes the activity timer, and turns the recorder row into a live instrument.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -2150,47 +2305,22 @@ private struct VoiceBridgeMenu: View {
     }
 
     private var settings: some View {
-        DisclosureGroup(isExpanded: $model.settingsExpanded) {
-            VStack(alignment: .leading, spacing: 9) {
-                HStack {
-                    Text("Global shortcut")
-                    Spacer()
-                    Button(model.shortcutCapturing ? "Press shortcut…" : model.shortcut.displayName) {
-                        model.beginShortcutCapture()
-                    }
-                    .voiceHoverFeedback(cornerRadius: 6)
-                }
-                if model.accessibilityNeeded {
-                    Button("Enable Accessibility for insertion", action: model.requestAccessibilityPermission)
-                        .font(.caption)
-                        .voiceHoverFeedback(cornerRadius: 6)
-                } else {
-                    Label("Direct insertion enabled", systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.green)
-                }
-                Divider()
-                SecureField("Interview Arc token", text: $model.connectionTokenDraft).textFieldStyle(.roundedBorder)
-                SecureField("Groq API key", text: $model.groqKeyDraft).textFieldStyle(.roundedBorder)
-                TextField("Interview Arc API", text: $model.apiBaseURL).textFieldStyle(.roundedBorder)
-                TextField("Interview Arc repository", text: $model.workspacePath).textFieldStyle(.roundedBorder)
-                TextField("Codex executable", text: $model.codexPath).textFieldStyle(.roundedBorder)
-                Button("Save secure settings", action: model.saveSettings)
-                    .buttonStyle(.borderedProminent)
-                    .voiceHoverFeedback(cornerRadius: 7)
-            }
-            .padding(.top, 10)
-        } label: {
+        SettingsLink {
             HStack {
                 Label("Settings", systemImage: "gearshape")
                     .font(.subheadline.weight(.medium))
                 Spacer()
-                Text(model.shortcut.displayName)
-                    .font(.caption2.monospaced())
+                Image(systemName: "arrow.up.right")
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-            .voiceHoverFeedback(cornerRadius: 7)
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity, minHeight: 34)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .voiceHoverFeedback(cornerRadius: 8, tint: .teal)
+        .help("Open Interview Arc Voice settings")
     }
 
     private var providerFooter: some View {

@@ -192,6 +192,10 @@ The recording-start self-rejection and lifecycle-policy repair is documented
 in
 [`docs/postmortems/2026-07-24-recording-start-readiness-regression.md`](docs/postmortems/2026-07-24-recording-start-readiness-regression.md).
 
+The non-speech transcription integrity incident and local speech-evidence gate
+are documented in
+[`docs/postmortems/2026-07-25-false-transcription-from-non-speech.md`](docs/postmortems/2026-07-25-false-transcription-from-non-speech.md).
+
 ## Provider and terminology references
 
 - [Groq Speech to Text](https://console.groq.com/docs/speech-to-text)
