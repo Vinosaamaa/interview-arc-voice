@@ -36,7 +36,9 @@ dashboard. Its visual language is:
 
 The floating microphone control is the signature component. Other Voice
 surfaces should feel related to it without copying its exact capsule geometry
-everywhere.
+everywhere. The user may choose one of the approved widget themes in Settings;
+themes change material and color tokens, never layout, component geometry,
+information hierarchy, icon geometry, or interaction behavior.
 
 ## Rules for changing the interface
 
@@ -56,6 +58,10 @@ everywhere.
   disabled behavior across the widget, menu, settings, and recovery UI.
 - Reuse palette and geometry tokens rather than introducing close-looking
   one-off colors or radii.
+- Treat `Arctic Teal`, `Neon Circuit`, `Aurora Night`, `Solar Ember`, and
+  `Sakura Glass` as the complete approved widget-theme family. Additions or
+  material changes require user-approved mockups and an update to the floating
+  widget contract.
 - Do not use emoji, filled clip-art symbols, or mismatched icon libraries.
 
 ### Preserve material integrity

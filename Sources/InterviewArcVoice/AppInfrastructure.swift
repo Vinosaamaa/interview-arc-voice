@@ -11,21 +11,123 @@ private let textInjectionLogger = Logger(
     category: "TextInjection"
 )
 
-enum VoiceWidgetPalette {
-    static let glass = Color(red: 0.957, green: 0.980, blue: 0.980)
-    static let glassHighlight = Color.white
-    static let coolBorder = Color(red: 0.784, green: 0.855, blue: 0.859)
-    static let timerSurface = Color(red: 0.898, green: 0.953, blue: 0.949)
-    static let teal = Color(red: 0.078, green: 0.557, blue: 0.537)
-    static let tealDark = Color(red: 0.031, green: 0.482, blue: 0.467)
-    static let tealGlow = Color(red: 0.749, green: 0.929, blue: 0.910)
-    static let ink = Color(red: 0.090, green: 0.165, blue: 0.196)
-    static let secondaryInk = Color(red: 0.345, green: 0.439, blue: 0.455)
-    static let divider = Color(red: 0.729, green: 0.800, blue: 0.804)
-    static let coolShadow = Color(red: 0.333, green: 0.482, blue: 0.490).opacity(0.16)
-    static let linkOff = Color(red: 0.090, green: 0.227, blue: 0.408)
-    static let connectedIdle = Color(red: 0.651, green: 0.365, blue: 0.110)
-    static let warning = Color(red: 0.722, green: 0.353, blue: 0.196)
+struct VoiceWidgetPalette {
+    let glass: Color
+    let glassHighlight: Color
+    let coolBorder: Color
+    let timerSurface: Color
+    let teal: Color
+    let tealDark: Color
+    let tealGlow: Color
+    let ink: Color
+    let secondaryInk: Color
+    let divider: Color
+    let coolShadow: Color
+    let linkOff: Color
+    let connectedIdle: Color
+    let warning: Color
+    let previewBackground: Color
+    let isDark: Bool
+
+    static func palette(for theme: VoiceWidgetTheme) -> VoiceWidgetPalette {
+        switch theme {
+        case .arcticTeal:
+            VoiceWidgetPalette(
+                glass: Color(red: 0.957, green: 0.980, blue: 0.980),
+                glassHighlight: .white,
+                coolBorder: Color(red: 0.784, green: 0.855, blue: 0.859),
+                timerSurface: Color(red: 0.898, green: 0.953, blue: 0.949),
+                teal: Color(red: 0.078, green: 0.557, blue: 0.537),
+                tealDark: Color(red: 0.031, green: 0.482, blue: 0.467),
+                tealGlow: Color(red: 0.749, green: 0.929, blue: 0.910),
+                ink: Color(red: 0.090, green: 0.165, blue: 0.196),
+                secondaryInk: Color(red: 0.345, green: 0.439, blue: 0.455),
+                divider: Color(red: 0.729, green: 0.800, blue: 0.804),
+                coolShadow: Color(red: 0.333, green: 0.482, blue: 0.490).opacity(0.16),
+                linkOff: Color(red: 0.090, green: 0.227, blue: 0.408),
+                connectedIdle: Color(red: 0.651, green: 0.365, blue: 0.110),
+                warning: Color(red: 0.722, green: 0.353, blue: 0.196),
+                previewBackground: Color(red: 0.941, green: 0.963, blue: 0.963),
+                isDark: false
+            )
+        case .neonCircuit:
+            VoiceWidgetPalette(
+                glass: Color(red: 0.018, green: 0.035, blue: 0.078),
+                glassHighlight: Color(red: 0.075, green: 0.129, blue: 0.224),
+                coolBorder: Color(red: 0.000, green: 0.831, blue: 1.000),
+                timerSurface: Color(red: 0.018, green: 0.063, blue: 0.118),
+                teal: Color(red: 0.000, green: 0.902, blue: 1.000),
+                tealDark: Color(red: 0.239, green: 0.937, blue: 1.000),
+                tealGlow: Color(red: 0.678, green: 0.188, blue: 1.000),
+                ink: Color(red: 0.929, green: 0.980, blue: 1.000),
+                secondaryInk: Color(red: 0.611, green: 0.761, blue: 0.827),
+                divider: Color(red: 0.294, green: 0.326, blue: 0.561),
+                coolShadow: Color(red: 0.000, green: 0.702, blue: 1.000).opacity(0.24),
+                linkOff: Color(red: 0.420, green: 0.619, blue: 0.902),
+                connectedIdle: Color(red: 1.000, green: 0.636, blue: 0.239),
+                warning: Color(red: 1.000, green: 0.404, blue: 0.337),
+                previewBackground: Color(red: 0.018, green: 0.027, blue: 0.059),
+                isDark: true
+            )
+        case .auroraNight:
+            VoiceWidgetPalette(
+                glass: Color(red: 0.020, green: 0.067, blue: 0.129),
+                glassHighlight: Color(red: 0.075, green: 0.180, blue: 0.286),
+                coolBorder: Color(red: 0.243, green: 0.741, blue: 0.788),
+                timerSurface: Color(red: 0.031, green: 0.118, blue: 0.208),
+                teal: Color(red: 0.310, green: 0.929, blue: 0.820),
+                tealDark: Color(red: 0.565, green: 0.953, blue: 0.937),
+                tealGlow: Color(red: 0.259, green: 0.435, blue: 1.000),
+                ink: Color(red: 0.914, green: 0.980, blue: 0.976),
+                secondaryInk: Color(red: 0.607, green: 0.769, blue: 0.808),
+                divider: Color(red: 0.263, green: 0.407, blue: 0.612),
+                coolShadow: Color(red: 0.145, green: 0.435, blue: 0.776).opacity(0.23),
+                linkOff: Color(red: 0.431, green: 0.616, blue: 0.863),
+                connectedIdle: Color(red: 0.965, green: 0.651, blue: 0.310),
+                warning: Color(red: 0.976, green: 0.424, blue: 0.345),
+                previewBackground: Color(red: 0.024, green: 0.055, blue: 0.110),
+                isDark: true
+            )
+        case .solarEmber:
+            VoiceWidgetPalette(
+                glass: Color(red: 0.070, green: 0.063, blue: 0.055),
+                glassHighlight: Color(red: 0.176, green: 0.145, blue: 0.118),
+                coolBorder: Color(red: 0.710, green: 0.416, blue: 0.208),
+                timerSurface: Color(red: 0.118, green: 0.094, blue: 0.067),
+                teal: Color(red: 1.000, green: 0.627, blue: 0.188),
+                tealDark: Color(red: 1.000, green: 0.737, blue: 0.337),
+                tealGlow: Color(red: 1.000, green: 0.514, blue: 0.110),
+                ink: Color(red: 1.000, green: 0.946, blue: 0.855),
+                secondaryInk: Color(red: 0.792, green: 0.706, blue: 0.596),
+                divider: Color(red: 0.482, green: 0.337, blue: 0.220),
+                coolShadow: Color(red: 0.663, green: 0.294, blue: 0.086).opacity(0.23),
+                linkOff: Color(red: 0.456, green: 0.596, blue: 0.792),
+                connectedIdle: Color(red: 1.000, green: 0.702, blue: 0.310),
+                warning: Color(red: 1.000, green: 0.388, blue: 0.259),
+                previewBackground: Color(red: 0.086, green: 0.075, blue: 0.063),
+                isDark: true
+            )
+        case .sakuraGlass:
+            VoiceWidgetPalette(
+                glass: Color(red: 1.000, green: 0.973, blue: 0.976),
+                glassHighlight: .white,
+                coolBorder: Color(red: 0.890, green: 0.710, blue: 0.745),
+                timerSurface: Color(red: 0.984, green: 0.890, blue: 0.906),
+                teal: Color(red: 0.776, green: 0.337, blue: 0.431),
+                tealDark: Color(red: 0.674, green: 0.278, blue: 0.369),
+                tealGlow: Color(red: 0.969, green: 0.718, blue: 0.780),
+                ink: Color(red: 0.278, green: 0.141, blue: 0.247),
+                secondaryInk: Color(red: 0.486, green: 0.337, blue: 0.420),
+                divider: Color(red: 0.855, green: 0.710, blue: 0.749),
+                coolShadow: Color(red: 0.565, green: 0.302, blue: 0.408).opacity(0.16),
+                linkOff: Color(red: 0.169, green: 0.298, blue: 0.510),
+                connectedIdle: Color(red: 0.682, green: 0.365, blue: 0.118),
+                warning: Color(red: 0.745, green: 0.294, blue: 0.235),
+                previewBackground: Color(red: 0.996, green: 0.957, blue: 0.965),
+                isDark: false
+            )
+        }
+    }
 }
 
 struct HotKeyShortcut: Codable, Equatable, Sendable {
@@ -515,32 +617,36 @@ private final class TransparentHostingView<Content: View>: NSHostingView<Content
 }
 
 private struct FrostedInstrumentCapsule: View {
+    let palette: VoiceWidgetPalette
+
     var body: some View {
         ZStack {
-            InstrumentBlurView()
+            InstrumentBlurView(isDark: palette.isDark)
             Capsule(style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [
-                            VoiceWidgetPalette.glassHighlight.opacity(0.58),
-                            VoiceWidgetPalette.glass.opacity(0.72),
-                            VoiceWidgetPalette.timerSurface.opacity(0.36),
+                            palette.glassHighlight.opacity(palette.isDark ? 0.80 : 0.58),
+                            palette.glass.opacity(palette.isDark ? 0.92 : 0.72),
+                            palette.timerSurface.opacity(palette.isDark ? 0.76 : 0.36),
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
             Capsule(style: .continuous)
-                .stroke(VoiceWidgetPalette.coolBorder.opacity(0.90), lineWidth: 0.9)
+                .stroke(palette.coolBorder.opacity(0.90), lineWidth: 0.9)
             Capsule(style: .continuous)
                 .inset(by: 1.4)
-                .stroke(VoiceWidgetPalette.glassHighlight.opacity(0.72), lineWidth: 0.7)
+                .stroke(palette.glassHighlight.opacity(palette.isDark ? 0.40 : 0.72), lineWidth: 0.7)
         }
         .clipShape(Capsule(style: .continuous))
     }
 }
 
 private struct InstrumentBlurView: NSViewRepresentable {
+    let isDark: Bool
+
     private static let capsuleMask: NSImage = {
         let size = NSSize(width: 42, height: 40)
         let image = NSImage(size: size, flipped: false) { rect in
@@ -559,7 +665,7 @@ private struct InstrumentBlurView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
-        view.material = .popover
+        view.material = isDark ? .hudWindow : .popover
         view.blendingMode = .behindWindow
         view.state = .active
         view.wantsLayer = true
@@ -572,6 +678,7 @@ private struct InstrumentBlurView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        view.material = isDark ? .hudWindow : .popover
         view.layer?.cornerRadius = 20
         view.layer?.masksToBounds = true
         view.layer?.backgroundColor = NSColor.clear.cgColor
@@ -582,6 +689,8 @@ private struct InstrumentBlurView: NSViewRepresentable {
 struct FloatingRecorderView: View {
     @ObservedObject var model: VoiceBridgeModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var palette: VoiceWidgetPalette { model.widgetPalette }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: FloatingWidgetWindowPolicy.timerGap) {
@@ -618,20 +727,24 @@ struct FloatingRecorderView: View {
             Capsule(style: .continuous)
                 .fill(Color.black.opacity(0.001))
                 .shadow(
-                    color: VoiceWidgetPalette.coolShadow,
+                    color: palette.coolShadow,
                     radius: 7,
                     y: 3
                 )
-            FrostedInstrumentCapsule()
+            FrostedInstrumentCapsule(palette: palette)
             HStack(spacing: 6) {
                 linkButton
                 if model.isRecording {
                     if model.recorder.signalHealth == .absent {
                         microphoneSignalWarning
                     } else {
-                        LiveVoiceWaveform(recorder: model.recorder)
+                        LiveVoiceWaveform(recorder: model.recorder, color: palette.teal)
                     }
-                    RecordingClock(recorder: model.recorder, compact: true)
+                    RecordingClock(
+                        recorder: model.recorder,
+                        compact: true,
+                        foregroundColor: palette.ink
+                    )
                 } else if model.isPlaybackExpanded {
                     playbackControls
                 } else if model.isFailurePresented {
@@ -715,17 +828,17 @@ struct FloatingRecorderView: View {
                             .font(.system(size: 9, weight: .bold))
                     }
                     .font(.system(size: 12, weight: .semibold, design: .default))
-                    .foregroundStyle(VoiceWidgetPalette.ink)
+                    .foregroundStyle(palette.ink)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .voiceHoverFeedback(cornerRadius: 7, tint: VoiceWidgetPalette.teal)
+                .voiceHoverFeedback(cornerRadius: 7, tint: palette.teal)
                 .help(model.timerPanelExpanded ? "Hide timers" : "Show timers")
             } else {
                 Text(model.floatingTitle)
                     .font(.system(size: 12, weight: .semibold, design: .default))
-                    .foregroundStyle(VoiceWidgetPalette.ink)
+                    .foregroundStyle(palette.ink)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -828,7 +941,7 @@ struct FloatingRecorderView: View {
                 in: 0...1
             )
             .controlSize(.mini)
-            .tint(Color(red: 0.24, green: 0.72, blue: 0.68))
+            .tint(palette.teal)
             memoButton(
                 symbol: "doc.on.doc",
                 label: "Copy last transcript",
@@ -860,12 +973,12 @@ struct FloatingRecorderView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .frame(width: 22, height: 22)
         }
-        .buttonStyle(LayeredWidgetButtonStyle(tint: Color(red: 0.30, green: 0.72, blue: 0.68)))
-        .foregroundStyle(Color.primary)
+        .buttonStyle(LayeredWidgetButtonStyle(tint: palette.teal, palette: palette))
+        .foregroundStyle(palette.ink)
         .voiceHoverFeedback(
             enabled: !model.isBusy,
             cornerRadius: 11,
-            tint: Color(red: 0.30, green: 0.72, blue: 0.68)
+            tint: palette.teal
         )
         .disabled(model.isBusy)
         .help(label)
@@ -918,7 +1031,7 @@ struct FloatingRecorderView: View {
                         Circle()
                             .stroke(
                                 model.isBusy
-                                    ? VoiceWidgetPalette.coolBorder
+                                    ? palette.coolBorder
                                     : recordIconColor.opacity(0.72),
                                 lineWidth: 1
                             )
@@ -937,14 +1050,15 @@ struct FloatingRecorderView: View {
         }
         .buttonStyle(
             LayeredWidgetButtonStyle(
-                tint: model.isRecording ? .red : Color(red: 0.40, green: 0.84, blue: 0.79),
+                tint: model.isRecording ? .red : palette.teal,
+                palette: palette,
                 prominent: true
             )
         )
         .voiceHoverFeedback(
             enabled: model.isRecording || model.canRecord,
             cornerRadius: 18,
-            tint: model.isRecording ? .red : .teal
+            tint: model.isRecording ? .red : palette.teal
         )
         .disabled(!model.isRecording && !model.canRecord)
         .accessibilityLabel(
@@ -955,15 +1069,15 @@ struct FloatingRecorderView: View {
     }
 
     private var recordHaloColor: Color {
-        model.isRecording ? Color(red: 0.96, green: 0.29, blue: 0.25) : VoiceWidgetPalette.tealGlow
+        model.isRecording ? Color(red: 0.96, green: 0.29, blue: 0.25) : palette.tealGlow
     }
 
     private var recordFaceColor: Color {
-        model.isRecording ? Color(red: 1.00, green: 0.78, blue: 0.76) : VoiceWidgetPalette.timerSurface
+        model.isRecording ? Color(red: 1.00, green: 0.78, blue: 0.76) : palette.timerSurface
     }
 
     private var recordIconColor: Color {
-        model.isRecording ? Color(red: 0.72, green: 0.12, blue: 0.10) : VoiceWidgetPalette.tealDark
+        model.isRecording ? Color(red: 0.72, green: 0.12, blue: 0.10) : palette.tealDark
     }
 
 }
@@ -971,6 +1085,8 @@ struct FloatingRecorderView: View {
 private struct FloatingTimerInstrumentPanel: View {
     @ObservedObject var model: VoiceBridgeModel
     let instrument: VoiceTimerInstrument
+
+    private var palette: VoiceWidgetPalette { model.widgetPalette }
 
     private var availableActivities: [VoiceTimerActivity] {
         instrument.activities.filter { $0.id != instrument.activity?.id }
@@ -1007,7 +1123,7 @@ private struct FloatingTimerInstrumentPanel: View {
                         )
                     }
                     if instrument.session != nil {
-                        Divider().overlay(VoiceWidgetPalette.divider.opacity(0.65))
+                        Divider().overlay(palette.divider.opacity(0.65))
                     }
                     if let activity = instrument.activity {
                         timerRow(
@@ -1037,22 +1153,22 @@ private struct FloatingTimerInstrumentPanel: View {
             if let message = model.timerMutationMessage {
                 Text(message)
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(VoiceWidgetPalette.warning)
+                    .foregroundStyle(palette.warning)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 7)
-                    .background(VoiceWidgetPalette.warning.opacity(0.07))
+                    .background(palette.warning.opacity(0.07))
             }
 
             if let activity = model.finishingActivity {
-                Divider().overlay(VoiceWidgetPalette.divider.opacity(0.65))
+                Divider().overlay(palette.divider.opacity(0.65))
                 finishDrawer(activity)
             } else if model.activityPickerExpanded {
-                Divider().overlay(VoiceWidgetPalette.divider.opacity(0.65))
+                Divider().overlay(palette.divider.opacity(0.65))
                 activityPicker
             } else if !availableActivities.isEmpty {
-                Divider().overlay(VoiceWidgetPalette.divider.opacity(0.65))
+                Divider().overlay(palette.divider.opacity(0.65))
                 Button(action: model.toggleActivityPicker) {
                     HStack(spacing: 7) {
                         Image(systemName: "list.bullet")
@@ -1063,13 +1179,13 @@ private struct FloatingTimerInstrumentPanel: View {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 9, weight: .bold))
                     }
-                    .foregroundStyle(VoiceWidgetPalette.tealDark)
+                    .foregroundStyle(palette.tealDark)
                     .padding(.horizontal, 14)
                     .frame(height: 38)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .voiceHoverFeedback(cornerRadius: 9, tint: VoiceWidgetPalette.teal)
+                .voiceHoverFeedback(cornerRadius: 9, tint: palette.teal)
             }
         }
         .background {
@@ -1078,9 +1194,9 @@ private struct FloatingTimerInstrumentPanel: View {
                 .overlay(
                     LinearGradient(
                         colors: [
-                            VoiceWidgetPalette.glassHighlight.opacity(0.54),
-                            VoiceWidgetPalette.glass.opacity(0.70),
-                            VoiceWidgetPalette.timerSurface.opacity(0.30),
+                            palette.glassHighlight.opacity(palette.isDark ? 0.76 : 0.54),
+                            palette.glass.opacity(palette.isDark ? 0.94 : 0.70),
+                            palette.timerSurface.opacity(palette.isDark ? 0.72 : 0.30),
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -1089,9 +1205,9 @@ private struct FloatingTimerInstrumentPanel: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 17, style: .continuous)
-                        .stroke(VoiceWidgetPalette.coolBorder.opacity(0.90), lineWidth: 0.9)
+                        .stroke(palette.coolBorder.opacity(0.90), lineWidth: 0.9)
                 )
-                .shadow(color: VoiceWidgetPalette.coolShadow, radius: 8, y: 3)
+                .shadow(color: palette.coolShadow, radius: 8, y: 3)
         }
         .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
         .frame(
@@ -1120,10 +1236,10 @@ private struct FloatingTimerInstrumentPanel: View {
                 Text(eyebrow)
                     .font(.system(size: 9, weight: .bold))
                     .tracking(0.8)
-                    .foregroundStyle(VoiceWidgetPalette.tealDark)
+                    .foregroundStyle(palette.tealDark)
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(VoiceWidgetPalette.ink)
+                    .foregroundStyle(palette.ink)
                     .lineLimit(1)
             }
             .frame(width: 190, alignment: .leading)
@@ -1131,7 +1247,7 @@ private struct FloatingTimerInstrumentPanel: View {
             Text(time)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .monospacedDigit()
-                .foregroundStyle(VoiceWidgetPalette.tealDark)
+                .foregroundStyle(palette.tealDark)
                 .frame(width: 104, alignment: .trailing)
 
             HStack(spacing: 7) {
@@ -1160,15 +1276,15 @@ private struct FloatingTimerInstrumentPanel: View {
                 Text("ACTIVITY")
                     .font(.system(size: 9, weight: .bold))
                     .tracking(0.8)
-                    .foregroundStyle(VoiceWidgetPalette.tealDark)
+                    .foregroundStyle(palette.tealDark)
                 Text("No activity running")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(VoiceWidgetPalette.ink)
+                    .foregroundStyle(palette.ink)
             }
             .frame(width: 190, alignment: .leading)
             Text("—")
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundStyle(VoiceWidgetPalette.secondaryInk)
+                .foregroundStyle(palette.secondaryInk)
                 .frame(width: 104, alignment: .trailing)
             Color.clear.frame(width: 70, height: 1)
         }
@@ -1187,8 +1303,8 @@ private struct FloatingTimerInstrumentPanel: View {
                 .font(.system(size: 11, weight: .bold))
                 .frame(width: 28, height: 28)
         }
-        .buttonStyle(TimerInstrumentButtonStyle(tint: VoiceWidgetPalette.teal))
-        .foregroundStyle(enabled ? VoiceWidgetPalette.ink : VoiceWidgetPalette.secondaryInk.opacity(0.45))
+        .buttonStyle(TimerInstrumentButtonStyle(tint: palette.teal, palette: palette))
+        .foregroundStyle(enabled ? palette.ink : palette.secondaryInk.opacity(0.45))
         .disabled(!enabled)
         .help(label)
         .accessibilityLabel(label)
@@ -1201,7 +1317,7 @@ private struct FloatingTimerInstrumentPanel: View {
                     Text("FINISH ACTIVITY")
                         .font(.system(size: 9, weight: .bold))
                         .tracking(0.8)
-                        .foregroundStyle(VoiceWidgetPalette.tealDark)
+                        .foregroundStyle(palette.tealDark)
                     Text(activity.title)
                         .font(.system(size: 12, weight: .semibold))
                         .lineLimit(1)
@@ -1236,6 +1352,7 @@ private struct FloatingTimerInstrumentPanel: View {
                     .buttonStyle(
                         TimerInstrumentButtonStyle(
                             tint: Color(red: 0.77, green: 0.61, blue: 0.12),
+                            palette: palette,
                             selected: model.finishStarred
                         )
                     )
@@ -1264,19 +1381,19 @@ private struct FloatingTimerInstrumentPanel: View {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(
                         model.finishOutcome == nil
-                            ? VoiceWidgetPalette.secondaryInk.opacity(0.28)
-                            : VoiceWidgetPalette.tealDark
+                            ? palette.secondaryInk.opacity(0.28)
+                            : palette.tealDark
                     )
             )
             .disabled(model.finishOutcome == nil || model.timerMutationInFlight)
             .voiceHoverFeedback(
                 enabled: model.finishOutcome != nil && !model.timerMutationInFlight,
                 cornerRadius: 9,
-                tint: VoiceWidgetPalette.teal
+                tint: palette.teal
             )
         }
         .padding(12)
-        .background(VoiceWidgetPalette.timerSurface.opacity(0.46))
+        .background(palette.timerSurface.opacity(palette.isDark ? 0.72 : 0.46))
     }
 
     private func outcomeButton(
@@ -1299,6 +1416,7 @@ private struct FloatingTimerInstrumentPanel: View {
         .buttonStyle(
             TimerInstrumentButtonStyle(
                 tint: color,
+                palette: palette,
                 selected: model.finishOutcome == outcome
             )
         )
@@ -1312,7 +1430,7 @@ private struct FloatingTimerInstrumentPanel: View {
                 Text("CHOOSE ACTIVITY")
                     .font(.system(size: 9, weight: .bold))
                     .tracking(0.8)
-                    .foregroundStyle(VoiceWidgetPalette.tealDark)
+                    .foregroundStyle(palette.tealDark)
                 Spacer()
                 Button(action: model.toggleActivityPicker) {
                     Image(systemName: "xmark")
@@ -1333,11 +1451,11 @@ private struct FloatingTimerInstrumentPanel: View {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(activity.title)
                                     .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(VoiceWidgetPalette.ink)
+                                    .foregroundStyle(palette.ink)
                                     .lineLimit(1)
                                 Text(activity.timer?.startedAt == nil ? "Not started" : "Paused")
                                     .font(.system(size: 9))
-                                    .foregroundStyle(VoiceWidgetPalette.secondaryInk)
+                                    .foregroundStyle(palette.secondaryInk)
                             }
                             Spacer()
                             if activity.type == "leetcode", activity.url != nil {
@@ -1357,10 +1475,10 @@ private struct FloatingTimerInstrumentPanel: View {
                         .frame(height: 43)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(VoiceWidgetPalette.glassHighlight.opacity(0.40))
+                                .fill(palette.glassHighlight.opacity(palette.isDark ? 0.18 : 0.40))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .stroke(VoiceWidgetPalette.coolBorder.opacity(0.65), lineWidth: 0.7)
+                                        .stroke(palette.coolBorder.opacity(0.65), lineWidth: 0.7)
                                 )
                         )
                     }
@@ -1369,7 +1487,7 @@ private struct FloatingTimerInstrumentPanel: View {
                 .padding(.bottom, 9)
             }
         }
-        .background(VoiceWidgetPalette.timerSurface.opacity(0.34))
+        .background(palette.timerSurface.opacity(palette.isDark ? 0.62 : 0.34))
     }
 
     private func pickerButton(
@@ -1382,8 +1500,8 @@ private struct FloatingTimerInstrumentPanel: View {
                 .font(.system(size: 10, weight: .bold))
                 .frame(width: 27, height: 27)
         }
-        .buttonStyle(TimerInstrumentButtonStyle(tint: VoiceWidgetPalette.teal))
-        .foregroundStyle(VoiceWidgetPalette.tealDark)
+        .buttonStyle(TimerInstrumentButtonStyle(tint: palette.teal, palette: palette))
+        .foregroundStyle(palette.tealDark)
         .disabled(model.timerMutationInFlight)
         .help(label)
         .accessibilityLabel(label)
@@ -1415,6 +1533,7 @@ private struct FloatingTimerInstrumentPanel: View {
 
 private struct TimerInstrumentButtonStyle: ButtonStyle {
     let tint: Color
+    let palette: VoiceWidgetPalette
     var selected = false
 
     func makeBody(configuration: Configuration) -> some View {
@@ -1424,12 +1543,16 @@ private struct TimerInstrumentButtonStyle: ButtonStyle {
                     .fill(
                         selected
                             ? tint.opacity(configuration.isPressed ? 0.24 : 0.16)
-                            : Color.white.opacity(configuration.isPressed ? 0.26 : 0.46)
+                            : palette.glassHighlight.opacity(
+                                configuration.isPressed
+                                    ? (palette.isDark ? 0.10 : 0.26)
+                                    : (palette.isDark ? 0.16 : 0.46)
+                            )
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
                             .stroke(
-                                selected ? tint.opacity(0.72) : VoiceWidgetPalette.coolBorder.opacity(0.72),
+                                selected ? tint.opacity(0.72) : palette.coolBorder.opacity(0.72),
                                 lineWidth: 0.8
                             )
                     )
@@ -1446,16 +1569,17 @@ private struct TimerInstrumentButtonStyle: ButtonStyle {
 
 private struct FailureRecoveryPopover: View {
     @ObservedObject var model: VoiceBridgeModel
+    private var palette: VoiceWidgetPalette { model.widgetPalette }
 
     var body: some View {
         if let failure = model.failureNotice {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 8) {
                     ZStack {
-                        Circle().fill(VoiceWidgetPalette.warning.opacity(0.10))
+                        Circle().fill(palette.warning.opacity(0.10))
                         Image(systemName: "exclamationmark.triangle")
                             .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(VoiceWidgetPalette.warning)
+                            .foregroundStyle(palette.warning)
                     }
                     .frame(width: 28, height: 28)
                     VStack(alignment: .leading, spacing: 2) {
@@ -1561,6 +1685,7 @@ private struct FailureRecoveryPopover: View {
 
 private struct LayeredWidgetButtonStyle: ButtonStyle {
     let tint: Color
+    let palette: VoiceWidgetPalette
     var prominent = false
 
     func makeBody(configuration: Configuration) -> some View {
@@ -1570,14 +1695,23 @@ private struct LayeredWidgetButtonStyle: ButtonStyle {
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(configuration.isPressed ? 0.16 : 0.34),
+                                palette.glassHighlight.opacity(
+                                    configuration.isPressed
+                                        ? (palette.isDark ? 0.10 : 0.16)
+                                        : (palette.isDark ? 0.18 : 0.34)
+                                ),
                                 tint.opacity(configuration.isPressed ? 0.18 : 0.10),
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
-                    .overlay(Circle().stroke(Color.white.opacity(0.38), lineWidth: 0.7))
+                    .overlay(
+                        Circle().stroke(
+                            palette.glassHighlight.opacity(palette.isDark ? 0.24 : 0.38),
+                            lineWidth: 0.7
+                        )
+                    )
                     .shadow(
                         color: Color.black.opacity(configuration.isPressed ? 0.10 : 0.22),
                         radius: configuration.isPressed ? 1 : (prominent ? 5 : 3),
@@ -1652,13 +1786,14 @@ extension View {
 
 private struct LiveVoiceWaveform: View {
     @ObservedObject var recorder: AnswerRecorder
+    let color: Color
     private let shape: [CGFloat] = [0.42, 0.70, 0.52, 0.88, 0.60, 0.78, 1.00, 0.62, 0.84, 0.56, 0.76, 0.48, 0.68, 0.40]
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(Array(shape.enumerated()), id: \.offset) { index, multiplier in
                 Capsule(style: .continuous)
-                    .fill(Color(red: 0.18, green: 0.58, blue: 0.48))
+                    .fill(color)
                     .frame(width: 2.5, height: barHeight(multiplier, index: index))
             }
         }

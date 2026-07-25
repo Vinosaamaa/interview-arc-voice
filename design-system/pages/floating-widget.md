@@ -17,6 +17,8 @@ and keep the surrounding information calm.
 
 ## Palette
 
+The following table defines the default `Arctic Teal` theme.
+
 | Token | Value | Use |
 | --- | --- | --- |
 | `glass` | `#F4FAFA` at 88–94% | Capsule surface |
@@ -34,8 +36,24 @@ and keep the surrounding information calm.
 | `connectedIdle` | `#A65D1C` | Interview Arc connected, but speech is using general dictation |
 | `warning` | `#B85A32` | Compact actionable failure |
 
-Do not introduce unrelated pink, blue, green, or amber accents in normal
-states. Status colors may be used only when they communicate a real state.
+Alternate themes replace these values through the centralized palette only.
+Status colors may be used only when they communicate a real state.
+
+### Theme invariants
+
+- The approved themes are `Arctic Teal`, `Neon Circuit`, `Aurora Night`,
+  `Solar Ember`, and `Sakura Glass`.
+- Every theme preserves the 250-by-40 resting capsule, host transparency,
+  spacing, typography roles, icon family, microphone elevation, timer layout,
+  playback width, and motion timing.
+- One theme is visible at a time. Never mix accents or surfaces from two
+  themes inside the same widget.
+- Link-off, connected-idle, warning, and recording states remain semantically
+  recognizable in every theme and never rely on color alone.
+- Theme selection exists only in Settings → Appearance, applies immediately,
+  and persists between launches.
+- Theme previews use the real palette tokens and component geometry rather
+  than screenshots or hand-maintained approximations.
 
 ## Typography
 

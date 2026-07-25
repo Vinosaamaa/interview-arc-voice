@@ -8,7 +8,7 @@ Page-specific contracts under `../pages/` override this file.
 Interview Arc Voice should feel like a precise, quiet interview instrument:
 compact, reliable, calm, and clearly native to macOS.
 
-The approved direction combines:
+The default `Arctic Teal` direction combines:
 
 - pale frosted glass;
 - cool teal instrumentation;
@@ -17,8 +17,10 @@ The approved direction combines:
 - dense, disciplined spacing;
 - one strongly elevated primary action.
 
-Avoid generic SaaS cards, colorful consumer voice-memo styling, heavy
-neumorphism, and flat white rectangles.
+The floating widget also supports four approved alternate personalities:
+`Neon Circuit`, `Aurora Night`, `Solar Ember`, and `Sakura Glass`. Each uses
+the same instrument structure and component family. Avoid generic SaaS cards,
+colorful consumer voice-memo styling, heavy neumorphism, and flat rectangles.
 
 ## Core palette
 
@@ -40,8 +42,24 @@ neumorphism, and flat white rectangles.
 | `warning` | `#B85A32` | Actionable warning or failure |
 | `recording` | `#B84E4E` | Active stop/recording state only |
 
-Do not introduce unrelated pink, purple, bright blue, amber, or green in normal
-states. A status color must communicate an actual product state.
+These values define `Arctic Teal`. Alternate widget themes may replace
+material, text, and instrumentation tokens only through the centralized theme
+palette. Status colors retain their semantic meaning and must remain
+distinguishable from the selected theme.
+
+## Approved widget themes
+
+| Theme | Character | Material and accent direction |
+| --- | --- | --- |
+| `Arctic Teal` | Original frosted instrument | Pearl glass, cool teal, pale aqua |
+| `Neon Circuit` | Electric cyberpunk | Smoked obsidian, electric cyan, restrained magenta |
+| `Aurora Night` | Calm midnight spectrum | Midnight navy, turquoise, indigo, restrained violet |
+| `Solar Ember` | Warm precision instrument | Graphite glass, amber, copper, warm ivory |
+| `Sakura Glass` | Soft editorial light | Pearl blush, dusty rose, dark plum |
+
+Theme selection belongs under Settings → Appearance. It applies immediately
+and persists between launches. The floating widget itself never exposes a
+theme selector.
 
 ## Typography
 
@@ -159,7 +177,8 @@ When content exceeds available width:
 
 - Opaque rectangular hosts behind rounded panels.
 - Native window shadows on non-rectangular floating surfaces.
-- Multiple competing palettes.
+- Multiple palettes visible in one widget or colors outside the approved
+  centralized theme tokens.
 - Generic Material, marketplace, or dashboard templates.
 - Web fonts inside the macOS application.
 - Mismatched link-state icons.
