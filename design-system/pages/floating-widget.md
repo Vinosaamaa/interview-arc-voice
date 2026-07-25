@@ -88,7 +88,10 @@ The compact state prioritizes the link state, activity/general-dictation
 identity, previous-capture actions, and microphone. When an open D1 timer
 instrument exists, the activity title includes a quiet disclosure chevron.
 Linked recording and playback may widen to reveal timing or transport
-controls. Long activity names truncate on one line.
+controls. Long activity names scroll on one line when motion is allowed.
+The compact timer cluster is deliberately dense: activity and session clocks
+share at most 84 points, use no decorative stopwatch badge, and preserve at
+least 58 points for the activity title.
 
 ## Expanded timer instrument
 
@@ -181,6 +184,10 @@ controls. Long activity names truncate on one line.
 - Width changes: 200–260 ms ease-in-out, anchored to the widget’s right edge.
 - Timer expansion changes both width and height over the same 200–260 ms
   interval, anchored to the widget’s bottom-right corner.
+- AppKit is the only owner of animated window geometry. The SwiftUI root fills
+  every intermediate host size and pins its content bottom-trailing; it must
+  not jump immediately to the final model size while the panel is still
+  interpolating.
 - Respect Reduce Motion by replacing movement with short opacity changes.
 - Every icon-only control has an accessibility label and a tooltip.
 - A Record press must react immediately; cached activity routing must not add a
@@ -215,6 +222,10 @@ controls. Long activity names truncate on one line.
 - Playback exposes both Stop and timer disclosure; expanding the timer leaves
   playback position and transport state intact.
 - Session and activity overtime remain legible and do not resize their columns.
+- Both compact clocks remain on one line while the title keeps a readable
+  viewport; the clock cluster never consumes more than 84 points.
+- Expand and collapse keep the capsule on one bottom baseline with no vertical
+  hop, flash, or competing SwiftUI geometry animation.
 - Hover, keyboard focus, press feedback, Reduce Motion, and accessibility
   labels are verified.
 - The signed artifact from merged `main` is installed and exercised; a source

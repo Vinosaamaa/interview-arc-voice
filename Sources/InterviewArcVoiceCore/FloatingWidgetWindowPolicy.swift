@@ -16,6 +16,10 @@ public struct FloatingWidgetDisclosureState: Equatable, Sendable {
     }
 }
 
+public enum FloatingWidgetContentAlignment: Equatable, Sendable {
+    case bottomTrailing
+}
+
 public enum FloatingWidgetWindowPolicy {
     public static let hostIsOpaque = false
     public static let usesNativeWindowShadow = false
@@ -32,6 +36,8 @@ public enum FloatingWidgetWindowPolicy {
     public static let expandsUpward = true
     public static let timerDisclosureAvailableDuringPlayback = true
     public static let timerPanelContentAnchorsToCapsule = true
+    public static let contentFillsAnimatedHost = true
+    public static let contentAlignment: FloatingWidgetContentAlignment = .bottomTrailing
 
     public static func disclosureStateWhenRecordingStarts(
         current: FloatingWidgetDisclosureState
@@ -43,6 +49,19 @@ public enum FloatingWidgetWindowPolicy {
             activityPickerExpanded: false
         )
     }
+}
+
+public enum FloatingWidgetCompactTimerLayoutPolicy {
+    public static let minimumTitleWidth: CGFloat = 58
+    public static let activityClockWidth: CGFloat = 36
+    public static let sessionClockWidth: CGFloat = 42
+    public static let clusterSpacing: CGFloat = 2
+    public static let dividerWidth: CGFloat = 1
+    public static let maximumClusterWidth =
+        activityClockWidth
+        + sessionClockWidth
+        + dividerWidth
+        + (clusterSpacing * 2)
 }
 
 public enum FloatingWidgetGeometryPolicy {
