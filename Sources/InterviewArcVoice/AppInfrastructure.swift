@@ -694,6 +694,78 @@ private struct InstrumentBlurView: NSViewRepresentable {
     }
 }
 
+private struct MarqueeTextWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct OverflowMarqueeText: View {
+    let text: String
+    let font: Font
+    let color: Color
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var measuredTextWidth: CGFloat = 0
+    @State private var animationStartedAt = Date()
+
+    private let gap: CGFloat = 22
+    private let pointsPerSecond: CGFloat = 21
+
+    var body: some View {
+        GeometryReader { geometry in
+            let overflows = measuredTextWidth > geometry.size.width + 1
+            Group {
+                if overflows && !reduceMotion {
+                    TimelineView(.animation(minimumInterval: 1 / 30)) { timeline in
+                        let cycle = max(1, measuredTextWidth + gap)
+                        let elapsed = timeline.date.timeIntervalSince(animationStartedAt)
+                        let offset = -(CGFloat(elapsed) * pointsPerSecond)
+                            .truncatingRemainder(dividingBy: cycle)
+                        HStack(spacing: gap) {
+                            marqueeLabel
+                            marqueeLabel
+                        }
+                        .offset(x: offset)
+                    }
+                } else {
+                    marqueeLabel
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .frame(width: geometry.size.width, alignment: .leading)
+            .clipped()
+        }
+        .background {
+            marqueeLabel
+                .fixedSize()
+                .hidden()
+                .background {
+                    GeometryReader { measurement in
+                        Color.clear.preference(
+                            key: MarqueeTextWidthKey.self,
+                            value: measurement.size.width
+                        )
+                    }
+                }
+        }
+        .onPreferenceChange(MarqueeTextWidthKey.self) { measuredTextWidth = $0 }
+        .onChange(of: text) { _, _ in animationStartedAt = Date() }
+        .accessibilityLabel(text)
+    }
+
+    private var marqueeLabel: some View {
+        Text(text)
+            .font(font)
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
 struct FloatingRecorderView: View {
     @ObservedObject var model: VoiceBridgeModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -702,7 +774,8 @@ struct FloatingRecorderView: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: FloatingWidgetWindowPolicy.timerGap) {
-            if model.timerPanelExpanded,
+            if !model.dynamicRecordingInterfaceActive,
+               model.timerPanelExpanded,
                model.hasTimerInstrument,
                let instrument = model.timerInstrument {
                 FloatingTimerInstrumentPanel(
@@ -710,11 +783,10 @@ struct FloatingRecorderView: View {
                     instrument: instrument
                 )
                 .frame(width: FloatingWidgetWindowPolicy.expandedWidth)
-                .transition(
-                    reduceMotion
-                        ? .opacity
-                        : .opacity.combined(with: .move(edge: .bottom))
-                )
+                // The AppKit panel already animates the bottom-anchored frame.
+                // A second SwiftUI move transition made the capsule hop
+                // vertically while the host was resizing.
+                .transition(.opacity)
             }
             recorderCapsule
         }
@@ -844,11 +916,13 @@ struct FloatingRecorderView: View {
                 TimelineView(.periodic(from: .now, by: 1)) { timeline in
                     Button(action: model.toggleTimerPanel) {
                         HStack(spacing: 5) {
-                            Text(model.compactTimerTitle)
-                                .font(.system(size: 11, weight: .semibold))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.72)
-                            Spacer(minLength: 1)
+                            OverflowMarqueeText(
+                                text: model.compactTimerTitle,
+                                font: .system(size: 11, weight: .semibold),
+                                color: palette.ink
+                            )
+                            .frame(maxWidth: .infinity, minHeight: 24)
+                            .layoutPriority(1)
                             if let activityTime = model.compactActivityTime(at: timeline.date) {
                                 compactClock(
                                     activityTime,
@@ -865,6 +939,8 @@ struct FloatingRecorderView: View {
                                     .monospacedDigit()
                                     .foregroundStyle(palette.tealDark)
                                     .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                    .frame(width: 52, alignment: .center)
                             }
                             Image(systemName: model.timerPanelExpanded ? "chevron.down" : "chevron.up")
                                 .font(.system(size: 8, weight: .bold))
@@ -903,7 +979,7 @@ struct FloatingRecorderView: View {
         }
         .foregroundStyle(tint)
         .padding(.horizontal, 4)
-        .frame(height: 24)
+        .frame(width: 64, height: 24)
         .background(palette.timerSurface.opacity(palette.isDark ? 0.78 : 0.62))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }

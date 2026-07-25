@@ -36,7 +36,12 @@ public enum FloatingWidgetWindowPolicy {
     public static func disclosureStateWhenRecordingStarts(
         current: FloatingWidgetDisclosureState
     ) -> FloatingWidgetDisclosureState {
-        current
+        _ = current
+        return FloatingWidgetDisclosureState(
+            timerPanelExpanded: false,
+            finishingActivityID: nil,
+            activityPickerExpanded: false
+        )
     }
 }
 
