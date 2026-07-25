@@ -3,6 +3,12 @@
 Read `README.md`, `docs/architecture.md`, and `docs/protocol-v1.md` before
 changing this repository.
 
+Before creating, implementing, closing, or reopening GitHub work, read and
+follow [`docs/agents/issue-lifecycle.md`](docs/agents/issue-lifecycle.md).
+Every non-emergency product change starts with an issue in the repository that
+owns the behavior. Repository routing, PR linkage, signed-package verification,
+resolution records, and postmortem requirements are defined there.
+
 Before changing any visible interface, read and follow:
 
 1. `design-system/AGENTS.md`
