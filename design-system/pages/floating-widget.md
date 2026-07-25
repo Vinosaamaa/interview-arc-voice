@@ -143,10 +143,17 @@ controls. Long activity names truncate on one line.
 - Link off: hollow dark-blue broken chain and “General dictation.”
 - Recording: microphone halo brightens and the activity label yields to live
   audio feedback and elapsed time.
-- Starting a recording preserves the timer surface exactly as the user left
-  it. An open timer, activity picker, or finish drawer remains open; a closed
-  timer remains closed. Timer disclosure is not available during capture, so
-  recording never changes that state accidentally.
+- With the experimental dynamic recording interface enabled, starting from
+  either compact or expanded mode transitions into the same focused recording
+  capsule. The timer surface, activity picker, and finish drawer are hidden
+  rather than closed; their disclosure is snapshotted and restored exactly on
+  Stop. Session and activity clocks continue advancing while hidden.
+- The recording capsule uses the live dot, historical waveform, recording
+  tint/outline, elapsed clock, and unmistakable Stop control in every theme.
+  Theme-specific tokens must preserve sufficient contrast.
+- Compact timer values stay on one line in fixed-width columns. The activity
+  title scrolls only when it overflows; Reduce Motion replaces scrolling with
+  truncation.
 - Playback retains seek, pause/resume, explicit Stop, and timer disclosure.
   Opening or closing the timer surface must not stop playback.
 - Processing: show a compact progress mark only after meaningful elapsed
@@ -200,8 +207,9 @@ controls. Long activity names truncate on one line.
 - Pausing the only running activity immediately changes the compact capsule to
   the amber general-dictation state. General captures in this state never
   create activity transcript, audio, or coaching records in D1 or R2.
-- Starting or stopping a recording does not change the timer surface, activity
-  picker, or finish-drawer disclosure state.
+- Starting and stopping a dynamic recording must not mutate the remembered
+  timer, picker, or finish-drawer disclosure. Stop restores the snapshot in one
+  bottom-anchored resize without an intermediate compact frame.
 - The visible gap between the timer surface and recorder is exactly 10 points;
   oversized transparent host slack remains above both surfaces.
 - Playback exposes both Stop and timer disclosure; expanding the timer leaves

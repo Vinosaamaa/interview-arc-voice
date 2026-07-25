@@ -60,7 +60,7 @@ import Testing
     #expect(FloatingWidgetWindowPolicy.timerPanelContentAnchorsToCapsule)
 }
 
-@Test func recordingPreservesTheExistingTimerDisclosureState() {
+@Test func recordingUsesOneFocusedDisclosureStateFromEveryStartingSurface() {
     let openTimer = FloatingWidgetDisclosureState(
         timerPanelExpanded: true,
         finishingActivityID: "activity-1",
@@ -69,7 +69,11 @@ import Testing
     #expect(
         FloatingWidgetWindowPolicy.disclosureStateWhenRecordingStarts(
             current: openTimer
-        ) == openTimer
+        ) == FloatingWidgetDisclosureState(
+            timerPanelExpanded: false,
+            finishingActivityID: nil,
+            activityPickerExpanded: false
+        )
     )
 
     let closedTimer = FloatingWidgetDisclosureState(
@@ -91,7 +95,7 @@ import Testing
     #expect(
         FloatingWidgetWindowPolicy.disclosureStateWhenRecordingStarts(
             current: openPicker
-        ) == openPicker
+        ) == closedTimer
     )
 }
 

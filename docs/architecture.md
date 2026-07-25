@@ -48,9 +48,13 @@ The compact recorder uses a layered material surface. Playback widens it,
 exposes a seekable timeline, elapsed/duration text, explicit Stop, and timer
 disclosure, and collapses smoothly after playback completes or Stop is chosen.
 The recorder capsule remains the bottom anchor while its timer surface,
-activity picker, and finish drawer grow upward. Starting or stopping capture
-does not alter the current disclosure state, and unused host height stays above
-the timer so the visible timer-to-recorder gap remains 10 points. Saving uses
+activity picker, and finish drawer grow upward. The optional dynamic recording
+interface snapshots that disclosure, hides it behind one shared recording
+capsule, and restores the snapshot immediately on Stop. Hidden clocks continue
+to use authoritative timer state. AppKit owns the single bottom-anchored frame
+animation; child surfaces fade without a competing move transition, preventing
+the capsule from hopping vertically. The visible timer-to-recorder gap remains
+10 points outside capture. Saving uses
 the native macOS save panel: the user chooses the name and location, the
 `.m4a` suffix remains canonical, and a sibling `.txt` transcript is optional.
 

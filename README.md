@@ -85,7 +85,10 @@ Save, and Retry instead of being discarded.
   optional sibling transcript, and replaces its activity label with a live
   waveform while recording. Its timer surface, activity picker, and finish
   drawer grow upward from the fixed bottom capsule across a true 10-point
-  visible gap. Recording preserves their current open or closed state.
+  visible gap. When the experimental dynamic recording interface is enabled,
+  recording from any disclosure state uses one focused recording capsule;
+  the hidden timers keep running, and Stop restores the exact surface the user
+  left open.
   Playback keeps seek, pause/resume, Stop, and timer-disclosure controls
   available.
 - The permanent widget visual and interaction contract is

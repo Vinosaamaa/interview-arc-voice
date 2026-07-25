@@ -205,6 +205,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var playbackTimer: Timer?
     private var processingTimer: Timer?
     private var processingIndicatorTask: Task<Void, Never>?
+    private var disclosureStateBeforeRecording: FloatingWidgetDisclosureState?
     @Published private(set) var isStartingRecording = false
 
     var isRecording: Bool { phase == .recording }
@@ -308,11 +309,11 @@ final class VoiceBridgeModel: ObservableObject {
         return false
     }
     var floatingWidth: CGFloat {
-        if timerPanelExpanded && hasTimerInstrument {
-            return FloatingWidgetWindowPolicy.expandedWidth
-        }
         if dynamicRecordingInterfaceActive {
             return FloatingWidgetWindowPolicy.recordingWidth
+        }
+        if timerPanelExpanded && hasTimerInstrument {
+            return FloatingWidgetWindowPolicy.expandedWidth
         }
         return isPlaybackExpanded
             ? FloatingWidgetWindowPolicy.playbackWidth
@@ -322,6 +323,9 @@ final class VoiceBridgeModel: ObservableObject {
         CGSize(width: floatingWidth, height: floatingHeight)
     }
     var floatingHeight: CGFloat {
+        if dynamicRecordingInterfaceActive {
+            return FloatingWidgetWindowPolicy.hostHeight
+        }
         guard timerPanelExpanded && hasTimerInstrument else {
             return FloatingWidgetWindowPolicy.hostHeight
         }
@@ -1274,24 +1278,31 @@ final class VoiceBridgeModel: ObservableObject {
                 relativeLevel: backgroundAudioRelativeLevel
             )
             try await recorder.start(at: destination)
-            dynamicRecordingInterfaceActive = dynamicRecordingInterfaceEnabled
-            let disclosure = FloatingWidgetWindowPolicy
-                .disclosureStateWhenRecordingStarts(
-                    current: FloatingWidgetDisclosureState(
-                        timerPanelExpanded: timerPanelExpanded,
-                        finishingActivityID: finishingActivityID,
-                        activityPickerExpanded: activityPickerExpanded
-                    )
+            if dynamicRecordingInterfaceEnabled {
+                let currentDisclosure = FloatingWidgetDisclosureState(
+                    timerPanelExpanded: timerPanelExpanded,
+                    finishingActivityID: finishingActivityID,
+                    activityPickerExpanded: activityPickerExpanded
                 )
-            timerPanelExpanded = disclosure.timerPanelExpanded
-            finishingActivityID = disclosure.finishingActivityID
-            activityPickerExpanded = disclosure.activityPickerExpanded
+                disclosureStateBeforeRecording = currentDisclosure
+                dynamicRecordingInterfaceActive = true
+                let recordingDisclosure = FloatingWidgetWindowPolicy
+                    .disclosureStateWhenRecordingStarts(
+                        current: currentDisclosure
+                    )
+                timerPanelExpanded = recordingDisclosure.timerPanelExpanded
+                finishingActivityID = recordingDisclosure.finishingActivityID
+                activityPickerExpanded = recordingDisclosure.activityPickerExpanded
+            } else {
+                disclosureStateBeforeRecording = nil
+                dynamicRecordingInterfaceActive = false
+            }
             phase = .recording
             if linkToInterviewArc {
                 Task { await refreshContext(showProgress: false) }
             }
         } catch {
-            dynamicRecordingInterfaceActive = false
+            restoreDisclosureAfterRecording()
             outputVolumeController.restoreAfterRouteSettles()
             self.captureDestination = nil
             canRetryLastTranscription = false
@@ -1301,6 +1312,7 @@ final class VoiceBridgeModel: ObservableObject {
 
     private func stopAndProcess() {
         guard let captureDestination else {
+            restoreDisclosureAfterRecording()
             reportFailure(
                 VoiceBridgeError.recordingUnavailable,
                 stage: .recording
@@ -1311,7 +1323,8 @@ final class VoiceBridgeModel: ObservableObject {
             var recording = try recorder.stop()
             // The experiment is scoped to live capture. Transcription returns
             // immediately to the prior disclosure and uses the existing spinner.
-            dynamicRecordingInterfaceActive = false
+            restoreDisclosureAfterRecording()
+            phase = .transcribing
             outputVolumeController.restoreAfterRouteSettles()
             let generation = captureGeneration
             let memoActivityTitle: String?
@@ -1395,11 +1408,24 @@ final class VoiceBridgeModel: ObservableObject {
             }
         } catch {
             self.captureDestination = nil
-            dynamicRecordingInterfaceActive = false
+            restoreDisclosureAfterRecording()
             outputVolumeController.restoreAfterRouteSettles()
             canRetryLastTranscription = false
             reportFailure(error, stage: .recording, hasRecoverableAudio: hasLastAudio)
         }
+    }
+
+    private func restoreDisclosureAfterRecording() {
+        if let disclosureStateBeforeRecording {
+            // Restore the hidden disclosure while the recording frame is still
+            // active. The view reveals it only after the final state change, so
+            // AppKit performs one anchored resize instead of a compact detour.
+            timerPanelExpanded = disclosureStateBeforeRecording.timerPanelExpanded
+            finishingActivityID = disclosureStateBeforeRecording.finishingActivityID
+            activityPickerExpanded = disclosureStateBeforeRecording.activityPickerExpanded
+        }
+        self.disclosureStateBeforeRecording = nil
+        dynamicRecordingInterfaceActive = false
     }
 
     private func processGeneral(
@@ -1846,7 +1872,7 @@ private struct VoiceSettingsWindow: View {
                         }
                     )
                 )
-                Text("Expands the compact capsule during live recording. In the expanded timer view it keeps the outer frame stable, emphasizes the activity timer, and turns the recorder row into a live instrument.")
+                Text("Turns either compact or expanded Voice into the same focused recording capsule. Timers keep running out of view, and Stop restores the exact panel, picker, or finish drawer you left open.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
