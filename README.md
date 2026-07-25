@@ -90,6 +90,10 @@ Save, and Retry instead of being discarded.
   available.
 - The permanent widget visual and interaction contract is
   [`design-system/pages/floating-widget.md`](design-system/pages/floating-widget.md).
+- Settings → Appearance offers five persistent widget themes: the original
+  `Arctic Teal`, plus `Neon Circuit`, `Aurora Night`, `Solar Ember`, and
+  `Sakura Glass`. Themes apply immediately and change only centralized
+  material/color tokens; widget geometry and behavior remain identical.
 - Agents changing any visible Voice interface must begin with
   [`design-system/AGENTS.md`](design-system/AGENTS.md), then read the current
   global master and the applicable page contract.

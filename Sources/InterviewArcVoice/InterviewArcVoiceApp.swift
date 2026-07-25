@@ -147,6 +147,7 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var codexPath: String
     @Published var pendingRetryCount = 0
     @Published var linkToInterviewArc: Bool
+    @Published var widgetTheme: VoiceWidgetTheme
     @Published var shortcut: HotKeyShortcut
     @Published var shortcutCapturing = false
     @Published var accessibilityNeeded = false
@@ -278,16 +279,20 @@ final class VoiceBridgeModel: ObservableObject {
         }
     }
     var linkStatusColor: Color {
+        let palette = widgetPalette
         switch compactLinkPresentation.state {
         case .off:
-            return VoiceWidgetPalette.linkOff
+            return palette.linkOff
         case .waiting:
-            return Color(red: 0.20, green: 0.48, blue: 0.47)
+            return palette.teal.opacity(0.82)
         case .connectedIdle:
-            return VoiceWidgetPalette.connectedIdle
+            return palette.connectedIdle
         case .linked:
-            return VoiceWidgetPalette.teal
+            return palette.teal
         }
+    }
+    var widgetPalette: VoiceWidgetPalette {
+        .palette(for: widgetTheme)
     }
     var linkStatusAccessibilityLabel: String {
         compactLinkPresentation.accessibilityLabel
@@ -341,6 +346,7 @@ final class VoiceBridgeModel: ObservableObject {
         workspacePath = defaults.string(forKey: "voice.workspacePath") ?? "/Users/wenkxu/Projects/Interview Prep/interview-arc"
         codexPath = defaults.string(forKey: "voice.codexPath") ?? "/Applications/ChatGPT.app/Contents/Resources/codex"
         linkToInterviewArc = defaults.object(forKey: "voice.linkToInterviewArc") as? Bool ?? true
+        widgetTheme = VoiceWidgetTheme.load(from: defaults)
         if let data = defaults.data(forKey: "voice.shortcut"),
            let saved = try? JSONDecoder().decode(HotKeyShortcut.self, from: data) {
             shortcut = saved
@@ -666,6 +672,12 @@ final class VoiceBridgeModel: ObservableObject {
 
     func toggleLinkMode() {
         setLinkMode(!linkToInterviewArc)
+    }
+
+    func selectWidgetTheme(_ theme: VoiceWidgetTheme) {
+        guard widgetTheme != theme else { return }
+        widgetTheme = theme
+        theme.save()
     }
 
     func setLinkMode(_ enabled: Bool) {
@@ -1649,6 +1661,29 @@ private struct VoiceSettingsWindow: View {
 
     var body: some View {
         Form {
+            Section("Appearance") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Widget theme")
+                        .font(.headline)
+                    Text("Choose how the floating recorder looks. Its layout and controls stay the same.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    VStack(spacing: 6) {
+                        ForEach(VoiceWidgetTheme.allCases) { theme in
+                            WidgetThemeRow(
+                                theme: theme,
+                                isSelected: model.widgetTheme == theme,
+                                select: { model.selectWidgetTheme(theme) }
+                            )
+                        }
+                    }
+                    Text("Applies immediately and stays selected between launches.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+
             Section("Recording") {
                 SecureField("Groq API key", text: $model.groqKeyDraft)
                     .textFieldStyle(.roundedBorder)
@@ -1696,7 +1731,123 @@ private struct VoiceSettingsWindow: View {
         }
         .formStyle(.grouped)
         .padding(16)
-        .frame(width: 520)
+        .frame(width: 620)
+    }
+}
+
+private struct WidgetThemeRow: View {
+    let theme: VoiceWidgetTheme
+    let isSelected: Bool
+    let select: () -> Void
+
+    private var palette: VoiceWidgetPalette { .palette(for: theme) }
+
+    var body: some View {
+        Button(action: select) {
+            HStack(spacing: 12) {
+                WidgetThemePreview(palette: palette)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(theme.displayName)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(theme.summary)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(isSelected ? palette.teal : Color.secondary.opacity(0.55))
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 58)
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .background(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(isSelected ? palette.teal.opacity(0.08) : Color.clear)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .stroke(
+                                isSelected
+                                    ? palette.teal.opacity(0.78)
+                                    : Color(nsColor: .separatorColor).opacity(0.45),
+                                lineWidth: isSelected ? 1.2 : 0.7
+                            )
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .voiceHoverFeedback(cornerRadius: 11, tint: palette.teal)
+        .help("Use \(theme.displayName)")
+        .accessibilityLabel("\(theme.displayName), \(theme.summary)")
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+    }
+}
+
+private struct WidgetThemePreview: View {
+    let palette: VoiceWidgetPalette
+
+    var body: some View {
+        HStack(spacing: 4) {
+            LinkStatusIcon(state: .linked, color: palette.teal, size: 10)
+                .frame(width: 16, height: 18)
+            Text("Course Schedule")
+                .font(.system(size: 7.5, weight: .semibold))
+                .foregroundStyle(palette.ink)
+                .lineLimit(1)
+            Spacer(minLength: 2)
+            HStack(spacing: 3) {
+                Image(systemName: "stopwatch")
+                    .font(.system(size: 8, weight: .semibold))
+                Text("12:48")
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(palette.tealDark)
+            .padding(.horizontal, 5)
+            .frame(height: 22)
+            .background(palette.timerSurface.opacity(palette.isDark ? 0.82 : 0.68))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            Rectangle()
+                .fill(palette.divider.opacity(0.75))
+                .frame(width: 1, height: 16)
+            Text("04:25:13")
+                .font(.system(size: 7.5, weight: .medium, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(palette.tealDark)
+            ZStack {
+                Circle().fill(palette.glassHighlight.opacity(palette.isDark ? 0.15 : 0.58))
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(palette.tealDark)
+            }
+            .frame(width: 23, height: 23)
+            .overlay(Circle().stroke(palette.teal.opacity(0.66), lineWidth: 0.7))
+            .shadow(color: palette.tealGlow.opacity(0.35), radius: 3)
+        }
+        .padding(.horizontal, 7)
+        .frame(width: 255, height: 32)
+        .background(
+            ZStack {
+                Capsule(style: .continuous).fill(palette.previewBackground.opacity(0.96))
+                Capsule(style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                palette.glassHighlight.opacity(palette.isDark ? 0.34 : 0.62),
+                                palette.glass.opacity(palette.isDark ? 0.92 : 0.76),
+                                palette.timerSurface.opacity(palette.isDark ? 0.62 : 0.30),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                Capsule(style: .continuous)
+                    .stroke(palette.coolBorder.opacity(0.88), lineWidth: 0.8)
+            }
+        )
+        .clipShape(Capsule(style: .continuous))
+        .shadow(color: palette.coolShadow, radius: 4, y: 2)
+        .accessibilityHidden(true)
     }
 }
 
@@ -2132,10 +2283,12 @@ private struct MenuFailureButtonStyle: ButtonStyle {
 struct RecordingClock: View {
     @ObservedObject var recorder: AnswerRecorder
     var compact = false
+    var foregroundColor: Color = .primary
 
     var body: some View {
         Text(clock(recorder.elapsedSeconds))
             .font(.system(size: compact ? 10 : 14, weight: .semibold, design: .monospaced))
+            .foregroundStyle(foregroundColor)
             .frame(minWidth: compact ? 32 : 58)
             .accessibilityLabel("Recording time \(clock(recorder.elapsedSeconds))")
     }
