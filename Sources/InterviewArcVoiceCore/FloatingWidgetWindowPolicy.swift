@@ -37,7 +37,7 @@ public enum FloatingWidgetWindowPolicy {
         current: FloatingWidgetDisclosureState
     ) -> FloatingWidgetDisclosureState {
         _ = current
-        FloatingWidgetDisclosureState(
+        return FloatingWidgetDisclosureState(
             timerPanelExpanded: false,
             finishingActivityID: nil,
             activityPickerExpanded: false
