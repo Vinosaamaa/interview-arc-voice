@@ -1808,7 +1808,7 @@ private struct VoiceSettingsWindow: View {
                     "Background audio",
                     selection: Binding(
                         get: { model.backgroundAudioMode },
-                        set: model.setBackgroundAudioMode
+                        set: { mode in model.setBackgroundAudioMode(mode) }
                     )
                 ) {
                     ForEach(BackgroundAudioRecordingMode.allCases) { mode in
@@ -1821,7 +1821,9 @@ private struct VoiceSettingsWindow: View {
                         Slider(
                             value: Binding(
                                 get: { model.backgroundAudioRelativeLevel },
-                                set: model.setBackgroundAudioRelativeLevel
+                                set: { level in
+                                    model.setBackgroundAudioRelativeLevel(level)
+                                }
                             ),
                             in: 0.05...0.50,
                             step: 0.05
@@ -1839,7 +1841,9 @@ private struct VoiceSettingsWindow: View {
                     "Experimental dynamic recording interface",
                     isOn: Binding(
                         get: { model.dynamicRecordingInterfaceEnabled },
-                        set: model.setDynamicRecordingInterfaceEnabled
+                        set: { enabled in
+                            model.setDynamicRecordingInterfaceEnabled(enabled)
+                        }
                     )
                 )
                 Text("Expands the compact capsule during live recording. In the expanded timer view it keeps the outer frame stable, emphasizes the activity timer, and turns the recorder row into a live instrument.")
