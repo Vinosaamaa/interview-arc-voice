@@ -48,6 +48,11 @@ import Testing
     #expect(FloatingWidgetWindowPolicy.recordingWidth < FloatingWidgetWindowPolicy.expandedWidth)
     #expect(FloatingWidgetWindowPolicy.recordingWaveformSampleCount == 32)
     #expect(FloatingWidgetWindowPolicy.recordingWaveformBarSpacing == 1.5)
+    #expect(
+        FloatingWidgetWindowPolicy.recordingWaveformBarWidth(
+            availableWidth: 180
+        ) > 4
+    )
     #expect(FloatingWidgetWindowPolicy.playbackWidth > FloatingWidgetWindowPolicy.collapsedWidth)
     #expect(FloatingWidgetWindowPolicy.playbackWidth < FloatingWidgetWindowPolicy.expandedWidth)
     #expect(FloatingWidgetWindowPolicy.timerGap == 10)
@@ -69,8 +74,9 @@ import Testing
     )
     #expect(
         FloatingWidgetRecoveryPolicy.timing(for: .recordAgain)
-            == .immediate
+            == .afterPopoverDismissal
     )
+    #expect(FloatingWidgetRecoveryPolicy.dismissalSettleMilliseconds >= 240)
     #expect(
         FloatingWidgetRecoveryPolicy.timing(for: .saveRecording)
             == .immediate

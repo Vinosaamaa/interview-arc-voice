@@ -57,6 +57,15 @@ the capsule from hopping vertically. The visible timer-to-recorder gap remains
 10 points outside capture. Saving uses
 the native macOS save panel: the user chooses the name and location, the
 `.m4a` suffix remains canonical, and a sibling `.txt` transcript is optional.
+Recovery actions that change capsule geometry first dismiss and settle their
+anchored native popover; playback and Record again never resize the anchor
+during popover teardown.
+
+Background-audio lowering is one recording-scoped session rather than one
+device write. Voice snapshots each output route that becomes active while the
+Bluetooth microphone is acquired, applies the configured relative level
+without compounding it, and restores every app-adjusted route after capture
+releases. A deliberate user volume change remains authoritative.
 
 The user sends the inserted text through the visible Codex task. The rendered
 message shows the answer while the specialist receives the comment envelope and

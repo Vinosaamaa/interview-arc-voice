@@ -141,6 +141,12 @@ struct HotKeyShortcut: Codable, Equatable, Sendable {
         displayName: "⌃⌥Space"
     )
 
+    static let linkToggle = HotKeyShortcut(
+        keyCode: UInt32(kVK_ANSI_L),
+        carbonModifiers: UInt32(controlKey | optionKey),
+        displayName: "⌃⌥L"
+    )
+
     static func from(event: NSEvent) -> HotKeyShortcut? {
         let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
         var modifiers: UInt32 = 0
@@ -179,9 +185,14 @@ private func interviewArcHotKeyHandler(
 
 @MainActor
 final class GlobalHotKeyManager {
+    private let identifierID: UInt32
     private var hotKey: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
     private var action: (() -> Void)?
+
+    init(identifierID: UInt32 = 1) {
+        self.identifierID = identifierID
+    }
 
     func register(_ shortcut: HotKeyShortcut, action: @escaping () -> Void) {
         unregister()
@@ -199,7 +210,10 @@ final class GlobalHotKeyManager {
             Unmanaged.passUnretained(self).toOpaque(),
             &eventHandler
         )
-        let identifier = EventHotKeyID(signature: OSType(0x49415643), id: 1) // IAVC
+        let identifier = EventHotKeyID(
+            signature: OSType(0x49415643),
+            id: identifierID
+        ) // IAVC
         RegisterEventHotKey(
             shortcut.keyCode,
             shortcut.carbonModifiers,
@@ -822,7 +836,7 @@ struct FloatingRecorderView: View {
                 palette: palette,
                 isRecording: model.dynamicRecordingInterfaceActive && model.isRecording
             )
-            HStack(spacing: 6) {
+            HStack(spacing: model.isRecording ? 4 : 6) {
                 linkButton
                 if model.isRecording {
                     if model.dynamicRecordingInterfaceActive {
@@ -956,7 +970,11 @@ struct FloatingRecorderView: View {
                     .font(.system(size: 12, weight: .semibold, design: .default))
                     .foregroundStyle(palette.ink)
                     .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .multilineTextAlignment(model.shouldCenterFloatingTitle ? .center : .leading)
+                    .frame(
+                        maxWidth: .infinity,
+                        alignment: model.shouldCenterFloatingTitle ? .center : .leading
+                    )
             }
         }
     }
@@ -1961,14 +1979,28 @@ private struct LiveVoiceWaveform: View {
     ]
 
     var body: some View {
-        HStack(spacing: FloatingWidgetWindowPolicy.recordingWaveformBarSpacing) {
-            ForEach(Array(displayedLevels.enumerated()), id: \.offset) { index, level in
-                Capsule(style: .continuous)
-                    .fill(color)
-                    .frame(width: 2.5, height: barHeight(level, index: index))
+        GeometryReader { geometry in
+            let barWidth = FloatingWidgetWindowPolicy.recordingWaveformBarWidth(
+                availableWidth: geometry.size.width
+            )
+            HStack(spacing: FloatingWidgetWindowPolicy.recordingWaveformBarSpacing) {
+                ForEach(Array(displayedLevels.enumerated()), id: \.offset) { index, level in
+                    Capsule(style: .continuous)
+                        .fill(color)
+                        .frame(
+                            width: barWidth,
+                            height: barHeight(level, index: index)
+                        )
+                }
             }
+            .frame(
+                width: geometry.size.width,
+                height: geometry.size.height,
+                alignment: .center
+            )
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, minHeight: 28)
+        .layoutPriority(1)
         .animation(.linear(duration: 0.09), value: recorder.powerHistory)
         .accessibilityLabel("Live microphone level")
     }

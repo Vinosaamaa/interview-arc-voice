@@ -72,8 +72,9 @@ Save, and Retry instead of being discarded.
   editor remains the review boundary.
 - The always-on-top recorder and menu-bar panel expose the same record/stop and
   link controls.
-- The global shortcut defaults to `Control-Option-Space` and is configurable in
-  Settings.
+- The Record/Stop shortcut defaults to `Control-Option-Space`. A separate
+  configurable `Control-Option-L` shortcut toggles Interview Arc linking while
+  Voice is idle.
 - The menu panel is fixed at 260 points wide. The always-on-top recorder is a
   layered 250-by-40-point capsule that smoothly widens to 360 points for
   seekable playback, then returns to its compact state. It uses one hollow
