@@ -736,7 +736,11 @@ private struct OverflowMarqueeText: View {
                         .truncationMode(.tail)
                 }
             }
-            .frame(width: geometry.size.width, alignment: .leading)
+            .frame(
+                width: geometry.size.width,
+                height: geometry.size.height,
+                alignment: .leading
+            )
             .clipped()
         }
         .background {
@@ -773,33 +777,39 @@ struct FloatingRecorderView: View {
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: FloatingWidgetWindowPolicy.timerGap) {
-            if !model.dynamicRecordingInterfaceActive,
-               model.timerPanelExpanded,
-               model.hasTimerInstrument,
-               let instrument = model.timerInstrument {
-                FloatingTimerInstrumentPanel(
-                    model: model,
-                    instrument: instrument
+        GeometryReader { host in
+            VStack(alignment: .trailing, spacing: FloatingWidgetWindowPolicy.timerGap) {
+                if !model.dynamicRecordingInterfaceActive,
+                   model.timerPanelExpanded,
+                   model.hasTimerInstrument,
+                   let instrument = model.timerInstrument {
+                    FloatingTimerInstrumentPanel(
+                        model: model,
+                        instrument: instrument
+                    )
+                    .frame(width: FloatingWidgetWindowPolicy.expandedWidth)
+                    // The AppKit panel already animates the bottom-anchored frame.
+                    // A second SwiftUI move transition made the capsule hop
+                    // vertically while the host was resizing.
+                    .transition(.opacity)
+                }
+                recorderCapsule(
+                    width: FloatingWidgetGeometryPolicy.visibleCapsuleWidth(
+                        hostWidth: host.size.width
+                    )
                 )
-                .frame(width: FloatingWidgetWindowPolicy.expandedWidth)
-                // The AppKit panel already animates the bottom-anchored frame.
-                // A second SwiftUI move transition made the capsule hop
-                // vertically while the host was resizing.
-                .transition(.opacity)
             }
-            recorderCapsule
+            .padding(.vertical, 8)
+            .frame(
+                width: host.size.width,
+                height: host.size.height,
+                alignment: .bottomTrailing
+            )
         }
-        .padding(.vertical, 8)
-        .frame(
-            maxWidth: .infinity,
-            maxHeight: .infinity,
-            alignment: .bottomTrailing
-        )
         .onChange(of: model.floatingSize) { _, _ in resizeWindow() }
     }
 
-    private var recorderCapsule: some View {
+    private func recorderCapsule(width: CGFloat) -> some View {
         ZStack {
             Capsule(style: .continuous)
                 .fill(Color.black.opacity(0.001))
@@ -873,12 +883,12 @@ struct FloatingRecorderView: View {
             .padding(.horizontal, 4)
         }
         .frame(
-            width: model.floatingWidth,
+            width: width,
             height: FloatingWidgetWindowPolicy.capsuleHeight
         )
         .clipShape(Capsule(style: .continuous))
         .contentShape(Capsule(style: .continuous))
-        .frame(width: model.floatingWidth, alignment: .trailing)
+        .frame(width: width, alignment: .trailing)
     }
 
     private func resizeWindow() {

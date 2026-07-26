@@ -188,6 +188,11 @@ least 58 points for the activity title.
   every intermediate host size and pins its content bottom-trailing; it must
   not jump immediately to the final model size while the panel is still
   interpolating.
+- The visible recorder capsule follows the live host width at every
+  intermediate AppKit frame. It must not bind directly to the final model
+  width, which makes collapse appear to snap even while the panel is animating.
+- The compact activity title fills the available row height and remains
+  vertically centered while its horizontal marquee or truncation changes.
 - Respect Reduce Motion by replacing movement with short opacity changes.
 - Every icon-only control has an accessibility label and a tooltip.
 - A Record press must react immediately; cached activity routing must not add a
@@ -224,6 +229,8 @@ least 58 points for the activity title.
 - Session and activity overtime remain legible and do not resize their columns.
 - Both compact clocks remain on one line while the title keeps a readable
   viewport; the clock cluster never consumes more than 84 points.
+- Intermediate expansion and collapse frames visibly resize the capsule; no
+  target-width snap may be hidden inside an otherwise animated native panel.
 - Expand and collapse keep the capsule on one bottom baseline with no vertical
   hop, flash, or competing SwiftUI geometry animation.
 - Hover, keyboard focus, press feedback, Reduce Motion, and accessibility
