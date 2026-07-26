@@ -163,9 +163,10 @@ least 58 points for the activity title.
 - Playback retains seek, pause/resume, explicit Stop, and timer disclosure.
   Opening or closing the timer surface must not stop playback.
 - Playback or Record again launched from a recovery popover dismisses that
-  anchored popover and lets native dismissal settle before changing recorder
-  geometry. The popover and its anchor must never survive into an intermediate
-  playback- or recording-width frame.
+  anchored popover and waits for AppKit's completed-close notification before
+  changing recorder geometry. A bounded delay exists only as a safety fallback;
+  the popover and its anchor must never survive into an intermediate playback-
+  or recording-width frame.
 - Processing: show a compact progress mark only after meaningful elapsed
   processing time. Do not keep the widget busy after insertion succeeds.
 - No previous capture: Play, Copy, and Save controls are absent, not disabled.

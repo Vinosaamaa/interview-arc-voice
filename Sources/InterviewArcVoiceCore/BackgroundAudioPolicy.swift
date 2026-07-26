@@ -18,33 +18,76 @@ public enum BackgroundAudioRecordingMode: String, CaseIterable, Codable, Identif
 
 public struct BackgroundAudioVolumeSnapshot: Codable, Equatable, Sendable {
     public let deviceUID: String
+    public let nominalSampleRate: Double?
+    public let outputChannelCount: UInt32?
     public let originalVolume: Float
     public let appliedVolume: Float
 
     public init(
         deviceUID: String,
+        nominalSampleRate: Double? = nil,
+        outputChannelCount: UInt32? = nil,
         originalVolume: Float,
         appliedVolume: Float
     ) {
         self.deviceUID = deviceUID
+        self.nominalSampleRate = nominalSampleRate
+        self.outputChannelCount = outputChannelCount
         self.originalVolume = originalVolume
         self.appliedVolume = appliedVolume
+    }
+
+    public func matches(
+        deviceUID: String,
+        nominalSampleRate: Double,
+        outputChannelCount: UInt32
+    ) -> Bool {
+        guard self.deviceUID == deviceUID else { return false }
+        // Legacy snapshots predate profile-aware routing. Preserve their
+        // previous UID-only behavior when decoding an interrupted session.
+        guard let storedRate = self.nominalSampleRate,
+              let storedChannels = self.outputChannelCount else {
+            return true
+        }
+        return abs(storedRate - nominalSampleRate) < 1
+            && storedChannels == outputChannelCount
     }
 }
 
 public struct BackgroundAudioSessionSnapshot: Codable, Equatable, Sendable {
+    public let baseline: BackgroundAudioVolumeSnapshot?
     public private(set) var routes: [BackgroundAudioVolumeSnapshot]
 
-    public init(routes: [BackgroundAudioVolumeSnapshot] = []) {
+    public init(
+        baseline: BackgroundAudioVolumeSnapshot? = nil,
+        routes: [BackgroundAudioVolumeSnapshot] = []
+    ) {
+        self.baseline = baseline
         self.routes = routes
     }
 
-    public func route(deviceUID: String) -> BackgroundAudioVolumeSnapshot? {
-        routes.first { $0.deviceUID == deviceUID }
+    public func route(
+        deviceUID: String,
+        nominalSampleRate: Double,
+        outputChannelCount: UInt32
+    ) -> BackgroundAudioVolumeSnapshot? {
+        routes.first {
+            $0.matches(
+                deviceUID: deviceUID,
+                nominalSampleRate: nominalSampleRate,
+                outputChannelCount: outputChannelCount
+            )
+        }
     }
 
     public mutating func remember(_ snapshot: BackgroundAudioVolumeSnapshot) {
-        routes.removeAll { $0.deviceUID == snapshot.deviceUID }
+        routes.removeAll {
+            $0.matches(
+                deviceUID: snapshot.deviceUID,
+                nominalSampleRate: snapshot.nominalSampleRate ?? -1,
+                outputChannelCount: snapshot.outputChannelCount ?? 0
+            )
+        }
         routes.append(snapshot)
     }
 }
@@ -81,5 +124,18 @@ public enum BackgroundAudioPolicy {
         tolerance: Float = 0.015
     ) -> Bool {
         abs(currentVolume - snapshot.originalVolume) <= tolerance
+    }
+
+    public static func shouldRestoreBaseline(
+        currentDeviceUID: String,
+        currentNominalSampleRate: Double,
+        currentOutputChannelCount: UInt32,
+        baseline: BackgroundAudioVolumeSnapshot
+    ) -> Bool {
+        baseline.matches(
+            deviceUID: currentDeviceUID,
+            nominalSampleRate: currentNominalSampleRate,
+            outputChannelCount: currentOutputChannelCount
+        )
     }
 }

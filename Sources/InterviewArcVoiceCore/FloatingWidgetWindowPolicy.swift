@@ -26,7 +26,9 @@ public enum FloatingWidgetRecoveryActionTiming: Equatable, Sendable {
 }
 
 public enum FloatingWidgetRecoveryPolicy {
-    public static let dismissalSettleMilliseconds = 260
+    /// Safety fallback only. Normal recovery continues from AppKit's
+    /// NSPopover.didCloseNotification, not from this delay.
+    public static let dismissalSettleMilliseconds = 900
 
     public static func timing(
         for action: VoiceFailureAction
