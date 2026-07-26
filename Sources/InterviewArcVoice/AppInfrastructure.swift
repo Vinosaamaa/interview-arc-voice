@@ -185,7 +185,7 @@ private func interviewArcHotKeyHandler(
         EventParamName(kEventParamDirectObject),
         EventParamType(typeEventHotKeyID),
         nil,
-        UInt32(MemoryLayout<EventHotKeyID>.size),
+        MemoryLayout<EventHotKeyID>.size,
         nil,
         &identifier
     )
@@ -198,7 +198,7 @@ private func interviewArcHotKeyHandler(
 
 @MainActor
 final class GlobalHotKeyManager {
-    private let identifierID: UInt32
+    private nonisolated let identifierID: UInt32
     private var hotKey: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
     private var action: (() -> Void)?
@@ -237,7 +237,7 @@ final class GlobalHotKeyManager {
         )
     }
 
-    func handles(_ identifier: EventHotKeyID) -> Bool {
+    nonisolated func handles(_ identifier: EventHotKeyID) -> Bool {
         identifier.signature == OSType(0x49415643)
             && identifier.id == identifierID
     }
