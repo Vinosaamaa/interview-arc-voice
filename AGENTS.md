@@ -21,8 +21,12 @@ shape, playback expansion, or recovery popover, reading
 override the global master.
 
 Do not merge an interface change based only on a SwiftUI preview or source
-inspection. Package the merged `main` artifact, install it, and exercise the
-actual macOS windows on both light and dark backgrounds.
+inspection. Follow the Fast, Standard, or Reliability lane in
+`docs/agents/issue-lifecycle.md`. Fast visual work must run the exact
+merged-`main` package from a temporary staging folder before installation;
+Standard and Reliability work must also exercise the installed application.
+Test both light and dark backgrounds when the change affects theme, contrast,
+material, or shared geometry rather than for every unrelated visual edit.
 
 ## Scope
 
