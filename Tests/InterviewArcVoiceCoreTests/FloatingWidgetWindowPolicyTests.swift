@@ -36,3 +36,13 @@ import Foundation
     #expect(FloatingWidgetWindowPolicy.contentFillsAnimatedHost)
     #expect(FloatingWidgetWindowPolicy.contentAlignment == .bottomTrailing)
 }
+
+@Test func visibleCapsuleTracksEveryIntermediateHostWidth() {
+    #expect(FloatingWidgetGeometryPolicy.visibleCapsuleWidth(hostWidth: 250) == 250)
+    #expect(FloatingWidgetGeometryPolicy.visibleCapsuleWidth(hostWidth: 314) == 314)
+    #expect(FloatingWidgetGeometryPolicy.visibleCapsuleWidth(hostWidth: 430) == 430)
+}
+
+@Test func compactTitleUsesTheFullRowHeightForVerticalCentering() {
+    #expect(FloatingWidgetCompactTimerLayoutPolicy.titleFillsAvailableHeight)
+}

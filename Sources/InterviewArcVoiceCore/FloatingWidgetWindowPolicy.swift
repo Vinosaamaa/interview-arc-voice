@@ -53,6 +53,7 @@ public enum FloatingWidgetWindowPolicy {
 
 public enum FloatingWidgetCompactTimerLayoutPolicy {
     public static let minimumTitleWidth: CGFloat = 58
+    public static let titleFillsAvailableHeight = true
     public static let activityClockWidth: CGFloat = 36
     public static let sessionClockWidth: CGFloat = 42
     public static let clusterSpacing: CGFloat = 2
@@ -65,6 +66,10 @@ public enum FloatingWidgetCompactTimerLayoutPolicy {
 }
 
 public enum FloatingWidgetGeometryPolicy {
+    public static func visibleCapsuleWidth(hostWidth: CGFloat) -> CGFloat {
+        max(0, hostWidth)
+    }
+
     public static func anchoredFrame(
         currentFrame: CGRect,
         targetSize: CGSize
