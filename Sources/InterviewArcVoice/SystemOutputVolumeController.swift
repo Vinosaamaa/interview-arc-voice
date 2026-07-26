@@ -5,6 +5,14 @@ import InterviewArcVoiceCore
 
 @MainActor
 final class SystemOutputVolumeController {
+    private struct ActiveRoute {
+        let device: AudioDeviceID
+        let deviceUID: String
+        let nominalSampleRate: Double
+        let outputChannelCount: UInt32
+        let isBluetooth: Bool
+    }
+
     private static let snapshotKey = "voice.backgroundAudioSnapshot"
 
     private let defaults: UserDefaults
@@ -12,20 +20,20 @@ final class SystemOutputVolumeController {
     private var routeSyncTasks: [Task<Void, Never>] = []
     private var recordingMode: BackgroundAudioRecordingMode = .unchanged
     private var recordingRelativeLevel = BackgroundAudioPolicy.defaultRelativeLevel
+    private var baselineUsesBluetooth = false
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
     }
 
     func recoverInterruptedSessionIfNeeded() {
-        guard let session = loadSnapshot() else { return }
-        defer { clearSnapshot() }
-        for snapshot in session.routes {
-            restore(snapshot)
-        }
+        guard loadSnapshot() != nil else { return }
+        beginPendingRestoration()
     }
 
-    func lowerForRecording(
+    /// Captures the route that must exist after recording, without changing its
+    /// volume while Bluetooth is still negotiating the microphone profile.
+    func prepareForRecording(
         mode: BackgroundAudioRecordingMode,
         relativeLevel: Double
     ) {
@@ -33,25 +41,65 @@ final class SystemOutputVolumeController {
         restoreTask = nil
         cancelRouteSyncTasks()
 
-        // If a new capture begins before a deferred restoration completes,
-        // finish the prior session first so reductions never compound.
-        if loadSnapshot() != nil {
-            restoreNow()
-        }
-
         recordingMode = mode
         recordingRelativeLevel = relativeLevel
-        applyRecordingLevelToCurrentRoute()
+        baselineUsesBluetooth = false
+        let route = activeRoute()
 
-        // Bluetooth microphone acquisition can replace the audible output
-        // route after AVAudioRecorder starts. Reconcile the active route at
-        // short bounded intervals so the recording route—not the route that
-        // returns after Stop—receives the reduced level.
-        for delay in [80, 220, 500] {
+        if let existing = loadSnapshot() {
+            // A prior recording may still be waiting for the original stereo
+            // profile. Reuse that durable baseline instead of replacing it
+            // with the temporary hands-free route.
+            if restoreCurrentRouteIfPossible(existing) {
+                clearSnapshot()
+            } else {
+                baselineUsesBluetooth = route?.isBluetooth ?? false
+                if mode == .unchanged {
+                    beginPendingRestoration()
+                }
+                return
+            }
+        }
+
+        guard mode != .unchanged, let route,
+              let current = volume(route.device),
+              let target = BackgroundAudioPolicy.targetVolume(
+                  currentVolume: current,
+                  mode: mode,
+                  relativeLevel: relativeLevel
+              ) else {
+            return
+        }
+
+        baselineUsesBluetooth = route.isBluetooth
+        let baseline = BackgroundAudioVolumeSnapshot(
+            deviceUID: route.deviceUID,
+            nominalSampleRate: route.nominalSampleRate,
+            outputChannelCount: route.outputChannelCount,
+            originalVolume: current,
+            appliedVolume: target
+        )
+        saveSnapshot(BackgroundAudioSessionSnapshot(baseline: baseline))
+    }
+
+    /// Applies the configured reduction only after the recorder has acquired
+    /// the microphone. Bluetooth commonly changes from stereo A2DP to a
+    /// one-channel hands-free profile during this boundary.
+    func recordingDidStart() {
+        guard recordingMode != .unchanged else { return }
+        cancelRouteSyncTasks()
+
+        if !baselineUsesBluetooth {
+            applyRecordingLevelToCurrentRoute(allowBaselineRoute: true)
+        }
+
+        for delay in [120, 300, 600, 1_000] {
             let task = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(delay))
                 guard !Task.isCancelled else { return }
-                self?.applyRecordingLevelToCurrentRoute()
+                self?.applyRecordingLevelToCurrentRoute(
+                    allowBaselineRoute: delay >= 600
+                )
             }
             routeSyncTasks.append(task)
         }
@@ -59,42 +107,126 @@ final class SystemOutputVolumeController {
 
     func restoreAfterRouteSettles() {
         cancelRouteSyncTasks()
-        restoreTask?.cancel()
-        restoreTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(350))
-            guard !Task.isCancelled else { return }
-            self?.restoreNow()
-        }
+        beginPendingRestoration()
     }
 
+    /// Best-effort synchronous restoration for termination. If Bluetooth has
+    /// not returned to the original profile, the persisted snapshot remains so
+    /// the next launch can finish the restoration.
     func restoreNow() {
         cancelRouteSyncTasks()
         restoreTask?.cancel()
         restoreTask = nil
         guard let session = loadSnapshot() else { return }
-        defer { clearSnapshot() }
-        for snapshot in session.routes {
-            restore(snapshot)
+        if restoreCurrentRouteIfPossible(session) {
+            clearSnapshot()
         }
     }
 
-    private func applyRecordingLevelToCurrentRoute() {
+    private func beginPendingRestoration() {
+        restoreTask?.cancel()
+        restoreTask = Task { [weak self] in
+            var attempt = 0
+            while !Task.isCancelled {
+                guard let self, let session = self.loadSnapshot() else { return }
+                if self.restoreCurrentRouteIfPossible(session) {
+                    self.clearSnapshot()
+                    return
+                }
+
+                attempt += 1
+                let delay = attempt < 8 ? 180 : 1_000
+                try? await Task.sleep(for: .milliseconds(delay))
+            }
+        }
+    }
+
+    /// Returns true only after the original pre-recording profile is active and
+    /// restored. Adjusted temporary profiles may be repaired earlier, but the
+    /// session remains durable until the baseline profile returns.
+    private func restoreCurrentRouteIfPossible(
+        _ session: BackgroundAudioSessionSnapshot
+    ) -> Bool {
+        guard let route = activeRoute(), let current = volume(route.device) else {
+            return false
+        }
+
+        if let baseline = session.baseline,
+           BackgroundAudioPolicy.shouldRestoreBaseline(
+               currentDeviceUID: route.deviceUID,
+               currentNominalSampleRate: route.nominalSampleRate,
+               currentOutputChannelCount: route.outputChannelCount,
+               baseline: baseline
+           ) {
+            if abs(current - baseline.originalVolume) <= 0.005 {
+                return true
+            }
+            return setVolume(baseline.originalVolume, device: route.device)
+        }
+
+        if let adjusted = session.route(
+            deviceUID: route.deviceUID,
+            nominalSampleRate: route.nominalSampleRate,
+            outputChannelCount: route.outputChannelCount
+        ), BackgroundAudioPolicy.shouldRestore(
+            currentVolume: current,
+            snapshot: adjusted
+        ) {
+            _ = setVolume(adjusted.originalVolume, device: route.device)
+        }
+
+        // Legacy snapshots have no explicit baseline. Restoring the currently
+        // matching route preserves the pre-profile-aware recovery behavior.
+        if session.baseline == nil,
+           let legacy = session.route(
+               deviceUID: route.deviceUID,
+               nominalSampleRate: route.nominalSampleRate,
+               outputChannelCount: route.outputChannelCount
+           ) {
+            if BackgroundAudioPolicy.shouldRestore(
+                currentVolume: current,
+                snapshot: legacy
+            ) {
+                _ = setVolume(legacy.originalVolume, device: route.device)
+            }
+            return true
+        }
+
+        return false
+    }
+
+    private func applyRecordingLevelToCurrentRoute(
+        allowBaselineRoute: Bool
+    ) {
         guard recordingMode != .unchanged,
-              let device = defaultOutputDevice(),
-              let uid = deviceUID(device),
-              let current = volume(device) else {
+              let route = activeRoute(),
+              let current = volume(route.device) else {
             return
         }
 
         var session = loadSnapshot() ?? BackgroundAudioSessionSnapshot()
-        if let existing = session.route(deviceUID: uid) {
+        if !allowBaselineRoute, let baseline = session.baseline,
+           BackgroundAudioPolicy.shouldRestoreBaseline(
+               currentDeviceUID: route.deviceUID,
+               currentNominalSampleRate: route.nominalSampleRate,
+               currentOutputChannelCount: route.outputChannelCount,
+               baseline: baseline
+           ) {
+            return
+        }
+
+        if let existing = session.route(
+            deviceUID: route.deviceUID,
+            nominalSampleRate: route.nominalSampleRate,
+            outputChannelCount: route.outputChannelCount
+        ) {
             guard BackgroundAudioPolicy.shouldReapplyAfterRouteChange(
                 currentVolume: current,
                 snapshot: existing
             ) else {
                 return
             }
-            _ = setVolume(existing.appliedVolume, device: device)
+            _ = setVolume(existing.appliedVolume, device: route.device)
             return
         }
 
@@ -107,31 +239,35 @@ final class SystemOutputVolumeController {
         }
 
         let snapshot = BackgroundAudioVolumeSnapshot(
-            deviceUID: uid,
+            deviceUID: route.deviceUID,
+            nominalSampleRate: route.nominalSampleRate,
+            outputChannelCount: route.outputChannelCount,
             originalVolume: current,
             appliedVolume: target
         )
-        guard setVolume(target, device: device) else { return }
+        guard setVolume(target, device: route.device) else { return }
         session.remember(snapshot)
         saveSnapshot(session)
-    }
-
-    private func restore(_ snapshot: BackgroundAudioVolumeSnapshot) {
-        guard let device = audioDevice(withUID: snapshot.deviceUID),
-              let current = volume(device),
-              BackgroundAudioPolicy.shouldRestore(
-                currentVolume: current,
-                snapshot: snapshot
-              ) else {
-            // A missing route or deliberate user volume change wins.
-            return
-        }
-        _ = setVolume(snapshot.originalVolume, device: device)
     }
 
     private func cancelRouteSyncTasks() {
         routeSyncTasks.forEach { $0.cancel() }
         routeSyncTasks.removeAll()
+    }
+
+    private func activeRoute() -> ActiveRoute? {
+        guard let device = defaultOutputDevice(),
+              let uid = deviceUID(device),
+              let rate = nominalSampleRate(device) else {
+            return nil
+        }
+        return ActiveRoute(
+            device: device,
+            deviceUID: uid,
+            nominalSampleRate: rate,
+            outputChannelCount: outputChannelCount(device),
+            isBluetooth: transportType(device) == kAudioDeviceTransportTypeBluetooth
+        )
     }
 
     private func defaultOutputDevice() -> AudioDeviceID? {
@@ -155,37 +291,83 @@ final class SystemOutputVolumeController {
         return device
     }
 
-    private func audioDevice(withUID uid: String) -> AudioDeviceID? {
-        var size: UInt32 = 0
+    private func nominalSampleRate(_ device: AudioDeviceID) -> Double? {
+        var value = Float64(0)
+        var size = UInt32(MemoryLayout<Float64>.size)
         var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
+            mSelector: kAudioDevicePropertyNominalSampleRate,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        guard AudioObjectGetPropertyDataSize(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            0,
-            nil,
-            &size
-        ) == noErr else {
-            return nil
-        }
-        var devices = Array(
-            repeating: AudioDeviceID(0),
-            count: Int(size) / MemoryLayout<AudioDeviceID>.size
-        )
         guard AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
+            device,
             &address,
             0,
             nil,
             &size,
-            &devices
+            &value
         ) == noErr else {
             return nil
         }
-        return devices.first { deviceUID($0) == uid }
+        return value
+    }
+
+    private func outputChannelCount(_ device: AudioDeviceID) -> UInt32 {
+        var size: UInt32 = 0
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreamConfiguration,
+            mScope: kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectGetPropertyDataSize(
+            device,
+            &address,
+            0,
+            nil,
+            &size
+        ) == noErr, size >= UInt32(MemoryLayout<AudioBufferList>.size) else {
+            return 0
+        }
+        let raw = UnsafeMutableRawPointer.allocate(
+            byteCount: Int(size),
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        defer { raw.deallocate() }
+        guard AudioObjectGetPropertyData(
+            device,
+            &address,
+            0,
+            nil,
+            &size,
+            raw
+        ) == noErr else {
+            return 0
+        }
+        let buffers = UnsafeMutableAudioBufferListPointer(
+            raw.assumingMemoryBound(to: AudioBufferList.self)
+        )
+        return buffers.reduce(0) { $0 + $1.mNumberChannels }
+    }
+
+    private func transportType(_ device: AudioDeviceID) -> UInt32? {
+        var value = UInt32(0)
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectGetPropertyData(
+            device,
+            &address,
+            0,
+            nil,
+            &size,
+            &value
+        ) == noErr else {
+            return nil
+        }
+        return value
     }
 
     private func volume(_ device: AudioDeviceID) -> Float? {
@@ -194,12 +376,12 @@ final class SystemOutputVolumeController {
         var address = volumeAddress
         guard AudioObjectHasProperty(device, &address),
               AudioObjectGetPropertyData(
-                device,
-                &address,
-                0,
-                nil,
-                &size,
-                &value
+                  device,
+                  &address,
+                  0,
+                  nil,
+                  &size,
+                  &value
               ) == noErr else {
             return nil
         }

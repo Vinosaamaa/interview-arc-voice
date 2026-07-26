@@ -58,14 +58,17 @@ the capsule from hopping vertically. The visible timer-to-recorder gap remains
 the native macOS save panel: the user chooses the name and location, the
 `.m4a` suffix remains canonical, and a sibling `.txt` transcript is optional.
 Recovery actions that change capsule geometry first dismiss and settle their
-anchored native popover; playback and Record again never resize the anchor
-during popover teardown.
+anchored native popover. AppKit's completed-close notification—not a guessed
+animation delay—releases playback and Record again, so they never resize the
+anchor during popover teardown.
 
 Background-audio lowering is one recording-scoped session rather than one
-device write. Voice snapshots each output route that becomes active while the
-Bluetooth microphone is acquired, applies the configured relative level
-without compounding it, and restores every app-adjusted route after capture
-releases. A deliberate user volume change remains authoritative.
+device write. Voice records the pre-capture route signature before acquiring
+the microphone, treats Bluetooth stereo and hands-free profiles as distinct
+routes even when macOS reports the same device UID, and applies the configured
+relative level without compounding it. Stop restores adjusted temporary routes
+but keeps the durable session pending until the exact pre-capture route returns;
+this prevents a late stereo-profile switch from inheriting the ducked level.
 
 The user sends the inserted text through the visible Codex task. The rendered
 message shows the answer while the specialist receives the comment envelope and

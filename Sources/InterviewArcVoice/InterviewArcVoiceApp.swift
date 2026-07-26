@@ -181,6 +181,7 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var failureNotice: VoiceFailureNotice?
     @Published var failureDetailsPresented = false
     private var pendingFailurePopoverActionTask: Task<Void, Never>?
+    private var pendingFailurePopoverCloseObserver: NSObjectProtocol?
 
     let recorder = AnswerRecorder()
 
@@ -1003,10 +1004,26 @@ final class VoiceBridgeModel: ObservableObject {
     func performFailurePopoverAction(_ action: VoiceFailureAction) {
         pendingFailurePopoverActionTask?.cancel()
         pendingFailurePopoverActionTask = nil
+        if let pendingFailurePopoverCloseObserver {
+            NotificationCenter.default.removeObserver(
+                pendingFailurePopoverCloseObserver
+            )
+            self.pendingFailurePopoverCloseObserver = nil
+        }
         switch FloatingWidgetRecoveryPolicy.timing(for: action) {
         case .immediate:
             performFailureAction(action)
         case .afterPopoverDismissal:
+            pendingFailurePopoverCloseObserver = NotificationCenter.default
+                .addObserver(
+                    forName: NSPopover.didCloseNotification,
+                    object: nil,
+                    queue: .main
+                ) { [weak self] _ in
+                    Task { @MainActor in
+                        self?.completeFailurePopoverActionAfterClose(action)
+                    }
+                }
             failureDetailsPresented = false
             pendingFailurePopoverActionTask = Task { [weak self] in
                 try? await Task.sleep(
@@ -1015,8 +1032,28 @@ final class VoiceBridgeModel: ObservableObject {
                     )
                 )
                 guard !Task.isCancelled else { return }
-                self?.performFailureAction(action)
+                self?.completeFailurePopoverActionAfterClose(action)
             }
+        }
+    }
+
+    private func completeFailurePopoverActionAfterClose(
+        _ action: VoiceFailureAction
+    ) {
+        pendingFailurePopoverActionTask?.cancel()
+        pendingFailurePopoverActionTask = nil
+        if let pendingFailurePopoverCloseObserver {
+            NotificationCenter.default.removeObserver(
+                pendingFailurePopoverCloseObserver
+            )
+            self.pendingFailurePopoverCloseObserver = nil
+        }
+        // The native close notification is delivered after its animation.
+        // Yield one main-loop turn so AppKit can commit the anchor's final
+        // geometry before the recorder widens for playback or recording.
+        Task { [weak self] in
+            await Task.yield()
+            self?.performFailureAction(action)
         }
     }
 
@@ -1370,11 +1407,12 @@ final class VoiceBridgeModel: ObservableObject {
         case nil: return
         }
         do {
-            outputVolumeController.lowerForRecording(
+            outputVolumeController.prepareForRecording(
                 mode: backgroundAudioMode,
                 relativeLevel: backgroundAudioRelativeLevel
             )
             try await recorder.start(at: destination)
+            outputVolumeController.recordingDidStart()
             if dynamicRecordingInterfaceEnabled {
                 let currentDisclosure = FloatingWidgetDisclosureState(
                     timerPanelExpanded: timerPanelExpanded,
