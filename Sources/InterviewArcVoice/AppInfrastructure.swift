@@ -1958,7 +1958,7 @@ private struct LiveVoiceWaveform: View {
     ]
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: FloatingWidgetWindowPolicy.recordingWaveformBarSpacing) {
             ForEach(Array(displayedLevels.enumerated()), id: \.offset) { index, level in
                 Capsule(style: .continuous)
                     .fill(color)
@@ -1972,7 +1972,7 @@ private struct LiveVoiceWaveform: View {
 
     private var displayedLevels: [Float] {
         if !historical { return idleShape }
-        let count = 24
+        let count = FloatingWidgetWindowPolicy.recordingWaveformSampleCount
         return Array(
             (Array(repeating: Float(-60), count: count) + recorder.powerHistory)
                 .suffix(count)
