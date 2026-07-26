@@ -2,9 +2,9 @@
 
 **Date:** 2026-07-26
 **Severity:** Reliability / user-data risk
-**Status:** Recurrence under repair
+**Status:** Released and installed; natural recurrence monitoring remains
 **Issue:** #58
-**PR:** #61; follow-up pending
+**PR:** #61 and #65
 
 ## Summary
 
@@ -140,6 +140,31 @@ create a synthetic linked practice turn. The bounded dead-stream restart is
 therefore verified by deterministic policy coverage and the packaged recording
 path, while the next naturally occurring input transition remains useful
 observational evidence for the platform-level trigger hypothesis.
+
+The independent-backend follow-up shipped in PR #65 as merge commit
+`5c2385f98aa4c14f44a4ebad85bbc7865098ab14`. Merged-main workflow
+`30222283280` passed the complete Swift test and signed-package job. PR #66
+subsequently hardened Keychain access without changing the capture repair;
+workflow `30222739145` also passed.
+
+The exact artifact downloaded from workflow `30222739145` was staged and then
+installed at `~/Applications/Interview Arc Voice.app`. The staged and installed
+executables had the same SHA-256:
+
+`3bb963d610bde598e6a1ede0f20ad8fcbfef127178279aa20d6c7ad1570f09fa`
+
+The installed app loaded both saved credentials in the normal user context,
+restored the focused Interview Arc activity, and completed a real general-
+dictation capture cycle. During recording, the signed app displayed the
+one-point waveform across the available interval and returned to the compact
+state after Stop. The smoke test did not change the active practice timer or
+assign an activity result.
+
+The release test did not deliberately force Core Audio to return a dead first
+stream. That failure mode is covered deterministically by the one-recovery
+policy and the independent `AVAudioEngine` fallback path; the next naturally
+occurring route transition remains observational verification of the platform
+trigger.
 
 ## Follow-up
 

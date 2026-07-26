@@ -54,21 +54,24 @@ canonical item.
 - The permanent widget contract requires a specific, compact recovery message
   and forbids claiming release success from source tests alone.
 
-## 2026-07-26 recurrence: legacy default-Keychain API
+## 2026-07-26 verification correction
 
-The exact merged-main artifact from workflow `30222283280` launched with
-Record disabled. Its packaged credential probe returned `errSecParam` before
-the ordinary Security-framework query executed.
+An initial command-line probe of the exact merged-main artifact from workflow
+`30222283280` reported `errSecParam`. That probe ran inside Codex's restricted
+process sandbox, which does not provide normal Keychain access. It was
+therefore invalid evidence of an installed-application regression and should
+not have been recorded as a recurrence.
 
-The prior compatibility repair still called `SecKeychainCopyDefault` in order
-to construct a query containing `kSecUseKeychain`. It handled
-`SecItemCopyMatching(...)=errSecParam`, but not
-`SecKeychainCopyDefault(...)=errSecParam`; that earlier throw made the fallback
-unreachable.
+The same packaged executable, run outside that sandbox, reported both the Groq
+API key and Interview Arc token as saved. The installed GUI also loaded its
+secure settings and enabled recording. No user credential was lost.
 
-The follow-up removes deprecated explicit Keychain selection from canonical
-read, update, insert, and delete operations. Generic-password operations now
-use the current macOS Keychain search list directly, keyed by the stable
-service and account. Packaged release verification must run
-`--credential-status` after a true quit and replacement before the microphone
-smoke test begins.
+PR #66 still removed deprecated explicit Keychain selection as preventive
+hardening. Generic-password operations now use the current macOS Keychain
+search list directly, keyed by the stable service and account. This cleanup
+was not a proven root-cause repair for the sandboxed probe.
+
+Future packaged verification must run `--credential-status` in the same normal
+user context as the installed application. A sandboxed Security-framework
+result must be labeled as an environment limitation and cannot establish a
+credential regression.
