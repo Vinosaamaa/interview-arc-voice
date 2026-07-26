@@ -92,25 +92,15 @@ public struct KeychainStore: Sendable {
     }
 
     private func primaryValue(for credential: VoiceCredential) throws -> String? {
-        var query: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: credential.rawValue,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
-        query[kSecUseKeychain as String] = try defaultKeychain()
         var item: CFTypeRef?
-        var status = SecItemCopyMatching(query as CFDictionary, &item)
-        if status == errSecParam {
-            // Some current macOS runtimes reject the legacy kSecUseKeychain
-            // scope even though SecKeychainCopyDefault succeeds. The ordinary
-            // search list still resolves the same canonical service/account
-            // item and preserves the existing packaged-app credential.
-            query.removeValue(forKey: kSecUseKeychain as String)
-            item = nil
-            status = SecItemCopyMatching(query as CFDictionary, &item)
-        }
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = item as? Data else {
             throw KeychainError(status: status)
@@ -140,26 +130,18 @@ public struct KeychainStore: Sendable {
 
     public func set(_ value: String, for credential: VoiceCredential) throws {
         let data = Data(value.utf8)
-        var lookup: [String: Any] = [
+        let lookup: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: credential.rawValue,
         ]
-        lookup[kSecUseKeychain as String] = try defaultKeychain()
         let updateAttributes: [String: Any] = [
             kSecValueData as String: data,
         ]
-        var updateStatus = SecItemUpdate(
+        let updateStatus = SecItemUpdate(
             lookup as CFDictionary,
             updateAttributes as CFDictionary
         )
-        if updateStatus == errSecParam {
-            lookup.removeValue(forKey: kSecUseKeychain as String)
-            updateStatus = SecItemUpdate(
-                lookup as CFDictionary,
-                updateAttributes as CFDictionary
-            )
-        }
         if updateStatus == errSecItemNotFound {
             var insert = lookup
             insert[kSecValueData as String] = data
@@ -173,29 +155,15 @@ public struct KeychainStore: Sendable {
     }
 
     public func remove(_ credential: VoiceCredential) throws {
-        var query: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: credential.rawValue,
         ]
-        query[kSecUseKeychain as String] = try defaultKeychain()
-        var status = SecItemDelete(query as CFDictionary)
-        if status == errSecParam {
-            query.removeValue(forKey: kSecUseKeychain as String)
-            status = SecItemDelete(query as CFDictionary)
-        }
+        let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError(status: status)
         }
-    }
-
-    private func defaultKeychain() throws -> SecKeychain {
-        var keychain: SecKeychain?
-        let status = SecKeychainCopyDefault(&keychain)
-        guard status == errSecSuccess, let keychain else {
-            throw KeychainError(status: status)
-        }
-        return keychain
     }
 }
 

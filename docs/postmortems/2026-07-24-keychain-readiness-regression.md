@@ -53,3 +53,22 @@ canonical item.
   no-focused-activity, and linked-activity routes.
 - The permanent widget contract requires a specific, compact recovery message
   and forbids claiming release success from source tests alone.
+
+## 2026-07-26 recurrence: legacy default-Keychain API
+
+The exact merged-main artifact from workflow `30222283280` launched with
+Record disabled. Its packaged credential probe returned `errSecParam` before
+the ordinary Security-framework query executed.
+
+The prior compatibility repair still called `SecKeychainCopyDefault` in order
+to construct a query containing `kSecUseKeychain`. It handled
+`SecItemCopyMatching(...)=errSecParam`, but not
+`SecKeychainCopyDefault(...)=errSecParam`; that earlier throw made the fallback
+unreachable.
+
+The follow-up removes deprecated explicit Keychain selection from canonical
+read, update, insert, and delete operations. Generic-password operations now
+use the current macOS Keychain search list directly, keyed by the stable
+service and account. Packaged release verification must run
+`--credential-status` after a true quit and replacement before the microphone
+smoke test begins.
