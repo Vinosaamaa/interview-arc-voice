@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-26
 **Severity:** Reliability / user-data risk
-**Status:** Remediation implemented; signed-package verification pending
+**Status:** Released and installed verification complete
 **Issue:** #58
 **PR:** #61
 
@@ -80,14 +80,43 @@ If the device is truly muted or unavailable, the second attempt fails visibly.
 
 ## Verification
 
+Completed:
+
 - Unit policy: absent signal restarts at count zero, never after count one, and
   never for a detected signal.
-- Parser/build validation for the exact merged source.
-- Signed merged-main package smoke with the installed app.
-- Manual route matrix: built-in microphone, headset microphone, and an input
-  change immediately before recording.
-- Artifact inspection: healthy encoded bitrate and decoded duration after an
-  induced first-stream failure.
+- Parser validation for all application and core Swift sources.
+- CI Swift test, release package, signature, and resource validation.
+- Staged and installed exact-artifact capture plus waveform smoke.
+- Production protocol-v2 destination-gating check.
+
+Not deliberately induced during release verification:
+
+- switching between built-in and headset microphones during an active capture;
+- forcing a Core Audio first-stream failure in the signed app; or
+- changing the user's current Bluetooth route and volume state.
+
+## Released-package verification
+
+PR #61 merged as `dee34619761df01fba563be8f843379e8ac5d800`.
+Merged-main workflow `30220192661` passed the complete Swift test and package
+job. The downloaded application passed strict code-signature and package
+resource verification. Its executable SHA-256 was:
+
+`6da4310d6ee9f136c64aff854f8902619644e734e1d2e64bb67ca3f44ce0ff07`
+
+That exact artifact was first launched from a temporary staging directory, then
+installed at `~/Applications/Interview Arc Voice.app`. The installed executable
+matched the staged hash exactly. The installed widget completed a real capture
+cycle, rendered the new fine waveform without changing capsule geometry, and
+returned to its compact timer state after Stop. Because the test began outside
+Codex, it correctly used general dictation and the authenticated production
+protocol-v2 endpoint remained at zero pending intents afterward.
+
+The test did not deliberately disrupt the user's active microphone route or
+create a synthetic linked practice turn. The bounded dead-stream restart is
+therefore verified by deterministic policy coverage and the packaged recording
+path, while the next naturally occurring input transition remains useful
+observational evidence for the platform-level trigger hypothesis.
 
 ## Follow-up
 
