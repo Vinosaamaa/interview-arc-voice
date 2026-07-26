@@ -154,7 +154,7 @@ least 58 points for the activity title.
 - The recording capsule uses the live dot, historical waveform, recording
   tint/outline, elapsed clock, and unmistakable Stop control in every theme.
   Theme-specific tokens must preserve sufficient contrast.
-- The historical waveform uses 32 tightly spaced samples so it occupies the
+- The historical waveform uses 64 hairline 0.85-point samples so it occupies the
   available instrument width between the live dot and elapsed clock. Do not
   reintroduce a short waveform surrounded by unused horizontal gaps.
 - Compact timer values stay on one line in fixed-width columns. The activity

@@ -188,7 +188,8 @@ swift run InterviewArcVoice
 The packaging script writes `dist/Interview Arc Voice.app` and applies an ad-hoc
 local signature. GitHub Actions runs the full Xcode-backed test and packaging
 job for every pull request. See `docs/architecture.md` and
-`docs/protocol-v1.md` for the data flow and boundary decisions.
+`docs/protocol-v2.md` for the current intent-gated data flow and boundary
+decisions. `docs/protocol-v1.md` documents legacy accepted captures.
 
 The complete engineering record for the universal-insertion failure and repair
 is in

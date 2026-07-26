@@ -47,8 +47,9 @@ public enum FloatingWidgetWindowPolicy {
     public static let usesNativeWindowShadow = false
     public static let collapsedWidth: CGFloat = 250
     public static let recordingWidth: CGFloat = 340
-    public static let recordingWaveformSampleCount = 32
-    public static let recordingWaveformBarSpacing: CGFloat = 1.5
+    public static let recordingWaveformSampleCount = 64
+    public static let recordingWaveformBarSpacing: CGFloat = 1.55
+    public static let recordingWaveformBarWidth: CGFloat = 0.85
     public static let playbackWidth: CGFloat = 410
     public static let expandedWidth: CGFloat = 430
     public static let capsuleHeight: CGFloat = 40
@@ -66,13 +67,8 @@ public enum FloatingWidgetWindowPolicy {
     public static func recordingWaveformBarWidth(
         availableWidth: CGFloat
     ) -> CGFloat {
-        let spacing = recordingWaveformBarSpacing
-            * CGFloat(recordingWaveformSampleCount - 1)
-        return max(
-            1.5,
-            (availableWidth - spacing)
-                / CGFloat(recordingWaveformSampleCount)
-        )
+        _ = availableWidth
+        return recordingWaveformBarWidth
     }
 
     public static func disclosureStateWhenRecordingStarts(

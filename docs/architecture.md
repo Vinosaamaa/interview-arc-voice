@@ -127,8 +127,14 @@ Global shortcuts are dispatched by their Carbon hotkey identifier rather than
 only by the shared event class. Shortcut capture unregisters both combinations
 until it succeeds or is cancelled, then restores both registrations.
 
-`interview-arc` owns identity, the focused activity, task registry, transcript
-turn IDs, R2 metadata, delivery-analysis records, publication, and playback.
+`interview-arc` owns identity, the focused activity, task registry, capture
+intent metadata, accepted transcript turn IDs, R2 metadata, delivery-analysis
+records, structured LeetCode Code Attempts, publication, and playback.
+
+Protocol v2 treats capture acceptance as a permission boundary. Voice retains
+exact transcript/audio locally and sends only stable identity plus checksum
+until the specialist or user resolves intent. Activity completion and
+finalization pause while an intent is unresolved. See `protocol-v2.md`.
 
 The client must negotiate an explicit protocol version before mutating server
 state. Unknown versions fail closed with a user-visible update prompt.

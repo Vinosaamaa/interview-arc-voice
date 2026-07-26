@@ -157,6 +157,8 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var apiBaseURL: String
     @Published var codexPath: String
     @Published var pendingRetryCount = 0
+    @Published private(set) var pendingVoiceCaptures: [PendingVoiceCapture] = []
+    @Published private(set) var legacyVoiceOrphans: [LegacyVoiceCapture] = []
     @Published var linkToInterviewArc: Bool
     @Published var widgetTheme: VoiceWidgetTheme
     @Published var backgroundAudioMode: BackgroundAudioRecordingMode
@@ -182,6 +184,7 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var failureDetailsPresented = false
     private var pendingFailurePopoverActionTask: Task<Void, Never>?
     private var pendingFailurePopoverCloseObserver: NSObjectProtocol?
+    private var pendingRetryInFlight = false
 
     let recorder = AnswerRecorder()
 
@@ -199,6 +202,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var recordingStore: RecordingStore?
     private var pipeline: VoicePipeline?
     private var captureDestination: CaptureDestination?
+    private var captureStartedInCodex = false
     private var captureGeneration = UUID()
     private var targetApplicationPID: pid_t?
     private var lastInsertionText = ""
@@ -1373,6 +1377,14 @@ final class VoiceBridgeModel: ObservableObject {
             return
         }
         targetApplicationPID = currentInsertionTargetPID()
+        if let targetApplicationPID,
+           let targetApplication = NSRunningApplication(processIdentifier: targetApplicationPID) {
+            captureStartedInCodex = CaptureTargetApplicationPolicy.canAttachToInterviewArc(
+                bundleIdentifier: targetApplication.bundleIdentifier
+            )
+        } else {
+            captureStartedInCodex = false
+        }
         deliveryStates = [:]
         canRetryLastTranscription = false
         captureGeneration = UUID()
@@ -1382,7 +1394,7 @@ final class VoiceBridgeModel: ObservableObject {
         // loses the first words of an answer.
         let recordingStartedAt = Date()
         let route = routingPolicy.route(
-            linkToInterviewArc: linkToInterviewArc,
+            linkToInterviewArc: linkToInterviewArc && captureStartedInCodex,
             hasFocusedActivity: context?.focusedActivity != nil && contextIsFreshForCapture
         )
         switch route {
@@ -1679,7 +1691,37 @@ final class VoiceBridgeModel: ObservableObject {
     private func updateRetryCount() async {
         guard let recordingStore else { pendingRetryCount = 0; return }
         let queue = VoiceRetryQueue(directory: recordingStore.queueDirectory)
-        pendingRetryCount = (try? await queue.items().count) ?? 0
+        let legacyCount = (try? await queue.items().count) ?? 0
+        if pipeline == nil { pipeline = try? makeLinkedPipeline() }
+        pendingVoiceCaptures = await pipeline?.pendingCaptures() ?? []
+        legacyVoiceOrphans = await pipeline?.legacyVoiceOrphans() ?? []
+        let pendingCaptureCount = await pipeline?.localPendingCaptureCount() ?? 0
+        pendingRetryCount = legacyCount + pendingCaptureCount
+    }
+
+    func resolvePendingVoiceCapture(_ capture: PendingVoiceCapture, attach: Bool) {
+        Task {
+            do {
+                if pipeline == nil { pipeline = try makeLinkedPipeline() }
+                try await pipeline?.resolvePendingCapture(captureID: capture.id, attach: attach)
+                if attach { _ = await pipeline?.retryPending() }
+                await updateRetryCount()
+            } catch {
+                reportFailure(error, stage: .interviewArc, hasRecoverableAudio: true)
+            }
+        }
+    }
+
+    func deleteLegacyVoiceCapture(_ capture: LegacyVoiceCapture) {
+        Task {
+            do {
+                if pipeline == nil { pipeline = try makeLinkedPipeline() }
+                try await pipeline?.deleteLegacyVoiceCapture(clipID: capture.clipId)
+                await updateRetryCount()
+            } catch {
+                reportFailure(error, stage: .interviewArc, hasRecoverableAudio: false)
+            }
+        }
     }
 
     private func applyDeliveryUpdate(_ update: VoicePipelineUpdate, generation: UUID) {
@@ -1756,6 +1798,9 @@ final class VoiceBridgeModel: ObservableObject {
             codex: CodexBridge(executableURL: URL(fileURLWithPath: codexPath)),
             vocabularyResolver: VocabularyResolver(catalog: try .bundled()),
             retryQueue: VoiceRetryQueue(directory: recordingStore.queueDirectory),
+            pendingCaptureStore: PendingVoiceCaptureStore(
+                directory: recordingStore.pendingCapturesDirectory
+            ),
             temporaryDirectory: recordingStore.temporaryDirectory,
             workspaceURL: URL(fileURLWithPath: workspacePath, isDirectory: true),
             interviewArcToken: token
@@ -1783,7 +1828,9 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     private func retryPendingInBackground() async {
-        guard let pipeline else { return }
+        guard let pipeline, !pendingRetryInFlight else { return }
+        pendingRetryInFlight = true
+        defer { pendingRetryInFlight = false }
         let previousPhase = phase
         _ = await pipeline.retryPending()
         await updateRetryCount()
@@ -1943,6 +1990,7 @@ final class VoiceBridgeModel: ObservableObject {
 
     private func applyLateCaptureBinding(from refreshed: VoiceContextResponse) {
         guard linkToInterviewArc,
+              captureStartedInCodex,
               case .general(let recordingStartedAt) = captureDestination,
               let activity = lateBindingPolicy.activity(
                 initiallyLinkedActivityID: nil,
@@ -2238,6 +2286,8 @@ private struct VoiceBridgeMenu: View {
             if model.isFailurePresented { failureCard }
             if model.showsDeliverySteps { deliveryProgress }
             if model.hasLastMemo { transcriptPreview }
+            if !model.pendingVoiceCaptures.isEmpty { pendingCapturesCard }
+            if !model.legacyVoiceOrphans.isEmpty { legacyVoiceOrphansCard }
             if model.pendingRetryCount > 0 { retryRow }
             settings
             providerFooter
@@ -2520,6 +2570,72 @@ private struct VoiceBridgeMenu: View {
         }
         .padding(10)
         .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
+    }
+
+    private var pendingCapturesCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Needs an activity decision", systemImage: "questionmark.bubble")
+                .font(.caption.weight(.semibold))
+            ForEach(model.pendingVoiceCaptures) { capture in
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(capture.transcript)
+                        .font(.caption2)
+                        .lineLimit(2)
+                    HStack {
+                        Button("Delete") {
+                            model.resolvePendingVoiceCapture(capture, attach: false)
+                        }
+                        .buttonStyle(.borderless)
+                        Spacer()
+                        Button("Attach") {
+                            model.resolvePendingVoiceCapture(capture, attach: true)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+                }
+                .padding(8)
+                .background(Color.yellow.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var legacyVoiceOrphansCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Legacy captures to review", systemImage: "archivebox")
+                .font(.caption.weight(.semibold))
+            Text("These older accepted recordings have no following specialist reply. They remain in Past unless you delete them.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            ForEach(model.legacyVoiceOrphans.prefix(3)) { capture in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(capture.excerpt)
+                        .font(.caption2)
+                        .lineLimit(2)
+                    HStack {
+                        Text(capture.durationSeconds.map { "\($0)s" } ?? "Recorded answer")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Delete") {
+                            model.deleteLegacyVoiceCapture(capture)
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+                .padding(8)
+                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            }
+            if model.legacyVoiceOrphans.count > 3 {
+                Text("\(model.legacyVoiceOrphans.count - 3) more remain available after this review batch.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var settings: some View {

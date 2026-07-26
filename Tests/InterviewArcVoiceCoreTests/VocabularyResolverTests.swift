@@ -147,16 +147,18 @@ import Testing
 
 @Test func linkedCaptureEnvelopeKeepsTranscriptVisibleAndTurnIdentityMachineReadable() {
     let envelope = VoiceCaptureEnvelope(
+        captureID: "capture-123",
         activityID: "activity--course-schedule",
         turnID: "voice-123",
         transcript: "I would begin with Kahn's algorithm."
     )
 
     #expect(envelope.editorText.hasPrefix("I would begin with Kahn's algorithm.\n\n"))
-    #expect(envelope.editorText.contains("<!-- interview-arc-voice:v1"))
+    #expect(envelope.editorText.contains("<!-- interview-arc-voice:v2"))
+    #expect(envelope.editorText.contains("captureId: capture-123"))
     #expect(envelope.editorText.contains("activityId: activity%2D%2Dcourse-schedule"))
     #expect(envelope.editorText.contains("turnId: voice-123"))
-    #expect(envelope.editorText.contains("doNotAppendUserTurn: true"))
+    #expect(envelope.editorText.contains("intentDecisionRequired: true"))
     #expect(envelope.editorText.hasSuffix("-->\n"))
 }
 

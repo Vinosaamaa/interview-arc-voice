@@ -94,6 +94,8 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
     @Published public private(set) var powerHistory: [Float] = []
     @Published public private(set) var signalHealth: MicrophoneSignalHealth = .warmingUp
     @Published public private(set) var inputDeviceName = "Default microphone"
+    @Published public private(set) var automaticRecoveryCount = 0
+    @Published public private(set) var isRecoveringSignal = false
 
     private var recorder: AVAudioRecorder?
     private var audioEngine: AVAudioEngine?
@@ -102,8 +104,10 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
     private var audioWriteState: AudioWriteState?
     private var ticker: Timer?
     private var startedAt: Date?
+    private var signalAttemptStartedAt: Date?
     private var peakPower: Float = -160
     private let signalPolicy = MicrophoneSignalPolicy()
+    private let streamRecoveryPolicy = MicrophoneStreamRecoveryPolicy()
     private var recorderErrorDescription: String?
 
     public override init() {}
@@ -130,16 +134,21 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         // header-only M4A that looked like a provider failure.
         try startRecorderFallback(at: url)
         startedAt = Date()
+        signalAttemptStartedAt = startedAt
         elapsedSeconds = 0
         averagePower = -60
         powerHistory = []
         peakPower = -160
         signalHealth = .warmingUp
+        automaticRecoveryCount = 0
+        isRecoveringSignal = false
         isRecording = true
         ticker?.invalidate()
         ticker = Timer.scheduledTimer(withTimeInterval: 0.10, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, let startedAt = self.startedAt else { return }
+                guard let self,
+                      let startedAt = self.startedAt,
+                      let signalAttemptStartedAt = self.signalAttemptStartedAt else { return }
                 self.elapsedSeconds = Date().timeIntervalSince(startedAt)
                 if let recorder = self.recorder {
                     recorder.updateMeters()
@@ -150,9 +159,15 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
                     }
                     self.peakPower = max(self.peakPower, self.averagePower)
                     self.signalHealth = self.signalPolicy.health(
-                        elapsedSeconds: self.elapsedSeconds,
+                        elapsedSeconds: Date().timeIntervalSince(signalAttemptStartedAt),
                         peakPowerDecibels: self.peakPower
                     )
+                    if self.streamRecoveryPolicy.shouldRestart(
+                        health: self.signalHealth,
+                        completedRestarts: self.automaticRecoveryCount
+                    ) {
+                        self.restartSilentInputStream()
+                    }
                 }
             }
         }
@@ -180,10 +195,12 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         ticker?.invalidate()
         ticker = nil
         startedAt = nil
+        signalAttemptStartedAt = nil
         destinationURL = nil
         isRecording = false
         averagePower = -60
         peakPower = -160
+        isRecoveringSignal = false
         return RecordedCapture(
             url: url,
             duration: max(duration, elapsedSeconds),
@@ -191,6 +208,34 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
             writeErrorDescription: writeSnapshot.errorDescription,
             peakPowerDecibels: recordedPeakPower
         )
+    }
+
+    private func restartSilentInputStream() {
+        guard let url = destinationURL else { return }
+        automaticRecoveryCount += 1
+        isRecoveringSignal = true
+        recorder?.stop()
+        recorder = nil
+        try? FileManager.default.removeItem(at: url)
+        do {
+            inputDeviceName = AVCaptureDevice.default(for: .audio)?.localizedName
+                ?? "Default microphone"
+            try startRecorderFallback(at: url)
+            signalAttemptStartedAt = Date()
+            averagePower = -60
+            powerHistory = []
+            peakPower = -160
+            signalHealth = .warmingUp
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(800))
+                self?.isRecoveringSignal = false
+            }
+        } catch {
+            recorderErrorDescription =
+                "The microphone stream stayed silent and could not be reopened: \(error.localizedDescription)"
+            signalHealth = .absent
+            isRecoveringSignal = false
+        }
     }
 
     private func startVoiceProcessedCapture(at url: URL) throws {

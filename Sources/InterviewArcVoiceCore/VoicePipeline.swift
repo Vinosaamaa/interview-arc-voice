@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public enum VoiceDeliveryComponent: String, CaseIterable, Sendable {
@@ -45,6 +46,7 @@ public actor VoicePipeline {
     private let codex: CodexBridge
     private let vocabularyResolver: VocabularyResolver
     private let retryQueue: VoiceRetryQueue
+    private let pendingCaptureStore: PendingVoiceCaptureStore
     private let temporaryDirectory: URL
     private let workspaceURL: URL
     private let interviewArcToken: String
@@ -55,6 +57,7 @@ public actor VoicePipeline {
         codex: CodexBridge,
         vocabularyResolver: VocabularyResolver,
         retryQueue: VoiceRetryQueue,
+        pendingCaptureStore: PendingVoiceCaptureStore,
         temporaryDirectory: URL,
         workspaceURL: URL,
         interviewArcToken: String
@@ -65,6 +68,7 @@ public actor VoicePipeline {
         self.codex = codex
         self.vocabularyResolver = vocabularyResolver
         self.retryQueue = retryQueue
+        self.pendingCaptureStore = pendingCaptureStore
         self.temporaryDirectory = temporaryDirectory
         self.workspaceURL = workspaceURL
         self.interviewArcToken = interviewArcToken
@@ -87,153 +91,56 @@ public actor VoicePipeline {
             audioDurationSeconds: durationSeconds
         )
         let transcription = reliable.transcription
+        let captureID = "capture-\(UUID().uuidString.lowercased())"
         let turnID = "voice-\(UUID().uuidString.lowercased())"
         let requestedClipID = "clip-\(UUID().uuidString.lowercased())"
+        let checksum = SHA256.hash(data: Data(transcription.text.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let pending = PendingVoiceCapture(
+            id: captureID,
+            turnID: turnID,
+            clipID: requestedClipID,
+            checksum: checksum,
+            activity: activity,
+            transcript: transcription.text,
+            audioURL: recordingURL,
+            durationSeconds: durationSeconds,
+            occurredAt: occurredAt,
+            transcription: transcription,
+            createdAt: Date()
+        )
+        try await pendingCaptureStore.save(pending)
+        do {
+            _ = try await api.registerIntent(pending)
+            await progress(.init(component: .transcript, state: .complete))
+        } catch {
+            // The local pending record is the durable source until metadata can
+            // be registered. Reconciliation retries without uploading content.
+            await progress(.init(component: .transcript, state: .queued))
+        }
         await transcriptReady(VoiceCaptureEnvelope(
+            captureID: captureID,
             activityID: activity.activityId,
             turnID: turnID,
             transcript: transcription.text
         ))
-        do {
-            _ = try await api.persistCapture(
-                activity: activity,
-                turnID: turnID,
-                transcript: transcription.text,
-                occurredAt: occurredAt
-            )
-            await progress(.init(component: .transcript, state: .complete))
-        } catch {
-            try await enqueue(
-                kind: .capturePersistence,
-                activity: activity,
-                turnID: turnID,
-                transcript: transcription.text,
-                recordingURL: recordingURL,
-                durationSeconds: durationSeconds,
-                transcription: transcription,
-                occurredAt: occurredAt,
-                clipID: requestedClipID,
-                error: error
-            )
-            await progress(.init(component: .transcript, state: .queued))
-            return VoicePipelineResult(
-                turnID: turnID,
-                transcript: transcription.text,
-                clipID: nil,
-                capturePersisted: false,
-                audioUploaded: false,
-                deliveryCoachQueued: false,
-                transcriptionChunkCount: transcription.chunkCount
-            )
-        }
-
-        await progress(.init(component: .audio, state: .working))
-        let audioUploadTask = Task {
-            try await api.uploadAudio(
-                fileURL: recordingURL,
-                clipID: requestedClipID,
-                activityID: activity.activityId,
-                turnID: turnID,
-                durationSeconds: durationSeconds
-            )
-        }
-
-        var clipID: String?
-        var audioUploaded = true
-        switch await audioUploadTask.result {
-        case .success(let upload):
-            clipID = upload.clipId
-            await progress(.init(component: .audio, state: .complete))
-        case .failure(let error):
-            audioUploaded = false
-            try await enqueue(
-                kind: .audioUpload,
-                activity: activity,
-                turnID: turnID,
-                transcript: transcription.text,
-                recordingURL: recordingURL,
-                durationSeconds: durationSeconds,
-                transcription: transcription,
-                clipID: requestedClipID,
-                error: error
-            )
-            await progress(.init(component: .audio, state: .queued))
-        }
-
-        var deliveryCoachQueued = false
-        if let clipID {
-            await progress(.init(component: .coach, state: .working))
-            let analysisID = "delivery-\(UUID().uuidString.lowercased())"
-            do {
-                _ = try await api.queueDelivery(
-                    analysisID: analysisID,
-                    activity: activity,
-                    clipID: clipID,
-                    turnID: turnID
-                )
-                deliveryCoachQueued = true
-                await progress(.init(component: .coach, state: .complete))
-                Task {
-                    do {
-                        try await self.codex.runDeliveryCoach(
-                            analysisID: analysisID,
-                            activity: activity,
-                            clipID: clipID,
-                            turnID: turnID,
-                            transcript: transcription.text,
-                            transcription: transcription,
-                            audioURL: recordingURL,
-                            workspaceURL: self.workspaceURL,
-                            interviewArcToken: self.interviewArcToken
-                        )
-                    } catch {
-                        try? await self.enqueue(
-                            kind: .deliveryCoach,
-                            activity: activity,
-                            turnID: turnID,
-                            transcript: transcription.text,
-                            recordingURL: recordingURL,
-                            durationSeconds: durationSeconds,
-                            transcription: transcription,
-                            clipID: clipID,
-                            analysisID: analysisID,
-                            error: error
-                        )
-                    }
-                }
-            } catch {
-                try await enqueue(
-                    kind: .deliveryCoach,
-                    activity: activity,
-                    turnID: turnID,
-                    transcript: transcription.text,
-                    recordingURL: recordingURL,
-                    durationSeconds: durationSeconds,
-                    transcription: transcription,
-                    clipID: clipID,
-                    analysisID: analysisID,
-                    error: error
-                )
-                await progress(.init(component: .coach, state: .queued))
-            }
-        } else {
-            await progress(.init(component: .coach, state: .queued))
-        }
-
+        await progress(.init(component: .audio, state: .queued))
+        await progress(.init(component: .coach, state: .queued))
         return VoicePipelineResult(
             turnID: turnID,
             transcript: transcription.text,
-            clipID: clipID,
-            capturePersisted: true,
-            audioUploaded: audioUploaded,
-            deliveryCoachQueued: deliveryCoachQueued,
+            clipID: nil,
+            capturePersisted: false,
+            audioUploaded: false,
+            deliveryCoachQueued: false,
             transcriptionChunkCount: transcription.chunkCount
         )
     }
 
     public func retryPending() async -> Int {
-        guard let items = try? await retryQueue.items() else { return 0 }
-        var completed = 0
+        var completed = await reconcilePendingCaptures()
+        guard let items = try? await retryQueue.items() else { return completed }
         for item in items {
             do {
                 switch item.kind {
@@ -313,6 +220,128 @@ public actor VoicePipeline {
             }
         }
         return completed
+    }
+
+    public func pendingCaptures() async -> [PendingVoiceCapture] {
+        guard let captures = try? await pendingCaptureStore.items(), !captures.isEmpty else { return [] }
+        guard let intents = try? await api.intents(captureIDs: captures.map(\.id)) else { return [] }
+        let visible = Set(intents.filter { $0.status == "uncertain" }.map(\.captureId))
+        return captures.filter { visible.contains($0.id) }
+    }
+
+    public func localPendingCaptureCount() async -> Int {
+        (try? await pendingCaptureStore.items().count) ?? 0
+    }
+
+    public func legacyVoiceOrphans() async -> [LegacyVoiceCapture] {
+        (try? await api.legacyVoiceOrphans()) ?? []
+    }
+
+    public func deleteLegacyVoiceCapture(clipID: String) async throws {
+        try await api.deleteLegacyCapture(clipID: clipID)
+    }
+
+    public func resolvePendingCapture(
+        captureID: String,
+        attach: Bool
+    ) async throws {
+        if attach {
+            _ = try await api.decideIntent(
+                captureID: captureID,
+                decision: "activity_related",
+                reason: "The user explicitly attached this pending capture."
+            )
+        } else {
+            _ = try await api.decideIntent(
+                captureID: captureID,
+                decision: "unrelated",
+                reason: "The user explicitly deleted this pending capture."
+            )
+            try await api.deleteCapture(captureID: captureID)
+            try await pendingCaptureStore.remove(id: captureID, deleteAudio: true)
+        }
+    }
+
+    private func reconcilePendingCaptures() async -> Int {
+        guard let captures = try? await pendingCaptureStore.items(),
+              !captures.isEmpty else { return 0 }
+        for capture in captures {
+            try? await api.registerIntent(capture)
+        }
+        guard let intents = try? await api.intents(captureIDs: captures.map(\.id)) else {
+            return 0
+        }
+        let byID = Dictionary(uniqueKeysWithValues: intents.map { ($0.captureId, $0) })
+        var completed = 0
+        for capture in captures {
+            guard let intent = byID[capture.id] else { continue }
+            do {
+                switch intent.status {
+                case "activity_related":
+                    _ = try await api.persistCapture(
+                        activity: capture.activity,
+                        turnID: capture.turnID,
+                        transcript: capture.transcript,
+                        occurredAt: capture.occurredAt,
+                        captureID: capture.id,
+                        checksum: capture.checksum
+                    )
+                    try await finishAcceptedCapture(capture)
+                    try await pendingCaptureStore.remove(id: capture.id, deleteAudio: true)
+                    completed += 1
+                case "accepted":
+                    try await finishAcceptedCapture(capture)
+                    try await pendingCaptureStore.remove(id: capture.id, deleteAudio: true)
+                    completed += 1
+                case "unrelated":
+                    // Keep local recovery material for 24 hours, but never send
+                    // transcript or audio. The next reconciliation after the
+                    // grace period removes both local and server tombstones.
+                    if Date().timeIntervalSince(capture.createdAt) >= 86_400 {
+                        try await api.deleteCapture(captureID: capture.id)
+                        try await pendingCaptureStore.remove(id: capture.id, deleteAudio: true)
+                        completed += 1
+                    }
+                case "deleted":
+                    try await pendingCaptureStore.remove(id: capture.id, deleteAudio: true)
+                    completed += 1
+                default:
+                    break
+                }
+            } catch {
+                // Durable local data remains for the next idempotent pass.
+            }
+        }
+        return completed
+    }
+
+    private func finishAcceptedCapture(_ capture: PendingVoiceCapture) async throws {
+        let upload = try await api.uploadAudio(
+            fileURL: capture.audioURL,
+            clipID: capture.clipID,
+            activityID: capture.activity.activityId,
+            turnID: capture.turnID,
+            durationSeconds: capture.durationSeconds,
+            captureID: capture.id
+        )
+        let analysisID = "delivery-\(capture.id)"
+        _ = try await api.queueDelivery(
+            analysisID: analysisID,
+            activity: capture.activity,
+            clipID: upload.clipId,
+            turnID: capture.turnID
+        )
+        try await codex.runDeliveryCoach(
+            analysisID: analysisID,
+            activity: capture.activity,
+            clipID: upload.clipId,
+            turnID: capture.turnID,
+            transcript: capture.transcript,
+            transcription: capture.transcription,
+            audioURL: capture.audioURL,
+            workspaceURL: workspaceURL,
+            interviewArcToken: interviewArcToken
+        )
     }
 
     private func enqueue(

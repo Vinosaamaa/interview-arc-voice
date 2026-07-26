@@ -16,3 +16,11 @@ public struct CaptureRoutingPolicy: Sendable {
         return .linked
     }
 }
+
+public enum CaptureTargetApplicationPolicy {
+    public static let codexBundleIdentifier = "com.openai.codex"
+
+    public static func canAttachToInterviewArc(bundleIdentifier: String?) -> Bool {
+        bundleIdentifier == codexBundleIdentifier
+    }
+}

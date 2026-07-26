@@ -33,3 +33,18 @@ public struct MicrophoneSignalPolicy: Equatable, Sendable {
         return .warmingUp
     }
 }
+
+public struct MicrophoneStreamRecoveryPolicy: Equatable, Sendable {
+    public let maximumAutomaticRestarts: Int
+
+    public init(maximumAutomaticRestarts: Int = 1) {
+        self.maximumAutomaticRestarts = maximumAutomaticRestarts
+    }
+
+    public func shouldRestart(
+        health: MicrophoneSignalHealth,
+        completedRestarts: Int
+    ) -> Bool {
+        health == .absent && completedRestarts < maximumAutomaticRestarts
+    }
+}
