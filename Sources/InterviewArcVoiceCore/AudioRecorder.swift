@@ -152,22 +152,18 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
                 self.elapsedSeconds = Date().timeIntervalSince(startedAt)
                 if let recorder = self.recorder {
                     recorder.updateMeters()
-                    self.averagePower = recorder.averagePower(forChannel: 0)
-                    self.powerHistory.append(self.averagePower)
-                    if self.powerHistory.count > 72 {
-                        self.powerHistory.removeFirst(self.powerHistory.count - 72)
-                    }
-                    self.peakPower = max(self.peakPower, self.averagePower)
-                    self.signalHealth = self.signalPolicy.health(
-                        elapsedSeconds: Date().timeIntervalSince(signalAttemptStartedAt),
-                        peakPowerDecibels: self.peakPower
-                    )
-                    if self.streamRecoveryPolicy.shouldRestart(
-                        health: self.signalHealth,
-                        completedRestarts: self.automaticRecoveryCount
-                    ) {
-                        self.restartSilentInputStream()
-                    }
+                    self.recordPower(recorder.averagePower(forChannel: 0))
+                }
+                self.signalHealth = self.signalPolicy.health(
+                    elapsedSeconds: Date().timeIntervalSince(signalAttemptStartedAt),
+                    peakPowerDecibels: self.peakPower
+                )
+                if self.recorder != nil,
+                   self.streamRecoveryPolicy.shouldRestart(
+                       health: self.signalHealth,
+                       completedRestarts: self.automaticRecoveryCount
+                   ) {
+                    self.restartSilentInputStream()
                 }
             }
         }
@@ -214,13 +210,20 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         guard let url = destinationURL else { return }
         automaticRecoveryCount += 1
         isRecoveringSignal = true
-        recorder?.stop()
-        recorder = nil
-        try? FileManager.default.removeItem(at: url)
+        let recoveredURL = url.deletingLastPathComponent().appending(
+            path: "\(url.deletingPathExtension().lastPathComponent)-recovered-\(UUID().uuidString.lowercased()).m4a"
+        )
         do {
             inputDeviceName = AVCaptureDevice.default(for: .audio)?.localizedName
                 ?? "Default microphone"
-            try startRecorderFallback(at: url)
+            // Start an independent capture backend before releasing the
+            // stalled AVAudioRecorder. Reopening the same recorder immediately
+            // can reacquire the same silent Bluetooth/default-input stream.
+            try startEngineRecoveryCapture(at: recoveredURL)
+            recorder?.stop()
+            recorder = nil
+            try? FileManager.default.removeItem(at: url)
+            destinationURL = recoveredURL
             signalAttemptStartedAt = Date()
             averagePower = -60
             powerHistory = []
@@ -231,21 +234,22 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
                 self?.isRecoveringSignal = false
             }
         } catch {
+            try? FileManager.default.removeItem(at: recoveredURL)
             recorderErrorDescription =
-                "The microphone stream stayed silent and could not be reopened: \(error.localizedDescription)"
+                "The microphone stream stayed silent and the independent capture fallback could not start: \(error.localizedDescription)"
             signalHealth = .absent
             isRecoveringSignal = false
         }
     }
 
-    private func startVoiceProcessedCapture(at url: URL) throws {
+    private func startEngineRecoveryCapture(at url: URL) throws {
         let engine = AVAudioEngine()
         let input = engine.inputNode
 
-        // Voice Processing I/O provides the echo cancellation and noise
-        // suppression expected from a dictation tool. Without it, speaker
-        // audio and room noise can be transcribed as unrelated speech.
-        try input.setVoiceProcessingEnabled(true)
+        // Deliberately do not enable Voice Processing I/O here. This is an
+        // independent recovery backend, and the voice-processing input unit
+        // previously started without delivering writable frames on affected
+        // Bluetooth routes.
         let inputFormat = input.outputFormat(forBus: 0)
         guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
             throw VoiceBridgeError.recordingUnavailable
@@ -267,7 +271,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         let writeState = AudioWriteState()
         let tap = VoiceProcessedAudioTap(file: file, writeState: writeState) { [weak self] power in
             Task { @MainActor [weak self] in
-                self?.averagePower = power
+                self?.recordPower(power)
             }
         }
         input.installTap(
@@ -277,8 +281,13 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         ) { @Sendable buffer, _ in
             tap.consume(buffer)
         }
-        engine.prepare()
-        try engine.start()
+        do {
+            engine.prepare()
+            try engine.start()
+        } catch {
+            input.removeTap(onBus: 0)
+            throw error
+        }
         audioFile = file
         audioEngine = engine
         audioWriteState = writeState
@@ -306,10 +315,18 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         if let engine = audioEngine {
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
-            try? engine.inputNode.setVoiceProcessingEnabled(false)
         }
         audioFile = nil
         audioEngine = nil
+    }
+
+    private func recordPower(_ power: Float) {
+        averagePower = power
+        powerHistory.append(power)
+        if powerHistory.count > 72 {
+            powerHistory.removeFirst(powerHistory.count - 72)
+        }
+        peakPower = max(peakPower, power)
     }
 
     public nonisolated func audioRecorderEncodeErrorDidOccur(

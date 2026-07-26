@@ -138,4 +138,13 @@ public enum BackgroundAudioPolicy {
             outputChannelCount: currentOutputChannelCount
         )
     }
+
+    /// A temporary Bluetooth hands-free route must stay ducked until the
+    /// original stereo route returns. Restoring the temporary route first
+    /// creates a short, loud, low-quality burst after Stop.
+    public static func shouldRestoreTemporaryRoute(
+        hasPendingBaseline: Bool
+    ) -> Bool {
+        !hasPendingBaseline
+    }
 }

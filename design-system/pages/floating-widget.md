@@ -154,9 +154,10 @@ least 58 points for the activity title.
 - The recording capsule uses the live dot, historical waveform, recording
   tint/outline, elapsed clock, and unmistakable Stop control in every theme.
   Theme-specific tokens must preserve sufficient contrast.
-- The historical waveform uses 64 hairline 0.85-point samples so it occupies the
-  available instrument width between the live dot and elapsed clock. Do not
-  reintroduce a short waveform surrounded by unused horizontal gaps.
+- The historical waveform uses 64 one-point samples. Its inter-sample spacing
+  adapts to the live instrument width so the history fills the available area
+  between the live dot and elapsed clock. Do not reintroduce a short waveform
+  surrounded by unused horizontal gaps.
 - Compact timer values stay on one line in fixed-width columns. The activity
   title scrolls only when it overflows; Reduce Motion replaces scrolling with
   truncation.
@@ -192,6 +193,10 @@ least 58 points for the activity title.
 - Width changes: 200–260 ms ease-in-out, anchored to the widget’s right edge.
 - Timer expansion changes both width and height over the same 200–260 ms
   interval, anchored to the widget’s bottom-right corner.
+- The activity picker and finish-result drawer use the same 240 ms
+  ease-in-out transaction in both directions. Their content fades with a
+  restrained bottom-anchored scale while AppKit owns the corresponding window
+  resize; opening and closing must feel symmetric.
 - AppKit is the only owner of animated window geometry. The SwiftUI root fills
   every intermediate host size and pins its content bottom-trailing; it must
   not jump immediately to the final model size while the panel is still
