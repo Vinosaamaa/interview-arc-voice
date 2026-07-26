@@ -32,6 +32,23 @@ public struct BackgroundAudioVolumeSnapshot: Codable, Equatable, Sendable {
     }
 }
 
+public struct BackgroundAudioSessionSnapshot: Codable, Equatable, Sendable {
+    public private(set) var routes: [BackgroundAudioVolumeSnapshot]
+
+    public init(routes: [BackgroundAudioVolumeSnapshot] = []) {
+        self.routes = routes
+    }
+
+    public func route(deviceUID: String) -> BackgroundAudioVolumeSnapshot? {
+        routes.first { $0.deviceUID == deviceUID }
+    }
+
+    public mutating func remember(_ snapshot: BackgroundAudioVolumeSnapshot) {
+        routes.removeAll { $0.deviceUID == snapshot.deviceUID }
+        routes.append(snapshot)
+    }
+}
+
 public enum BackgroundAudioPolicy {
     public static let defaultRelativeLevel: Double = 0.20
 
@@ -56,5 +73,13 @@ public enum BackgroundAudioPolicy {
         tolerance: Float = 0.015
     ) -> Bool {
         abs(currentVolume - snapshot.appliedVolume) <= tolerance
+    }
+
+    public static func shouldReapplyAfterRouteChange(
+        currentVolume: Float,
+        snapshot: BackgroundAudioVolumeSnapshot,
+        tolerance: Float = 0.015
+    ) -> Bool {
+        abs(currentVolume - snapshot.originalVolume) <= tolerance
     }
 }

@@ -26,10 +26,17 @@ public enum FloatingWidgetRecoveryActionTiming: Equatable, Sendable {
 }
 
 public enum FloatingWidgetRecoveryPolicy {
+    public static let dismissalSettleMilliseconds = 260
+
     public static func timing(
         for action: VoiceFailureAction
     ) -> FloatingWidgetRecoveryActionTiming {
-        action == .playRecording ? .afterPopoverDismissal : .immediate
+        switch action {
+        case .playRecording, .recordAgain:
+            return .afterPopoverDismissal
+        default:
+            return .immediate
+        }
     }
 }
 
@@ -53,6 +60,18 @@ public enum FloatingWidgetWindowPolicy {
     public static let timerPanelContentAnchorsToCapsule = true
     public static let contentFillsAnimatedHost = true
     public static let contentAlignment: FloatingWidgetContentAlignment = .bottomTrailing
+
+    public static func recordingWaveformBarWidth(
+        availableWidth: CGFloat
+    ) -> CGFloat {
+        let spacing = recordingWaveformBarSpacing
+            * CGFloat(recordingWaveformSampleCount - 1)
+        return max(
+            1.5,
+            (availableWidth - spacing)
+                / CGFloat(recordingWaveformSampleCount)
+        )
+    }
 
     public static func disclosureStateWhenRecordingStarts(
         current: FloatingWidgetDisclosureState

@@ -41,3 +41,45 @@ import Testing
         )
     )
 }
+
+@Test func backgroundAudioSessionKeepsIndependentRouteBaselines() {
+    var session = BackgroundAudioSessionSnapshot()
+    let musicRoute = BackgroundAudioVolumeSnapshot(
+        deviceUID: "airpods-music",
+        originalVolume: 0.5,
+        appliedVolume: 0.1
+    )
+    let microphoneRoute = BackgroundAudioVolumeSnapshot(
+        deviceUID: "airpods-handsfree",
+        originalVolume: 0.4,
+        appliedVolume: 0.08
+    )
+
+    session.remember(musicRoute)
+    session.remember(microphoneRoute)
+
+    #expect(session.routes.count == 2)
+    #expect(session.route(deviceUID: "airpods-music") == musicRoute)
+    #expect(session.route(deviceUID: "airpods-handsfree") == microphoneRoute)
+}
+
+@Test func routeResetToOriginalLevelCanBeReappliedWithoutCompounding() {
+    let snapshot = BackgroundAudioVolumeSnapshot(
+        deviceUID: "airpods",
+        originalVolume: 0.5,
+        appliedVolume: 0.1
+    )
+
+    #expect(
+        BackgroundAudioPolicy.shouldReapplyAfterRouteChange(
+            currentVolume: 0.5,
+            snapshot: snapshot
+        )
+    )
+    #expect(
+        !BackgroundAudioPolicy.shouldReapplyAfterRouteChange(
+            currentVolume: 0.3,
+            snapshot: snapshot
+        )
+    )
+}
