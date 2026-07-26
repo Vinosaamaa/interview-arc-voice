@@ -177,15 +177,28 @@ private func interviewArcHotKeyHandler(
     _ event: EventRef?,
     _ userData: UnsafeMutableRawPointer?
 ) -> OSStatus {
-    guard let userData else { return OSStatus(eventNotHandledErr) }
+    guard let event, let userData else { return OSStatus(eventNotHandledErr) }
     let manager = Unmanaged<GlobalHotKeyManager>.fromOpaque(userData).takeUnretainedValue()
+    var identifier = EventHotKeyID(signature: 0, id: 0)
+    let status = GetEventParameter(
+        event,
+        EventParamName(kEventParamDirectObject),
+        EventParamType(typeEventHotKeyID),
+        nil,
+        MemoryLayout<EventHotKeyID>.size,
+        nil,
+        &identifier
+    )
+    guard status == noErr, manager.handles(identifier) else {
+        return OSStatus(eventNotHandledErr)
+    }
     Task { @MainActor in manager.invoke() }
     return noErr
 }
 
 @MainActor
 final class GlobalHotKeyManager {
-    private let identifierID: UInt32
+    private nonisolated let identifierID: UInt32
     private var hotKey: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
     private var action: (() -> Void)?
@@ -224,6 +237,11 @@ final class GlobalHotKeyManager {
         )
     }
 
+    nonisolated func handles(_ identifier: EventHotKeyID) -> Bool {
+        identifier.signature == OSType(0x49415643)
+            && identifier.id == identifierID
+    }
+
     func invoke() { action?() }
 
     func unregister() {
@@ -233,6 +251,48 @@ final class GlobalHotKeyManager {
         eventHandler = nil
     }
 
+}
+
+@MainActor
+enum SettingsWindowPresenter {
+    static func present(openSettings: () -> Void) {
+        NSApp.activate(ignoringOtherApps: true)
+        openSettings()
+        Task { @MainActor in
+            for delay in [40, 100, 180] {
+                try? await Task.sleep(for: .milliseconds(delay))
+                NSApp.activate(ignoringOtherApps: true)
+                if let settingsWindow = NSApp.windows.first(where: { window in
+                    window.title.localizedCaseInsensitiveContains("settings")
+                        || window.identifier?.rawValue
+                            .localizedCaseInsensitiveContains("settings") == true
+                }) {
+                    settingsWindow.makeKeyAndOrderFront(nil)
+                    settingsWindow.orderFrontRegardless()
+                    break
+                }
+            }
+        }
+    }
+}
+
+struct ForegroundSettingsLink<Label: View>: View {
+    @Environment(\.openSettings) private var openSettings
+    private let label: Label
+
+    init(@ViewBuilder label: () -> Label) {
+        self.label = label()
+    }
+
+    var body: some View {
+        Button {
+            SettingsWindowPresenter.present {
+                openSettings()
+            }
+        } label: {
+            label
+        }
+    }
 }
 
 enum DictationOutput: Equatable {
@@ -1073,13 +1133,10 @@ struct FloatingRecorderView: View {
             .voiceHoverFeedback(cornerRadius: 8, tint: .orange)
             .popover(isPresented: $model.failureDetailsPresented, arrowEdge: .bottom) {
                 FailureRecoveryPopover(model: model)
-                    .onDisappear {
-                        model.completeFailurePopoverDismissal()
-                    }
             }
             ForEach(Array((model.failureNotice?.actions ?? []).prefix(2)), id: \.self) { action in
                 if action == .openSettings {
-                    SettingsLink {
+                    ForegroundSettingsLink {
                         Image(systemName: failureSymbol(action))
                             .font(.system(size: 11, weight: .semibold))
                             .frame(width: 22, height: 22)
@@ -1833,7 +1890,7 @@ private struct FailureRecoveryPopover: View {
     }
 
     private func settingsActionLink(_ action: VoiceFailureAction) -> some View {
-        SettingsLink {
+        ForegroundSettingsLink {
             Label(actionLabel(action), systemImage: actionSymbol(action))
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)

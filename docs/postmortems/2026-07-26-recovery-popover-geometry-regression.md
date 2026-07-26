@@ -26,8 +26,11 @@ It also treated `onDisappear` as a fully settled window boundary.
 ## Repair
 
 - Classify both playback and recording recovery actions as geometry-changing.
+- Schedule the deferred action directly from the recovery-button click; do not
+  wait for SwiftUI popover `onDisappear`, which can itself be deferred until a
+  later input event.
 - Dismiss the recovery popover before executing either action.
-- Wait one bounded 260 ms native-settle interval after `onDisappear`.
+- Wait one bounded 260 ms native-settle interval after scheduling the dismissal.
 - Only then start the floating widget's normal playback or recording
   transition.
 - Keep actions that do not resize the widget immediate.

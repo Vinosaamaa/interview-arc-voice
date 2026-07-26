@@ -26,6 +26,7 @@ enum VoiceLinkPresentationState: Equatable {
 @main
 struct InterviewArcVoiceApp: App {
     @StateObject private var model: VoiceBridgeModel
+    @Environment(\.openSettings) private var openSettings
 
     init() {
         if ProcessInfo.processInfo.arguments.contains("--verify-package") {
@@ -65,6 +66,16 @@ struct InterviewArcVoiceApp: App {
 
         Settings {
             VoiceSettingsWindow(model: model)
+        }
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    SettingsWindowPresenter.present {
+                        openSettings()
+                    }
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
         }
     }
 }
@@ -169,7 +180,6 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var showProcessingIndicator = false
     @Published private(set) var failureNotice: VoiceFailureNotice?
     @Published var failureDetailsPresented = false
-    private var pendingFailurePopoverAction: VoiceFailureAction?
     private var pendingFailurePopoverActionTask: Task<Void, Never>?
 
     let recorder = AnswerRecorder()
@@ -417,17 +427,25 @@ final class VoiceBridgeModel: ObservableObject {
         dynamicRecordingInterfaceEnabled = defaults.object(
             forKey: "voice.dynamicRecordingInterfaceEnabled"
         ) as? Bool ?? false
+        let resolvedShortcut: HotKeyShortcut
         if let data = defaults.data(forKey: "voice.shortcut"),
            let saved = try? JSONDecoder().decode(HotKeyShortcut.self, from: data) {
-            shortcut = saved
+            resolvedShortcut = saved
         } else {
-            shortcut = .standard
+            resolvedShortcut = .standard
         }
+        shortcut = resolvedShortcut
+        let resolvedLinkShortcut: HotKeyShortcut
         if let data = defaults.data(forKey: "voice.linkShortcut"),
            let saved = try? JSONDecoder().decode(HotKeyShortcut.self, from: data) {
-            linkShortcut = saved
+            resolvedLinkShortcut = saved == resolvedShortcut ? .linkToggle : saved
         } else {
-            linkShortcut = .linkToggle
+            resolvedLinkShortcut = .linkToggle
+        }
+        linkShortcut = resolvedLinkShortcut
+        if resolvedLinkShortcut == .linkToggle,
+           let data = try? JSONEncoder().encode(resolvedLinkShortcut) {
+            defaults.set(data, forKey: "voice.linkShortcut")
         }
         if let data = defaults.data(forKey: "voice.lastFailure"),
            let storedFailure = try? JSONDecoder().decode(VoiceFailureNotice.self, from: data) {
@@ -445,10 +463,7 @@ final class VoiceBridgeModel: ObservableObject {
             await Task.yield()
             FloatingPanelController.shared.show(model: self)
             outputVolumeController.recoverInterruptedSessionIfNeeded()
-            hotKeyManager.register(shortcut) { [weak self] in self?.toggleRecording() }
-            linkHotKeyManager.register(linkShortcut) { [weak self] in
-                self?.toggleLinkMode()
-            }
+            registerGlobalShortcuts()
             await loadSecureSettings()
             startContextPolling()
         }
@@ -868,6 +883,7 @@ final class VoiceBridgeModel: ObservableObject {
         guard shortcutMonitor == nil, linkShortcutMonitor == nil else { return }
         shortcutMessage = nil
         shortcutCapturing = true
+        suspendGlobalShortcuts()
         shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             if Int(event.keyCode) == kVK_Escape {
@@ -884,7 +900,6 @@ final class VoiceBridgeModel: ObservableObject {
             if let data = try? JSONEncoder().encode(shortcut) {
                 UserDefaults.standard.set(data, forKey: "voice.shortcut")
             }
-            self.hotKeyManager.register(shortcut) { [weak self] in self?.toggleRecording() }
             self.endShortcutCapture()
             return nil
         }
@@ -894,6 +909,7 @@ final class VoiceBridgeModel: ObservableObject {
         guard shortcutMonitor == nil, linkShortcutMonitor == nil else { return }
         shortcutMessage = nil
         linkShortcutCapturing = true
+        suspendGlobalShortcuts()
         linkShortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             if Int(event.keyCode) == kVK_Escape {
@@ -910,11 +926,16 @@ final class VoiceBridgeModel: ObservableObject {
             if let data = try? JSONEncoder().encode(shortcut) {
                 UserDefaults.standard.set(data, forKey: "voice.linkShortcut")
             }
-            self.linkHotKeyManager.register(shortcut) { [weak self] in
-                self?.toggleLinkMode()
-            }
             self.endLinkShortcutCapture()
             return nil
+        }
+    }
+
+    func cancelShortcutCapture() {
+        if shortcutCapturing {
+            endShortcutCapture()
+        } else if linkShortcutCapturing {
+            endLinkShortcutCapture()
         }
     }
 
@@ -986,22 +1007,16 @@ final class VoiceBridgeModel: ObservableObject {
         case .immediate:
             performFailureAction(action)
         case .afterPopoverDismissal:
-            pendingFailurePopoverAction = action
             failureDetailsPresented = false
-        }
-    }
-
-    func completeFailurePopoverDismissal() {
-        guard let action = pendingFailurePopoverAction else { return }
-        pendingFailurePopoverAction = nil
-        pendingFailurePopoverActionTask = Task { [weak self] in
-            try? await Task.sleep(
-                for: .milliseconds(
-                    FloatingWidgetRecoveryPolicy.dismissalSettleMilliseconds
+            pendingFailurePopoverActionTask = Task { [weak self] in
+                try? await Task.sleep(
+                    for: .milliseconds(
+                        FloatingWidgetRecoveryPolicy.dismissalSettleMilliseconds
+                    )
                 )
-            )
-            guard !Task.isCancelled else { return }
-            self?.performFailureAction(action)
+                guard !Task.isCancelled else { return }
+                self?.performFailureAction(action)
+            }
         }
     }
 
@@ -1743,6 +1758,7 @@ final class VoiceBridgeModel: ObservableObject {
         if let shortcutMonitor { NSEvent.removeMonitor(shortcutMonitor) }
         shortcutMonitor = nil
         shortcutCapturing = false
+        registerGlobalShortcuts()
     }
 
     private func endLinkShortcutCapture() {
@@ -1751,6 +1767,21 @@ final class VoiceBridgeModel: ObservableObject {
         }
         linkShortcutMonitor = nil
         linkShortcutCapturing = false
+        registerGlobalShortcuts()
+    }
+
+    private func suspendGlobalShortcuts() {
+        hotKeyManager.unregister()
+        linkHotKeyManager.unregister()
+    }
+
+    private func registerGlobalShortcuts() {
+        hotKeyManager.register(shortcut) { [weak self] in
+            self?.toggleRecording()
+        }
+        linkHotKeyManager.register(linkShortcut) { [weak self] in
+            self?.toggleLinkMode()
+        }
     }
 
     private func rememberLastAudio(
@@ -1983,6 +2014,10 @@ private struct VoiceSettingsWindow: View {
                     Button(model.shortcutCapturing ? "Press shortcut…" : model.shortcut.displayName) {
                         model.beginShortcutCapture()
                     }
+                    .disabled(model.shortcutCapturing)
+                    if model.shortcutCapturing {
+                        Button("Cancel", action: model.cancelShortcutCapture)
+                    }
                 }
                 HStack {
                     Text("Toggle Interview Arc link")
@@ -1994,6 +2029,15 @@ private struct VoiceSettingsWindow: View {
                     ) {
                         model.beginLinkShortcutCapture()
                     }
+                    .disabled(model.linkShortcutCapturing)
+                    if model.linkShortcutCapturing {
+                        Button("Cancel", action: model.cancelShortcutCapture)
+                    }
+                }
+                if model.shortcutCapturing || model.linkShortcutCapturing {
+                    Text("Press the new shortcut. Press Escape or choose Cancel to keep the current one.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 if let shortcutMessage = model.shortcutMessage {
                     Text(shortcutMessage)
@@ -2441,7 +2485,7 @@ private struct VoiceBridgeMenu: View {
     }
 
     private var settings: some View {
-        SettingsLink {
+        ForegroundSettingsLink {
             HStack {
                 Label("Settings", systemImage: "gearshape")
                     .font(.subheadline.weight(.medium))
