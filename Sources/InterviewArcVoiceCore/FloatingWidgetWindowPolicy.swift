@@ -20,6 +20,19 @@ public enum FloatingWidgetContentAlignment: Equatable, Sendable {
     case bottomTrailing
 }
 
+public enum FloatingWidgetRecoveryActionTiming: Equatable, Sendable {
+    case immediate
+    case afterPopoverDismissal
+}
+
+public enum FloatingWidgetRecoveryPolicy {
+    public static func timing(
+        for action: VoiceFailureAction
+    ) -> FloatingWidgetRecoveryActionTiming {
+        action == .playRecording ? .afterPopoverDismissal : .immediate
+    }
+}
+
 public enum FloatingWidgetWindowPolicy {
     public static let hostIsOpaque = false
     public static let usesNativeWindowShadow = false

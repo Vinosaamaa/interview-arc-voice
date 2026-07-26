@@ -1055,6 +1055,9 @@ struct FloatingRecorderView: View {
             .voiceHoverFeedback(cornerRadius: 8, tint: .orange)
             .popover(isPresented: $model.failureDetailsPresented, arrowEdge: .bottom) {
                 FailureRecoveryPopover(model: model)
+                    .onDisappear {
+                        model.completeFailurePopoverDismissal()
+                    }
             }
             ForEach(Array((model.failureNotice?.actions ?? []).prefix(2)), id: \.self) { action in
                 if action == .openSettings {
@@ -1801,7 +1804,7 @@ private struct FailureRecoveryPopover: View {
 
     private func failureActionButton(_ action: VoiceFailureAction) -> some View {
         Button {
-            model.performFailureAction(action)
+            model.performFailurePopoverAction(action)
         } label: {
             Label(actionLabel(action), systemImage: actionSymbol(action))
                 .lineLimit(1)
