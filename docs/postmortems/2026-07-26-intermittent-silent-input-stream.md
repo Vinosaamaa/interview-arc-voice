@@ -4,6 +4,7 @@
 **Severity:** Reliability / user-data risk
 **Status:** Remediation implemented; signed-package verification pending
 **Issue:** #58
+**PR:** #61
 
 ## Summary
 
