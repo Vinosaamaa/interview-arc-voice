@@ -166,6 +166,7 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var showProcessingIndicator = false
     @Published private(set) var failureNotice: VoiceFailureNotice?
     @Published var failureDetailsPresented = false
+    private var pendingFailurePopoverAction: VoiceFailureAction?
 
     let recorder = AnswerRecorder()
 
@@ -921,6 +922,22 @@ final class VoiceBridgeModel: ObservableObject {
             failureDetailsPresented = false
             Task { await refresh() }
         }
+    }
+
+    func performFailurePopoverAction(_ action: VoiceFailureAction) {
+        switch FloatingWidgetRecoveryPolicy.timing(for: action) {
+        case .immediate:
+            performFailureAction(action)
+        case .afterPopoverDismissal:
+            pendingFailurePopoverAction = action
+            failureDetailsPresented = false
+        }
+    }
+
+    func completeFailurePopoverDismissal() {
+        guard let action = pendingFailurePopoverAction else { return }
+        pendingFailurePopoverAction = nil
+        performFailureAction(action)
     }
 
     private func reportFailure(

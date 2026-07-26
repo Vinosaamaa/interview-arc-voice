@@ -62,6 +62,21 @@ import Testing
     #expect(FloatingWidgetWindowPolicy.timerPanelContentAnchorsToCapsule)
 }
 
+@Test func recoveryPopoverPlaybackWaitsUntilItsAnchorHasDisappeared() {
+    #expect(
+        FloatingWidgetRecoveryPolicy.timing(for: .playRecording)
+            == .afterPopoverDismissal
+    )
+    #expect(
+        FloatingWidgetRecoveryPolicy.timing(for: .recordAgain)
+            == .immediate
+    )
+    #expect(
+        FloatingWidgetRecoveryPolicy.timing(for: .saveRecording)
+            == .immediate
+    )
+}
+
 @Test func recordingUsesOneFocusedDisclosureStateFromEveryStartingSurface() {
     let openTimer = FloatingWidgetDisclosureState(
         timerPanelExpanded: true,
