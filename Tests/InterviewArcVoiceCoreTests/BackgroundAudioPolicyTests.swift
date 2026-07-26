@@ -163,3 +163,16 @@ import Testing
         )
     )
 }
+
+@Test func temporaryHandsFreeRouteStaysDuckedWhileStereoBaselineIsPending() {
+    #expect(
+        !BackgroundAudioPolicy.shouldRestoreTemporaryRoute(
+            hasPendingBaseline: true
+        )
+    )
+    #expect(
+        BackgroundAudioPolicy.shouldRestoreTemporaryRoute(
+            hasPendingBaseline: false
+        )
+    )
+}

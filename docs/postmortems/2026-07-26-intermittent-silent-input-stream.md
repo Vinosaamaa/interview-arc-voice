@@ -2,9 +2,9 @@
 
 **Date:** 2026-07-26
 **Severity:** Reliability / user-data risk
-**Status:** Released and installed verification complete
+**Status:** Recurrence under repair
 **Issue:** #58
-**PR:** #61
+**PR:** #61; follow-up pending
 
 ## Summary
 
@@ -38,6 +38,16 @@ The app did not record input-route transition telemetry, so a Bluetooth or
 default-input profile transition is the leading hypothesis rather than a
 proven root cause.
 
+### Recurrence
+
+The installed release later entered the same `NO MICROPHONE SIGNAL` state.
+A subsequent capture could succeed, preserving the intermittent
+classification and proving that permanent microphone permission denial was
+not the cause. Source inspection established that the first remediation
+stopped `AVAudioRecorder` and immediately created another
+`AVAudioRecorder` with identical settings. The retry could therefore reacquire
+the same stalled Core Audio route and was not an independent recovery path.
+
 ## Detection gap
 
 The app already measured live input level and changed `signalHealth` to absent
@@ -47,7 +57,7 @@ dead route.
 
 ## Root cause
 
-The immediate software cause was a missing recovery transition:
+The initial immediate software cause was a missing recovery transition:
 
 1. `AVAudioRecorder.record()` returned success.
 2. The app therefore entered the recording state.
@@ -59,10 +69,22 @@ transition around recorder startup, but the prior implementation did not log
 enough route identity to distinguish Bluetooth profile changes, device
 replacement, and a transient Core Audio stream failure.
 
+The recurrence exposed a second software cause: the recovery transition reused
+the same capture backend immediately. It changed the recorder object without
+changing the boundary that had failed.
+
 ## Remediation
 
-- Add one controlled automatic recorder restart when the live signal remains
-  absent beyond the warm-up interval.
+- Add one controlled automatic recovery when the live signal remains absent
+  beyond the warm-up interval.
+- Make recovery cross an implementation boundary: start an `AVAudioEngine`
+  input tap using the active hardware format before releasing the stalled
+  `AVAudioRecorder`.
+- Do not enable the Voice Processing input unit in the recovery backend. A
+  prior voice-processing engine path could start without delivering writable
+  frames.
+- Replace the destination only after the independent backend starts; preserve
+  the initial file if fallback startup itself fails.
 - Preserve the user-facing elapsed clock across the restart.
 - Reset only signal-attempt metering/history so the replacement stream receives
   a fresh warm-up window.
@@ -71,12 +93,13 @@ replacement, and a transient Core Audio stream failure.
 - Keep post-capture file, decoded-frame, bitrate, and local speech checks as a
   second independent layer.
 
-## Why one retry
+## Why one recovery
 
-A single retry addresses a transient dead stream without creating a hidden
-infinite loop or repeatedly discarding intentional silence. If the user waits
-silently at the beginning, the restarted stream remains ready for later speech.
-If the device is truly muted or unavailable, the second attempt fails visibly.
+A single cross-backend recovery addresses a transient dead stream without
+creating a hidden infinite loop or repeatedly discarding intentional silence.
+If the user waits silently at the beginning, the replacement stream remains
+ready for later speech. If the device is truly muted or unavailable, the
+second attempt fails visibly.
 
 ## Verification
 

@@ -47,12 +47,17 @@ import Testing
     #expect(FloatingWidgetWindowPolicy.recordingWidth > FloatingWidgetWindowPolicy.collapsedWidth)
     #expect(FloatingWidgetWindowPolicy.recordingWidth < FloatingWidgetWindowPolicy.expandedWidth)
     #expect(FloatingWidgetWindowPolicy.recordingWaveformSampleCount == 64)
-    #expect(FloatingWidgetWindowPolicy.recordingWaveformBarSpacing == 1.55)
     #expect(
         FloatingWidgetWindowPolicy.recordingWaveformBarWidth(
             availableWidth: 180
-        ) == 0.85
+        ) == 1
     )
+    #expect(
+        FloatingWidgetWindowPolicy.recordingWaveformBarSpacing(
+            availableWidth: 190
+        ) == 2
+    )
+    #expect(FloatingWidgetMotionPolicy.durationSeconds == 0.24)
     #expect(FloatingWidgetWindowPolicy.playbackWidth > FloatingWidgetWindowPolicy.collapsedWidth)
     #expect(FloatingWidgetWindowPolicy.playbackWidth < FloatingWidgetWindowPolicy.expandedWidth)
     #expect(FloatingWidgetWindowPolicy.timerGap == 10)

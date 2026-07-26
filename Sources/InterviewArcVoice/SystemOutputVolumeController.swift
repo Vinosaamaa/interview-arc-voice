@@ -164,7 +164,9 @@ final class SystemOutputVolumeController {
             return setVolume(baseline.originalVolume, device: route.device)
         }
 
-        if let adjusted = session.route(
+        if BackgroundAudioPolicy.shouldRestoreTemporaryRoute(
+            hasPendingBaseline: session.baseline != nil
+        ), let adjusted = session.route(
             deviceUID: route.deviceUID,
             nominalSampleRate: route.nominalSampleRate,
             outputChannelCount: route.outputChannelCount

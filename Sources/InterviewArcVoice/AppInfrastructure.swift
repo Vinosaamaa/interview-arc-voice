@@ -655,7 +655,7 @@ final class FloatingPanelController {
             panel.setFrame(frame, display: true)
         } else {
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.24
+                context.duration = FloatingWidgetMotionPolicy.durationSeconds
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 panel.animator().setFrame(frame, display: true)
             }
@@ -1324,6 +1324,7 @@ struct FloatingRecorderView: View {
 
 private struct FloatingTimerInstrumentPanel: View {
     @ObservedObject var model: VoiceBridgeModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let instrument: VoiceTimerInstrument
 
     private var palette: VoiceWidgetPalette { model.widgetPalette }
@@ -1403,32 +1404,49 @@ private struct FloatingTimerInstrumentPanel: View {
                     .background(palette.warning.opacity(0.07))
             }
 
-            if let activity = model.finishingActivity {
-                Divider().overlay(palette.divider.opacity(0.65))
-                finishDrawer(activity)
-            } else if model.activityPickerExpanded {
-                Divider().overlay(palette.divider.opacity(0.65))
-                activityPicker
-            } else if !availableActivities.isEmpty {
-                Divider().overlay(palette.divider.opacity(0.65))
-                Button(action: model.toggleActivityPicker) {
-                    HStack(spacing: 7) {
-                        Image(systemName: "list.bullet")
-                            .font(.system(size: 11, weight: .semibold))
-                        Text(instrument.activity == nil ? "Start an activity" : "Choose another activity")
-                            .font(.system(size: 11, weight: .semibold))
-                        Spacer()
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .bold))
+            Group {
+                if let activity = model.finishingActivity {
+                    VStack(spacing: 0) {
+                        Divider().overlay(palette.divider.opacity(0.65))
+                        finishDrawer(activity)
                     }
-                    .foregroundStyle(palette.tealDark)
-                    .padding(.horizontal, 14)
-                    .frame(height: 38)
-                    .contentShape(Rectangle())
+                    .transition(drawerTransition)
+                } else if model.activityPickerExpanded {
+                    VStack(spacing: 0) {
+                        Divider().overlay(palette.divider.opacity(0.65))
+                        activityPicker
+                    }
+                    .transition(drawerTransition)
+                } else if !availableActivities.isEmpty {
+                    VStack(spacing: 0) {
+                        Divider().overlay(palette.divider.opacity(0.65))
+                        Button(action: model.toggleActivityPicker) {
+                            HStack(spacing: 7) {
+                                Image(systemName: "list.bullet")
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text(
+                                    instrument.activity == nil
+                                        ? "Start an activity"
+                                        : "Choose another activity"
+                                )
+                                .font(.system(size: 11, weight: .semibold))
+                                Spacer()
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 9, weight: .bold))
+                            }
+                            .foregroundStyle(palette.tealDark)
+                            .padding(.horizontal, 14)
+                            .frame(height: 38)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .voiceHoverFeedback(cornerRadius: 9, tint: palette.teal)
+                    }
+                    .transition(drawerTransition)
                 }
-                .buttonStyle(.plain)
-                .voiceHoverFeedback(cornerRadius: 9, tint: palette.teal)
             }
+            .animation(drawerAnimation, value: model.finishingActivityID)
+            .animation(drawerAnimation, value: model.activityPickerExpanded)
         }
         .background {
             RoundedRectangle(cornerRadius: 17, style: .continuous)
@@ -1461,6 +1479,21 @@ private struct FloatingTimerInstrumentPanel: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Interview Arc timers")
+    }
+
+    private var drawerAnimation: Animation {
+        reduceMotion
+            ? .linear(duration: 0.10)
+            : .easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)
+    }
+
+    private var drawerTransition: AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+        return .opacity.combined(
+            with: .scale(scale: 0.985, anchor: .bottom)
+        )
     }
 
     private func timerRow(
@@ -2040,7 +2073,10 @@ private struct LiveVoiceWaveform: View {
             let barWidth = FloatingWidgetWindowPolicy.recordingWaveformBarWidth(
                 availableWidth: geometry.size.width
             )
-            HStack(spacing: FloatingWidgetWindowPolicy.recordingWaveformBarSpacing) {
+            let barSpacing = FloatingWidgetWindowPolicy.recordingWaveformBarSpacing(
+                availableWidth: geometry.size.width
+            )
+            HStack(spacing: barSpacing) {
                 ForEach(Array(displayedLevels.enumerated()), id: \.offset) { index, level in
                     Capsule(style: .continuous)
                         .fill(color)

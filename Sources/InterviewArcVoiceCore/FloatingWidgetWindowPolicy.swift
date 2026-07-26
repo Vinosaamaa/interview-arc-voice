@@ -48,8 +48,7 @@ public enum FloatingWidgetWindowPolicy {
     public static let collapsedWidth: CGFloat = 250
     public static let recordingWidth: CGFloat = 340
     public static let recordingWaveformSampleCount = 64
-    public static let recordingWaveformBarSpacing: CGFloat = 1.55
-    public static let recordingWaveformBarWidth: CGFloat = 0.85
+    public static let recordingWaveformBarWidth: CGFloat = 1
     public static let playbackWidth: CGFloat = 410
     public static let expandedWidth: CGFloat = 430
     public static let capsuleHeight: CGFloat = 40
@@ -71,6 +70,17 @@ public enum FloatingWidgetWindowPolicy {
         return recordingWaveformBarWidth
     }
 
+    public static func recordingWaveformBarSpacing(
+        availableWidth: CGFloat
+    ) -> CGFloat {
+        guard recordingWaveformSampleCount > 1 else { return 0 }
+        let marksWidth = CGFloat(recordingWaveformSampleCount) * recordingWaveformBarWidth
+        return max(
+            0,
+            (availableWidth - marksWidth) / CGFloat(recordingWaveformSampleCount - 1)
+        )
+    }
+
     public static func disclosureStateWhenRecordingStarts(
         current: FloatingWidgetDisclosureState
     ) -> FloatingWidgetDisclosureState {
@@ -81,6 +91,10 @@ public enum FloatingWidgetWindowPolicy {
             activityPickerExpanded: false
         )
     }
+}
+
+public enum FloatingWidgetMotionPolicy {
+    public static let durationSeconds: TimeInterval = 0.24
 }
 
 public enum FloatingWidgetCompactTimerLayoutPolicy {
