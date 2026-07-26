@@ -159,11 +159,13 @@ public struct VoiceCaptureResponse: Codable, Equatable, Sendable {
 }
 
 public struct VoiceCaptureEnvelope: Equatable, Sendable {
+    public let captureID: String
     public let activityID: String
     public let turnID: String
     public let transcript: String
 
-    public init(activityID: String, turnID: String, transcript: String) {
+    public init(captureID: String, activityID: String, turnID: String, transcript: String) {
+        self.captureID = captureID
         self.activityID = activityID
         self.turnID = turnID
         self.transcript = transcript
@@ -173,11 +175,12 @@ public struct VoiceCaptureEnvelope: Equatable, Sendable {
         """
         \(transcript)
 
-        <!-- interview-arc-voice:v1
+        <!-- interview-arc-voice:v2
+        captureId: \(commentSafe(captureID))
         activityId: \(commentSafe(activityID))
         turnId: \(commentSafe(turnID))
-        voiceManagedTurn: true
-        doNotAppendUserTurn: true
+        intentDecisionRequired: true
+        transcriptStoredLocallyUntilAccepted: true
         -->
 
         """
@@ -189,6 +192,43 @@ public struct VoiceCaptureEnvelope: Equatable, Sendable {
             .replacingOccurrences(of: "\n", with: "")
             .replacingOccurrences(of: "\r", with: "")
     }
+}
+
+public struct VoiceCaptureIntent: Codable, Equatable, Sendable {
+    public let captureId: String
+    public let activityId: String
+    public let turnId: String
+    public let clipId: String
+    public let specialty: String
+    public let status: String
+    public let checksum: String
+    public let occurredAt: Int64
+    public let decidedAt: Int64?
+    public let decisionSource: String?
+    public let decisionReason: String?
+    public let lastError: String?
+}
+
+public struct VoiceCaptureIntentResponse: Codable, Equatable, Sendable {
+    public let protocolVersion: Int
+    public let intent: VoiceCaptureIntent
+}
+
+public struct VoiceCaptureIntentListResponse: Codable, Equatable, Sendable {
+    public let protocolVersion: Int
+    public let intents: [VoiceCaptureIntent]
+    public let legacyOrphans: [LegacyVoiceCapture]
+}
+
+public struct LegacyVoiceCapture: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { clipId }
+    public let clipId: String
+    public let activityId: String
+    public let turnId: String
+    public let occurredAt: Int64
+    public let excerpt: String
+    public let durationSeconds: Int?
+    public let status: String
 }
 
 public struct AudioUploadResponse: Codable, Equatable, Sendable {

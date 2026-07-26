@@ -34,5 +34,11 @@ final class MicrophoneSignalPolicyTests: XCTestCase {
             .detected
         )
     }
-}
 
+    func testSilentStreamGetsOneControlledRestart() {
+        let recovery = MicrophoneStreamRecoveryPolicy()
+        XCTAssertTrue(recovery.shouldRestart(health: .absent, completedRestarts: 0))
+        XCTAssertFalse(recovery.shouldRestart(health: .absent, completedRestarts: 1))
+        XCTAssertFalse(recovery.shouldRestart(health: .detected, completedRestarts: 0))
+    }
+}

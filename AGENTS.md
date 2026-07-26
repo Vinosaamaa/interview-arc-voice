@@ -1,6 +1,6 @@
 # Interview Arc Voice Agent Instructions
 
-Read `README.md`, `docs/architecture.md`, and `docs/protocol-v1.md` before
+Read `README.md`, `docs/architecture.md`, and `docs/protocol-v2.md` before
 changing this repository.
 
 Before creating, implementing, closing, or reopening GitHub work, read and

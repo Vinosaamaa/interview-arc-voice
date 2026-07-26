@@ -1,7 +1,7 @@
 import Foundation
 
 public actor InterviewArcAPIClient {
-    public static let protocolVersion = 1
+    public static let protocolVersion = 2
 
     private let baseURL: URL
     private let token: String
@@ -83,7 +83,9 @@ public actor InterviewArcAPIClient {
         activity: FocusedVoiceActivity,
         turnID: String,
         transcript: String,
-        occurredAt: Date
+        occurredAt: Date,
+        captureID: String? = nil,
+        checksum: String? = nil
     ) async throws -> VoiceCaptureResponse {
         struct Body: Encodable {
             let protocolVersion: Int
@@ -92,6 +94,8 @@ public actor InterviewArcAPIClient {
             let turnId: String
             let transcript: String
             let occurredAt: Int64
+            let captureId: String?
+            let checksum: String?
         }
         let body = Body(
             protocolVersion: Self.protocolVersion,
@@ -99,9 +103,98 @@ public actor InterviewArcAPIClient {
             specialty: activity.interviewArcSpecialty,
             turnId: turnID,
             transcript: transcript,
-            occurredAt: Int64(occurredAt.timeIntervalSince1970 * 1_000)
+            occurredAt: Int64(occurredAt.timeIntervalSince1970 * 1_000),
+            captureId: captureID,
+            checksum: checksum
         )
         return try await send(path: "voice/captures", method: "POST", body: encoder.encode(body))
+    }
+
+    public func registerIntent(_ capture: PendingVoiceCapture) async throws -> VoiceCaptureIntentResponse {
+        struct Body: Encodable {
+            let protocolVersion: Int
+            let captureId: String
+            let activityId: String
+            let turnId: String
+            let clipId: String
+            let specialty: String
+            let checksum: String
+            let occurredAt: Int64
+        }
+        let body = Body(
+            protocolVersion: Self.protocolVersion,
+            captureId: capture.id,
+            activityId: capture.activity.activityId,
+            turnId: capture.turnID,
+            clipId: capture.clipID,
+            specialty: capture.activity.interviewArcSpecialty,
+            checksum: capture.checksum,
+            occurredAt: Int64(capture.occurredAt.timeIntervalSince1970 * 1_000)
+        )
+        return try await send(path: "voice/intents", method: "POST", body: encoder.encode(body))
+    }
+
+    public func intents(captureIDs: [String]) async throws -> [VoiceCaptureIntent] {
+        guard !captureIDs.isEmpty else { return [] }
+        var components = URLComponents(
+            url: baseURL.appending(path: "voice/intents"),
+            resolvingAgainstBaseURL: false
+        )!
+        components.queryItems = captureIDs.map { URLQueryItem(name: "captureId", value: $0) }
+        let response: VoiceCaptureIntentListResponse = try await send(
+            url: components.url!,
+            method: "GET",
+            body: Optional<Data>.none
+        )
+        return response.intents
+    }
+
+    public func legacyVoiceOrphans() async throws -> [LegacyVoiceCapture] {
+        let response: VoiceCaptureIntentListResponse = try await send(
+            path: "voice/intents",
+            method: "GET",
+            body: Optional<Data>.none
+        )
+        return response.legacyOrphans
+    }
+
+    public func decideIntent(
+        captureID: String,
+        decision: String,
+        reason: String
+    ) async throws -> VoiceCaptureIntentResponse {
+        struct Body: Encodable {
+            let protocolVersion: Int
+            let decision: String
+            let reason: String
+        }
+        return try await send(
+            path: "voice/intents/\(captureID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? captureID)/decision",
+            method: "POST",
+            body: encoder.encode(Body(
+                protocolVersion: Self.protocolVersion,
+                decision: decision,
+                reason: reason
+            ))
+        )
+    }
+
+    public func deleteCapture(captureID: String) async throws {
+        struct Response: Decodable { let status: String }
+        let _: Response = try await send(
+            path: "voice/captures/\(captureID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? captureID)",
+            method: "DELETE",
+            body: Optional<Data>.none
+        )
+    }
+
+    public func deleteLegacyCapture(clipID: String) async throws {
+        struct Response: Decodable { let status: String }
+        let _: Response = try await send(
+            path: "voice/legacy-orphans/\(clipID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? clipID)",
+            method: "DELETE",
+            body: Optional<Data>.none
+        )
     }
 
     public func uploadAudio(
@@ -109,7 +202,8 @@ public actor InterviewArcAPIClient {
         clipID: String,
         activityID: String,
         turnID: String,
-        durationSeconds: Double
+        durationSeconds: Double,
+        captureID: String? = nil
     ) async throws -> AudioUploadResponse {
         let boundary = "InterviewArcVoice-\(UUID().uuidString)"
         var request = authorizedRequest(path: "audio/upload", method: "POST")
@@ -117,6 +211,9 @@ public actor InterviewArcAPIClient {
         let fileData = try Data(contentsOf: fileURL, options: .mappedIfSafe)
         var body = Data()
         body.appendFormField("clipId", clipID, boundary: boundary)
+        if let captureID {
+            body.appendFormField("captureId", captureID, boundary: boundary)
+        }
         body.appendFormField("activityId", activityID, boundary: boundary)
         body.appendFormField("transcriptTurnId", turnID, boundary: boundary)
         body.appendFormField("label", "Recorded answer", boundary: boundary)
@@ -162,7 +259,11 @@ public actor InterviewArcAPIClient {
     }
 
     private func send<Response: Decodable>(path: String, method: String, body: Data?) async throws -> Response {
-        var request = authorizedRequest(path: path, method: method)
+        try await send(url: baseURL.appending(path: path), method: method, body: body)
+    }
+
+    private func send<Response: Decodable>(url: URL, method: String, body: Data?) async throws -> Response {
+        var request = authorizedRequest(url: url, method: method)
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = body
@@ -173,7 +274,11 @@ public actor InterviewArcAPIClient {
     }
 
     private func authorizedRequest(path: String, method: String) -> URLRequest {
-        var request = URLRequest(url: baseURL.appending(path: path))
+        authorizedRequest(url: baseURL.appending(path: path), method: method)
+    }
+
+    private func authorizedRequest(url: URL, method: String) -> URLRequest {
+        var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("InterviewArcVoice/0.1", forHTTPHeaderField: "User-Agent")

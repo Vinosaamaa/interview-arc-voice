@@ -2,6 +2,12 @@ import Foundation
 import Testing
 @testable import InterviewArcVoiceCore
 
+@Test func onlyCodexCapturesMayAttachToInterviewArc() {
+    #expect(CaptureTargetApplicationPolicy.canAttachToInterviewArc(bundleIdentifier: "com.openai.codex"))
+    #expect(!CaptureTargetApplicationPolicy.canAttachToInterviewArc(bundleIdentifier: "com.google.Chrome"))
+    #expect(!CaptureTargetApplicationPolicy.canAttachToInterviewArc(bundleIdentifier: nil))
+}
+
 @Test func staleContextRefreshCannotReplaceTheLatestActivity() {
     #expect(
         ContextRefreshOrderingPolicy.shouldApply(
@@ -37,7 +43,7 @@ import Testing
         runningSince: 1_000
     )
     let refreshed = VoiceContextResponse(
-        protocolVersion: 1,
+        protocolVersion: 2,
         date: "2026-07-24",
         focusedActivity: nil,
         timerInstrument: nil,
@@ -180,7 +186,7 @@ private func voiceContext(
     runningSince: Int64
 ) -> VoiceContextResponse {
     VoiceContextResponse(
-        protocolVersion: 1,
+        protocolVersion: 2,
         date: "2026-07-24",
         focusedActivity: focusedActivity(
             id: activityID,
