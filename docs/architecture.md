@@ -120,6 +120,9 @@ then consumes those terms without contacting an LLM during recording.
 `interview-arc-voice` owns microphone capture, linked local files, temporary
 general-dictation files, transcription, Keychain secrets, Delivery Coach CLI
 work, global shortcut registration, direct text insertion, and retry state.
+Global shortcuts are dispatched by their Carbon hotkey identifier rather than
+only by the shared event class. Shortcut capture unregisters both combinations
+until it succeeds or is cancelled, then restores both registrations.
 
 `interview-arc` owns identity, the focused activity, task registry, transcript
 turn IDs, R2 metadata, delivery-analysis records, publication, and playback.

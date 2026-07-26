@@ -75,6 +75,13 @@ Save, and Retry instead of being discarded.
 - The Record/Stop shortcut defaults to `Control-Option-Space`. A separate
   configurable `Control-Option-L` shortcut toggles Interview Arc linking while
   Voice is idle.
+- Both shortcuts are routed independently by their registered macOS hotkey ID.
+  Settings temporarily suspends the registrations while learning a replacement,
+  so an existing shortcut can be entered again; Escape or Cancel abandons
+  capture.
+- The packaged app is a normal Applications app and participates in the Dock
+  and app switcher. Every Settings entry point activates and raises the existing
+  Settings window instead of leaving it hidden behind another app.
 - The menu panel is fixed at 260 points wide. The always-on-top recorder is a
   layered 250-by-40-point capsule that smoothly widens to 360 points for
   seekable playback, then returns to its compact state. It uses one hollow
