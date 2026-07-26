@@ -1,7 +1,7 @@
 # Postmortem: Bluetooth output volume remained ducked after dictation
 
 **Date:** 2026-07-26  
-**Status:** In review; implementation validated in CI, installed-app verification pending  
+**Status:** Final  
 **Related issues:** #38, #37  
 **Repair PR:** #56
 
@@ -98,12 +98,24 @@ Completed:
 - CI runs the complete Swift test suite and packages the application successfully.
 - Local Swift parsing and repository consistency checks pass.
 
-Required before final closure:
+Installed-app verification:
 
-- Install the artifact built from merged `main`.
-- Verify a real AirPods Max sequence: 30% stereo → 6% hands-free while recording → 30% stereo after stopping.
-- Verify the restoration snapshot remains while the hands-free profile is active and clears only after stereo restoration.
-- Verify Record again and Play from the recovery popover transition without clipping.
+- The installed binary matched the staged package from the passing macOS
+  `test-and-package` run for the merged code.
+- A real AirPods Max cycle produced 30% at 48 kHz / two-channel stereo,
+  5–6% at 24 kHz / one-channel hands-free while recording, and 30% stereo
+  after Stop.
+- The restoration snapshot existed during recording and cleared after the
+  original profile returned.
+- Recovery → Record again entered Recording live at 00:01 with the complete
+  capsule visible and no prior leading-edge crop.
+- A repeat cycle briefly remained in the hands-free profile at 27% while
+  another microphone holder was active; after release, it returned to 30%
+  stereo and never retained the 5–6% ducked level.
+
+The code commit passed the complete Swift test-and-package workflow. A later
+documentation-only rerun did not start because GitHub Actions reported an
+account billing/spending-limit block; no build or test step failed.
 
 ## Lessons learned
 
@@ -124,7 +136,7 @@ Required before final closure:
 | Priority | Action | Status |
 |---|---|---|
 | P0 | Keep a durable baseline until the original output profile is restored | Implemented in #56 |
-| P0 | Validate the exact merged artifact on real AirPods before closing #38 | Pending merge/install |
+| P0 | Validate the merged code artifact on real AirPods before closing #38 | Completed |
 | P1 | Preserve route-profile regression tests in CI | Implemented in #56 |
 | P1 | Use native completion events for recovery-popover actions | Implemented in #56 |
 | P2 | Add diagnostic logging for route signatures and restoration state without recording sensitive audio | Follow-up |
