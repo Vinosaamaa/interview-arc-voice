@@ -21,20 +21,20 @@ import Testing
     )
 }
 
-@Test func microphoneStartupRemainsPreparingUntilUsableInputArrives() {
+@Test func microphoneStartupBecomesLiveAsSoonAsTheCaptureBackendAdvances() {
     let policy = MicrophoneStartupReadinessPolicy(
         primaryTimeoutSeconds: 1.25,
         fallbackTimeoutSeconds: 1.25
     )
 
     #expect(policy.decision(
-        elapsedSeconds: 0.8,
-        hasUsableInput: false,
+        elapsedSeconds: 0.02,
+        captureBackendIsAdvancing: false,
         isUsingFallback: false
     ) == .wait)
     #expect(policy.decision(
-        elapsedSeconds: 0.8,
-        hasUsableInput: true,
+        elapsedSeconds: 0.04,
+        captureBackendIsAdvancing: true,
         isUsingFallback: false
     ) == .ready)
 }
@@ -47,39 +47,14 @@ import Testing
 
     #expect(policy.decision(
         elapsedSeconds: 1.25,
-        hasUsableInput: false,
+        captureBackendIsAdvancing: false,
         isUsingFallback: false
     ) == .startFallback)
     #expect(policy.decision(
         elapsedSeconds: 1.25,
-        hasUsableInput: false,
+        captureBackendIsAdvancing: false,
         isUsingFallback: true
     ) == .fail)
-}
-
-@Test func bluetoothMicrophoneWaitsForTheChangedRouteToRemainStable() {
-    let policy = BluetoothMicrophoneRouteReadinessPolicy(
-        minimumStableSeconds: 0.6
-    )
-
-    #expect(!policy.isReady(
-        baselineIsBluetooth: true,
-        currentRouteIsAvailable: true,
-        currentRouteMatchesBaseline: true,
-        changedRouteStableSeconds: 0
-    ))
-    #expect(!policy.isReady(
-        baselineIsBluetooth: true,
-        currentRouteIsAvailable: true,
-        currentRouteMatchesBaseline: false,
-        changedRouteStableSeconds: 0.59
-    ))
-    #expect(policy.isReady(
-        baselineIsBluetooth: true,
-        currentRouteIsAvailable: true,
-        currentRouteMatchesBaseline: false,
-        changedRouteStableSeconds: 0.6
-    ))
 }
 
 @Test func microphonePreparationRemainsAllowedAfterStartupIsClaimed() {

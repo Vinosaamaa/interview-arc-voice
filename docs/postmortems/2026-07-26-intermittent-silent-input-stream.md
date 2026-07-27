@@ -201,6 +201,31 @@ The follow-up changes the contract:
 Issue #58 was reopened for this recurrence. Issue #78, created before this
 incident history was rediscovered, was closed as a duplicate.
 
+## Third recurrence: the readiness repair blocked on output state
+
+The first follow-up repair was too strict. It required the active Bluetooth
+**output** profile to differ from its pre-recording signature and remain stable
+for 0.6 seconds. On the affected Mac, Core Audio could retain the same logical
+route identity, briefly flap between observable profiles, or expose a usable
+microphone before the output signature changed.
+
+That turned a diagnostic proxy into a blocking product dependency:
+
+- a usable recorder could remain stuck in Preparing microphone;
+- after four seconds, Voice unnecessarily opened the independent fallback;
+- the fallback could trigger another profile transition and then wait another
+  two seconds before failing;
+- the user observed repeated switching and a new failure mode that did not
+  exist before the readiness gate.
+
+The corrective rule is narrower: microphone startup becomes live as soon as
+the selected capture backend advances. It never waits for output-route
+identity, a fixed 0.6-second stabilization interval, ambient noise, or speech.
+The independent fallback remains bounded and is used only when the primary
+backend itself does not advance. Existing post-start signal health and
+finalized-file integrity checks remain responsible for detecting a genuinely
+silent or invalid stream without delaying every healthy recording.
+
 ## Follow-up
 
 - Add explicit default-input route-change telemetry with device identity before

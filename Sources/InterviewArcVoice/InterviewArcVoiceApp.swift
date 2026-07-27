@@ -1629,9 +1629,6 @@ final class VoiceBridgeModel: ObservableObject {
             contextMessage = "Preparing the microphone route…"
             try await recorder.start(
                 at: destination,
-                routeIsReady: { [weak self] in
-                    self?.outputVolumeController.microphoneRouteIsReadyForRecording() ?? false
-                },
                 captureBackendDidStart: { [weak self] in
                     self?.outputVolumeController.recordingDidStart()
                 }
