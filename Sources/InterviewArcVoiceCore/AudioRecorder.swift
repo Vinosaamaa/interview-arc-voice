@@ -113,8 +113,6 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
     private var expectedRecorderCompletion: AVAudioRecorder?
     private var unexpectedTerminationReported = false
     private let startupReadinessPolicy = MicrophoneStartupReadinessPolicy()
-    private static let startupSignalThresholdDecibels: Float = -155
-
     public override init() {}
 
     public func requestPermission() async -> Bool {
@@ -129,7 +127,6 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
 
     public func start(
         at url: URL,
-        routeIsReady: @escaping @MainActor () -> Bool = { true },
         captureBackendDidStart: @escaping @MainActor () -> Void = {}
     ) async throws {
         guard await requestPermission() else { throw VoiceBridgeError.microphoneDenied }
@@ -152,10 +149,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
             // input route even though AVAudioRecorder.record() returned true.
             try startRecorderFallback(at: url)
             captureBackendDidStart()
-            try await awaitOperationalInput(
-                isUsingFallback: false,
-                routeIsReady: routeIsReady
-            )
+            try await awaitOperationalInput(isUsingFallback: false)
         } catch {
             cancelPreparedCapture()
             throw error
@@ -190,30 +184,27 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
     }
 
     private func awaitOperationalInput(
-        isUsingFallback: Bool,
-        routeIsReady: @escaping @MainActor () -> Bool
+        isUsingFallback: Bool
     ) async throws {
         let attemptStartedAt = Date()
         while true {
-            let hasUsableInput: Bool
+            let captureBackendIsAdvancing: Bool
             if isUsingFallback {
-                hasUsableInput =
-                    routeIsReady()
-                    && (audioWriteState?.snapshot().frames ?? 0) > 0
+                captureBackendIsAdvancing =
+                    (audioWriteState?.snapshot().frames ?? 0) > 0
             } else if let recorder {
-                recorder.updateMeters()
-                hasUsableInput =
-                    routeIsReady()
-                    &&
-                    recorder.currentTime > 0.03
-                    && recorder.averagePower(forChannel: 0) > Self.startupSignalThresholdDecibels
+                // Do not block capture on an output-route signature or on
+                // speech volume. AirPods can keep the same logical output
+                // identity while their microphone is already usable, and a
+                // quiet user should not have to speak to unlock recording.
+                captureBackendIsAdvancing = recorder.currentTime > 0.03
             } else {
-                hasUsableInput = false
+                captureBackendIsAdvancing = false
             }
 
             switch startupReadinessPolicy.decision(
                 elapsedSeconds: Date().timeIntervalSince(attemptStartedAt),
-                hasUsableInput: hasUsableInput,
+                captureBackendIsAdvancing: captureBackendIsAdvancing,
                 isUsingFallback: isUsingFallback
             ) {
             case .wait:
@@ -222,10 +213,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
                 return
             case .startFallback:
                 try switchToEngineRecoveryCapture()
-                try await awaitOperationalInput(
-                    isUsingFallback: true,
-                    routeIsReady: routeIsReady
-                )
+                try await awaitOperationalInput(isUsingFallback: true)
                 return
             case .fail:
                 throw VoiceBridgeError.recordingUnavailable

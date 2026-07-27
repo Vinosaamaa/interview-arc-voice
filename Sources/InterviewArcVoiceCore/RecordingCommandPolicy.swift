@@ -50,34 +50,13 @@ public struct MicrophoneStartupReadinessPolicy: Equatable, Sendable {
 
     public func decision(
         elapsedSeconds: TimeInterval,
-        hasUsableInput: Bool,
+        captureBackendIsAdvancing: Bool,
         isUsingFallback: Bool
     ) -> MicrophoneStartupReadinessDecision {
-        if hasUsableInput { return .ready }
+        if captureBackendIsAdvancing { return .ready }
         let timeout = isUsingFallback ? fallbackTimeoutSeconds : primaryTimeoutSeconds
         if elapsedSeconds < timeout { return .wait }
         return isUsingFallback ? .fail : .startFallback
-    }
-}
-
-public struct BluetoothMicrophoneRouteReadinessPolicy: Equatable, Sendable {
-    public let minimumStableSeconds: TimeInterval
-
-    public init(minimumStableSeconds: TimeInterval = 0.6) {
-        self.minimumStableSeconds = minimumStableSeconds
-    }
-
-    public func isReady(
-        baselineIsBluetooth: Bool,
-        currentRouteIsAvailable: Bool,
-        currentRouteMatchesBaseline: Bool,
-        changedRouteStableSeconds: TimeInterval
-    ) -> Bool {
-        if !baselineIsBluetooth { return true }
-        guard currentRouteIsAvailable, !currentRouteMatchesBaseline else {
-            return false
-        }
-        return changedRouteStableSeconds >= minimumStableSeconds
     }
 }
 
