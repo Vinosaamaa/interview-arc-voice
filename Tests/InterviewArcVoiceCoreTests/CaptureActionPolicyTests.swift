@@ -1,6 +1,24 @@
 import Testing
 @testable import InterviewArcVoiceCore
 
+@Test func insertionTargetsExcludeVoiceAndTransientSystemSurfaces() {
+    #expect(!CaptureTargetApplicationPolicy.canReceiveDictation(
+        bundleIdentifier: "app.interviewarc.voice"
+    ))
+    #expect(!CaptureTargetApplicationPolicy.canReceiveDictation(
+        bundleIdentifier: "com.apple.systemuiserver"
+    ))
+    #expect(!CaptureTargetApplicationPolicy.canReceiveDictation(
+        bundleIdentifier: "com.apple.controlcenter"
+    ))
+    #expect(CaptureTargetApplicationPolicy.canReceiveDictation(
+        bundleIdentifier: "com.openai.codex"
+    ))
+    #expect(CaptureTargetApplicationPolicy.canReceiveDictation(
+        bundleIdentifier: "com.google.Chrome"
+    ))
+}
+
 @Test func linkedCaptureCopyIncludesTheExactVoiceEnvelope() {
     let payload = CaptureActionPolicy.copyPayload(
         transcript: "I would use dynamic programming.",

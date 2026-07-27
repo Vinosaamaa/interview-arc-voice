@@ -24,3 +24,13 @@ public enum RecordingPreparationPolicy {
         hasGroqCredential && !isBusy
     }
 }
+
+public enum RecordingTerminationPolicy {
+    public static func shouldSurfaceUnexpectedTermination(
+        isCaptureActive: Bool,
+        completionWasExpected: Bool,
+        alreadyReported: Bool
+    ) -> Bool {
+        isCaptureActive && !completionWasExpected && !alreadyReported
+    }
+}

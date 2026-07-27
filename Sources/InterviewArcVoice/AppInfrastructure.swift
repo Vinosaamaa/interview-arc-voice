@@ -317,7 +317,9 @@ final class DictationTextInjector {
         }
         guard let targetPID,
               let target = NSRunningApplication(processIdentifier: targetPID),
-              target.bundleIdentifier != Bundle.main.bundleIdentifier else {
+              CaptureTargetApplicationPolicy.canReceiveDictation(
+                  bundleIdentifier: target.bundleIdentifier
+              ) else {
             textInjectionLogger.error("Insertion has no valid external target")
             return .noFocusedEditor
         }
@@ -339,6 +341,7 @@ final class DictationTextInjector {
         try? await Task.sleep(for: .milliseconds(220))
 
         let application = AXUIElementCreateApplication(targetPID)
+        AXUIElementSetMessagingTimeout(application, 1)
         var focusedValue: CFTypeRef?
         if AXUIElementCopyAttributeValue(
             application,
@@ -939,6 +942,11 @@ struct FloatingRecorderView: View {
                     }
                     if !model.hasTimerInstrument, !model.lastTranscript.isEmpty {
                         memoButton(
+                            symbol: "text.cursor",
+                            label: "Insert last transcript",
+                            action: model.reinsertLastTranscript
+                        )
+                        memoButton(
                             symbol: "doc.on.doc",
                             label: "Copy last transcript",
                             action: model.copyLastTranscript
@@ -1017,6 +1025,11 @@ struct FloatingRecorderView: View {
                             symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
                             label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
                             action: model.toggleLastAudioPlayback
+                        )
+                        memoButton(
+                            symbol: "text.cursor",
+                            label: "Insert last transcript",
+                            action: model.reinsertLastTranscript
                         )
                         memoButton(
                             symbol: "doc.on.doc",
@@ -1222,6 +1235,11 @@ struct FloatingRecorderView: View {
             )
             .controlSize(.mini)
             .tint(palette.teal)
+            memoButton(
+                symbol: "text.cursor",
+                label: "Insert last transcript",
+                action: model.reinsertLastTranscript
+            )
             memoButton(
                 symbol: "doc.on.doc",
                 label: "Copy last transcript",

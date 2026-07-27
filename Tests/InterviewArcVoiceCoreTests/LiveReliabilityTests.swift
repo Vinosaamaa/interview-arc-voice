@@ -106,6 +106,30 @@ import Testing
     #expect(FloatingWidgetCompactTimerLayoutPolicy.showsPreviousMemoActionsWhenExpanded)
 }
 
+@Test func backgroundReconciliationNeverReplacesAnActiveRecordingPresentation() {
+    #expect(
+        VoiceBackgroundPresentationPolicy.decision(
+            foreground: .recording,
+            stateUnchangedDuringReconciliation: true
+        ) == .preserveForeground
+    )
+}
+
+@Test func backgroundReconciliationMayPublishStatusOnlyFromAnUnchangedIdleSurface() {
+    #expect(
+        VoiceBackgroundPresentationPolicy.decision(
+            foreground: .idle,
+            stateUnchangedDuringReconciliation: true
+        ) == .publishBackgroundStatus
+    )
+    #expect(
+        VoiceBackgroundPresentationPolicy.decision(
+            foreground: .idle,
+            stateUnchangedDuringReconciliation: false
+        ) == .preserveForeground
+    )
+}
+
 @Test func permanentCaptureConflictNeverBecomesHotRetryWork() {
     var capture = pendingCapture()
     capture.localState = .quarantinedConflict
