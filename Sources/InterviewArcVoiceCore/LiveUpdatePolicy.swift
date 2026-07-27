@@ -30,7 +30,8 @@ public struct VoiceCaptureRetryPolicy: Sendable {
 
     public func isDue(_ capture: PendingVoiceCapture, now: Date = Date()) -> Bool {
         guard capture.localState != .quarantinedConflict else { return false }
-        return capture.nextAttemptAt.map { $0 <= now } ?? capture.localState == .insertedRegistrationPending
+        return capture.nextAttemptAt.map { $0 <= now }
+            ?? (capture.localState == .insertedRegistrationPending)
     }
 
     public func isExpired(_ capture: PendingVoiceCapture, now: Date = Date()) -> Bool {
