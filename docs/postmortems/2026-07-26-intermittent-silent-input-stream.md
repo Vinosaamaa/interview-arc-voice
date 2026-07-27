@@ -166,6 +166,41 @@ policy and the independent `AVAudioEngine` fallback path; the next naturally
 occurring route transition remains observational verification of the platform
 trigger.
 
+## Second recurrence: live UI preceded microphone readiness
+
+On 2026-07-27 the user observed a narrower but still destructive form of the
+same incident: after pressing Record with AirPods, Voice immediately displayed
+the red live state while the first approximately one to three seconds contained
+no useful microphone signal. Input then appeared after the Bluetooth profile
+finished changing.
+
+The earlier repair detected and replaced a stream that stayed silent for 2.5
+seconds, but the product still equated `AVAudioRecorder.record()` returning
+`true` with user-visible readiness. That API confirms that recording was
+requested; it does not confirm that Bluetooth has completed the A2DP-to-
+hands-free transition or that useful input is arriving. The design therefore
+allowed users to speak into a UI that claimed to be live before the hardware
+boundary was ready. Post-capture integrity checks and the independent fallback
+could reject or recover the stream later, but they could not recover words
+spoken during the misleading startup interval.
+
+The follow-up changes the contract:
+
+1. Record first enters a visible **Preparing microphone** phase.
+2. The destination file is already open, preserving the earliest usable
+   pre-roll.
+3. Bluetooth readiness requires the output profile to change away from its
+   pre-recording route and remain stable, plus usable recorder input.
+4. Only then does Voice expose the red Recording state and start its visible
+   elapsed clock.
+5. A bounded timeout crosses to the independent `AVAudioEngine` backend once;
+   a second timeout fails visibly instead of claiming success.
+6. Repeating the record command during preparation cancels it and removes the
+   partial local file.
+
+Issue #58 was reopened for this recurrence. Issue #78, created before this
+incident history was rediscovered, was closed as a duplicate.
+
 ## Follow-up
 
 - Add explicit default-input route-change telemetry with device identity before

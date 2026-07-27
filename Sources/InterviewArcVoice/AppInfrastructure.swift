@@ -1018,7 +1018,16 @@ struct FloatingRecorderView: View {
             )
             HStack(spacing: model.isRecording ? 4 : 6) {
                 linkButton
-                if model.isRecording {
+                if model.isStartingRecording {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Preparing mic…")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.tealDark)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .accessibilityLabel("Preparing microphone")
+                } else if model.isRecording {
                     if model.dynamicRecordingInterfaceActive {
                         Circle()
                             .fill(palette.warning)
@@ -1471,11 +1480,11 @@ struct FloatingRecorderView: View {
             )
         )
         .voiceHoverFeedback(
-            enabled: model.isRecording || model.canRecord,
+            enabled: model.isStartingRecording || model.isRecording || model.canRecord,
             cornerRadius: 18,
             tint: model.isRecording ? .red : palette.teal
         )
-        .disabled(!model.isRecording && !model.canRecord)
+        .disabled(!model.isStartingRecording && !model.isRecording && !model.canRecord)
         .accessibilityLabel(
             model.isBusy
                 ? model.processingStatus
