@@ -1028,6 +1028,11 @@ struct FloatingRecorderView: View {
                             label: "Save last audio and transcript",
                             action: model.exportLastMemo
                         )
+                        memoButton(
+                            symbol: "chevron.down",
+                            label: "Hide timers",
+                            action: model.toggleTimerPanel
+                        )
                     }
                     .frame(maxWidth: .infinity)
                 } else {

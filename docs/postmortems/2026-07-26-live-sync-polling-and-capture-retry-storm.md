@@ -51,3 +51,18 @@ Native client: [interview-arc-voice#64](https://github.com/Vinosaamaa/interview-
 - The server contract deploys before the dependent signed Voice artifact.
 - Merge alone does not resolve either issue; record deployed Worker versions,
   the exact installed Voice build, Companion reload, and request/CPU evidence.
+
+## Native follow-up: capture action completion
+
+The first installed reliability build exposed a separate foreground-state
+defect in the new Recent Captures recovery surface. `Insert Again` awaited the
+bounded text injector correctly, but its caller did not leave the global
+`inserting` phase when that await returned. The operation could therefore
+finish while the Voice interface continued to present an indefinite spinner.
+
+The follow-up repair gives every manual insertion attempt an explicit terminal
+outcome, uses one context-aware Copy action that preserves the exact v2
+envelope, and keeps a timer-disclosure control available when previous-memo
+actions replace the compact clocks. Regression coverage now treats successful
+and unsuccessful manual insertions as terminal states rather than relying on
+incidental phase changes elsewhere in the recording pipeline.

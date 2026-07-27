@@ -26,9 +26,12 @@ The floating capsule remains a simple recording and timer instrument.
   - Related · syncing
   - Retry scheduled
   - Conflict · review required
-- **Insert Again** and **Copy for Codex** reconstruct the complete Voice v2
-  envelope from the protected local record.
-- **Copy transcript** copies plain text.
+- **Insert Again** reconstructs the complete Voice v2 envelope from the
+  protected local record and always terminates with success or a recoverable
+  error.
+- One context-aware **Copy** action copies the transcript plus its exact Voice
+  v2 envelope when capture metadata exists. General dictation without metadata
+  remains plain text; there is no separate “Copy for Codex” action.
 - Attach/Delete appear only when a user decision is useful.
 - Retry controls appear only for genuine transient work. Waiting is never
   labeled a retry.
@@ -36,7 +39,8 @@ The floating capsule remains a simple recording and timer instrument.
 ## Floating timer integration
 
 When the timer drawer is expanded and a previous recording exists, the recorder
-row replaces its redundant compact clocks with Play, Copy transcript, and Save.
+row replaces its redundant compact clocks with Play, context-aware Copy, Save,
+and the timer-disclosure control so the expanded surface can still collapse.
 The activity title keeps the remaining flexible width. The authoritative
 session/activity clocks remain in the drawer above.
 

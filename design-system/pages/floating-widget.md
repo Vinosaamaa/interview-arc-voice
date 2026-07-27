@@ -193,7 +193,7 @@ least 58 points for the activity title.
 - Width changes: 200–260 ms ease-in-out, anchored to the widget’s right edge.
 - Timer expansion changes both width and height over the same 200–260 ms
   interval, anchored to the widget’s bottom-right corner.
-- The activity picker and finish-result drawer use the same 240 ms
+- The activity picker and finish-result drawer use the same 300 ms
   ease-in-out transaction in both directions. Their content fades with a
   restrained bottom-anchored scale while AppKit owns the corresponding window
   resize; opening and closing must feel symmetric.

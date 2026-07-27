@@ -57,7 +57,7 @@ import Testing
             availableWidth: 190
         ) == 2
     )
-    #expect(FloatingWidgetMotionPolicy.durationSeconds == 0.24)
+    #expect(FloatingWidgetMotionPolicy.durationSeconds == 0.30)
     #expect(FloatingWidgetWindowPolicy.playbackWidth > FloatingWidgetWindowPolicy.collapsedWidth)
     #expect(FloatingWidgetWindowPolicy.playbackWidth < FloatingWidgetWindowPolicy.expandedWidth)
     #expect(FloatingWidgetWindowPolicy.timerGap == 10)
