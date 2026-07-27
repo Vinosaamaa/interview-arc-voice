@@ -609,18 +609,19 @@ final class VoiceBridgeModel: ObservableObject {
             timerMutationMessage = nil
         }
         synchronizeFloatingPanelSize()
-        NSApp.requestUserAttention(.informationalRequest)
+        SessionFinishResolverWindowPresenter.shared.present(model: self)
     }
 
     func cancelSessionFinishResolution() {
         withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
             sessionFinishResolutionRequested = false
         }
+        SessionFinishResolverWindowPresenter.shared.dismiss()
         synchronizeFloatingPanelSize()
     }
 
     func requestSessionFinishReview() {
-        NSApp.requestUserAttention(.informationalRequest)
+        SessionFinishResolverWindowPresenter.shared.present(model: self)
     }
 
     func resolveSessionActivity(
@@ -2563,7 +2564,9 @@ private struct VoiceBridgeMenu: View {
                 microphoneSignalWarning
             }
             if model.isFailurePresented { failureCard }
-            if model.sessionFinishResolutionRequested { sessionFinishResolver }
+            if model.sessionFinishResolutionRequested {
+                SessionFinishResolverCard(model: model)
+            }
             if model.showsDeliverySteps { deliveryProgress }
             if model.hasLastMemo { transcriptPreview }
             if !model.pendingVoiceCaptures.isEmpty { recentCapturesCard }
@@ -2746,56 +2749,6 @@ private struct VoiceBridgeMenu: View {
             tint: model.isRecording ? .red : .teal
         )
         .disabled(!model.isRecording && !model.canRecord)
-    }
-
-    private var sessionFinishResolver: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("FINISH SESSION")
-                        .font(.caption2.weight(.bold))
-                        .tracking(0.8)
-                        .foregroundStyle(.secondary)
-                    Text("Choose a result for each started activity.")
-                        .font(.caption)
-                }
-                Spacer()
-                Button(action: model.cancelSessionFinishResolution) {
-                    Image(systemName: "xmark")
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Cancel finishing session")
-            }
-            ForEach(model.sessionFinishBlockers) { activity in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(activity.title)
-                        .font(.caption.weight(.semibold))
-                        .lineLimit(1)
-                    HStack(spacing: 6) {
-                        resultButton("Solved", outcome: .solved, activity: activity)
-                        resultButton("With help", outcome: .solvedAfterReviewingApproach, activity: activity)
-                        resultButton("Failed", outcome: .failed, activity: activity)
-                    }
-                }
-                .padding(8)
-                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 9))
-            }
-        }
-        .padding(10)
-        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-    }
-
-    private func resultButton(
-        _ label: String,
-        outcome: VoicePracticeOutcome,
-        activity: VoiceTimerActivity
-    ) -> some View {
-        Button(label) {
-            model.resolveSessionActivity(activity, outcome: outcome)
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .disabled(model.timerMutationInFlight)
     }
 
     private var deliveryProgress: some View {
