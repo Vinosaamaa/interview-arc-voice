@@ -98,6 +98,7 @@ public enum FloatingWidgetMotionPolicy {
 }
 
 public enum FloatingWidgetCompactTimerLayoutPolicy {
+    public static let showsPreviousMemoActionsWhenExpanded = true
     public static let minimumTitleWidth: CGFloat = 58
     public static let titleFillsAvailableHeight = true
     public static let activityClockWidth: CGFloat = 36

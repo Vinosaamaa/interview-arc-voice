@@ -23,6 +23,54 @@ public actor InterviewArcAPIClient {
         return response
     }
 
+    public func liveUpdates() -> AsyncThrowingStream<VoiceLiveUpdate, Error> {
+        var components = URLComponents(
+            url: baseURL.appending(path: "events"),
+            resolvingAgainstBaseURL: false
+        )!
+        components.scheme = components.scheme == "http" ? "ws" : "wss"
+        var request = URLRequest(url: components.url!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("InterviewArcVoice/0.3", forHTTPHeaderField: "User-Agent")
+        let socket = session.webSocketTask(with: request)
+        let liveDecoder = JSONDecoder()
+        let revisionPolicy = VoiceLiveRevisionPolicy()
+        return AsyncThrowingStream { continuation in
+            let reader = Task {
+                var latestRevision = 0
+                socket.resume()
+                do {
+                    while !Task.isCancelled {
+                        let message = try await socket.receive()
+                        let data: Data
+                        switch message {
+                        case .data(let value): data = value
+                        case .string(let value): data = Data(value.utf8)
+                        @unknown default: continue
+                        }
+                        guard
+                            let update = try? liveDecoder.decode(VoiceLiveUpdate.self, from: data),
+                            update.type == "practice_changed",
+                            revisionPolicy.shouldApply(
+                                revision: update.revision,
+                                latestRevision: latestRevision
+                            )
+                        else { continue }
+                        latestRevision = update.revision
+                        continuation.yield(update)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in
+                reader.cancel()
+                socket.cancel(with: .normalClosure, reason: nil)
+            }
+        }
+    }
+
     public func mutateTimer(
         subjectID: String,
         kind: String,
@@ -147,6 +195,33 @@ public actor InterviewArcAPIClient {
             body: Optional<Data>.none
         )
         return response.intents
+    }
+
+    public func retainedIntents() async throws -> [VoiceCaptureIntent] {
+        var cursor: String?
+        var results: [VoiceCaptureIntent] = []
+        repeat {
+            var components = URLComponents(
+                url: baseURL.appending(path: "voice/intents"),
+                resolvingAgainstBaseURL: false
+            )!
+            var queryItems = [
+                URLQueryItem(name: "status", value: "retained"),
+                URLQueryItem(name: "limit", value: "100"),
+            ]
+            if let cursor {
+                queryItems.append(URLQueryItem(name: "cursor", value: cursor))
+            }
+            components.queryItems = queryItems
+            let response: VoiceCaptureIntentListResponse = try await send(
+                url: components.url!,
+                method: "GET",
+                body: Optional<Data>.none
+            )
+            results.append(contentsOf: response.intents)
+            cursor = response.nextCursor
+        } while cursor != nil
+        return results
     }
 
     public func legacyVoiceOrphans() async throws -> [LegacyVoiceCapture] {
@@ -290,15 +365,21 @@ public actor InterviewArcAPIClient {
     private func validate(response: URLResponse, data: Data) throws {
         struct APIError: Decodable {
             let error: String
+            let code: String?
+            let retryable: Bool?
         }
         guard let http = response as? HTTPURLResponse else {
             throw VoiceBridgeError.invalidResponse(0, "Non-HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
-            let detail = (try? decoder.decode(APIError.self, from: data))?.error
-                ?? String(data: data, encoding: .utf8)
-                ?? "Unknown error"
-            throw VoiceBridgeError.invalidResponse(http.statusCode, detail)
+            let payload = try? decoder.decode(APIError.self, from: data)
+            let detail = payload?.error ?? String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw InterviewArcAPIError(
+                statusCode: http.statusCode,
+                message: detail,
+                code: payload?.code,
+                retryable: payload?.retryable ?? (http.statusCode == 408 || http.statusCode == 429 || http.statusCode >= 500)
+            )
         }
     }
 }

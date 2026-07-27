@@ -997,33 +997,68 @@ struct FloatingRecorderView: View {
     private var activityLabel: some View {
         Group {
             if model.hasTimerInstrument, !model.isBusy {
-                TimelineView(.periodic(from: .now, by: 1)) { timeline in
-                    Button(action: model.toggleTimerPanel) {
-                        HStack(spacing: 3) {
-                            OverflowMarqueeText(
-                                text: model.compactTimerTitle,
-                                font: .system(size: 11, weight: .semibold),
-                                color: palette.ink
-                            )
-                            .frame(
-                                minWidth: FloatingWidgetCompactTimerLayoutPolicy.minimumTitleWidth,
-                                maxWidth: .infinity,
-                                minHeight: 24
-                            )
-                            .layoutPriority(1)
-                            compactTimerCluster(at: timeline.date)
-                            Image(systemName: model.timerPanelExpanded ? "chevron.down" : "chevron.up")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundStyle(palette.secondaryInk)
-                                .frame(width: 10, alignment: .trailing)
-                        }
-                        .foregroundStyle(palette.ink)
-                        .frame(maxWidth: .infinity)
-                        .contentShape(Rectangle())
+                if model.timerPanelExpanded,
+                   model.hasLastAudio,
+                   !model.lastTranscript.isEmpty,
+                   FloatingWidgetCompactTimerLayoutPolicy.showsPreviousMemoActionsWhenExpanded {
+                    HStack(spacing: 5) {
+                        OverflowMarqueeText(
+                            text: model.compactTimerTitle,
+                            font: .system(size: 11, weight: .semibold),
+                            color: palette.ink
+                        )
+                        .frame(
+                            minWidth: FloatingWidgetCompactTimerLayoutPolicy.minimumTitleWidth,
+                            maxWidth: .infinity,
+                            minHeight: 24
+                        )
+                        .layoutPriority(1)
+                        memoButton(
+                            symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
+                            label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
+                            action: model.toggleLastAudioPlayback
+                        )
+                        memoButton(
+                            symbol: "doc.on.doc",
+                            label: "Copy last transcript",
+                            action: model.copyLastTranscript
+                        )
+                        memoButton(
+                            symbol: "square.and.arrow.down",
+                            label: "Save last audio and transcript",
+                            action: model.exportLastMemo
+                        )
                     }
-                    .buttonStyle(.plain)
-                    .voiceHoverFeedback(cornerRadius: 7, tint: palette.teal)
-                    .help(model.timerPanelExpanded ? "Hide timers" : "Show timers")
+                    .frame(maxWidth: .infinity)
+                } else {
+                    TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                        Button(action: model.toggleTimerPanel) {
+                            HStack(spacing: 3) {
+                                OverflowMarqueeText(
+                                    text: model.compactTimerTitle,
+                                    font: .system(size: 11, weight: .semibold),
+                                    color: palette.ink
+                                )
+                                .frame(
+                                    minWidth: FloatingWidgetCompactTimerLayoutPolicy.minimumTitleWidth,
+                                    maxWidth: .infinity,
+                                    minHeight: 24
+                                )
+                                .layoutPriority(1)
+                                compactTimerCluster(at: timeline.date)
+                                Image(systemName: model.timerPanelExpanded ? "chevron.down" : "chevron.up")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(palette.secondaryInk)
+                                    .frame(width: 10, alignment: .trailing)
+                            }
+                            .foregroundStyle(palette.ink)
+                            .frame(maxWidth: .infinity)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .voiceHoverFeedback(cornerRadius: 7, tint: palette.teal)
+                        .help(model.timerPanelExpanded ? "Hide timers" : "Show timers")
+                    }
                 }
             } else {
                 Text(model.floatingTitle)

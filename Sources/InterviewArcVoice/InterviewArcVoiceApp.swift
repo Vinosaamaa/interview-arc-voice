@@ -470,14 +470,17 @@ final class VoiceBridgeModel: ObservableObject {
             outputVolumeController.recoverInterruptedSessionIfNeeded()
             registerGlobalShortcuts()
             await loadSecureSettings()
-            startContextPolling()
+            startLiveUpdates()
         }
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in await self?.refreshContext(showProgress: false) }
+            Task { @MainActor in
+                await self?.refreshContext(showProgress: false)
+                await self?.retryPendingInBackground()
+            }
         }
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
@@ -625,6 +628,46 @@ final class VoiceBridgeModel: ObservableObject {
         pasteboard.clearContents()
         pasteboard.setString(lastTranscript, forType: .string)
         contextMessage = "Transcript copied."
+    }
+
+    func copyPendingTranscript(_ capture: PendingVoiceCapture) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(capture.transcript, forType: .string)
+        contextMessage = "Capture transcript copied."
+    }
+
+    func copyPendingForCodex(_ capture: PendingVoiceCapture) {
+        let envelope = VoiceCaptureEnvelope(
+            captureID: capture.id,
+            activityID: capture.activity.activityId,
+            turnID: capture.turnID,
+            transcript: capture.transcript
+        )
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(envelope.editorText, forType: .string)
+        contextMessage = "Capture and Voice v2 envelope copied."
+    }
+
+    func insertPendingAgain(_ capture: PendingVoiceCapture) {
+        let envelope = VoiceCaptureEnvelope(
+            captureID: capture.id,
+            activityID: capture.activity.activityId,
+            turnID: capture.turnID,
+            transcript: capture.transcript
+        )
+        targetApplicationPID = currentInsertionTargetPID()
+        Task {
+            let inserted = await insertTranscript(
+                capture.transcript,
+                editorText: envelope.editorText,
+                showDeliveryStep: true
+            )
+            contextMessage = inserted
+                ? "Capture and Voice v2 envelope inserted again."
+                : "No editable cursor was available."
+        }
     }
 
     func toggleLastAudioPlayback() {
@@ -814,6 +857,7 @@ final class VoiceBridgeModel: ObservableObject {
         guard !isRecording else { return }
         linkToInterviewArc = enabled
         UserDefaults.standard.set(enabled, forKey: "voice.linkToInterviewArc")
+        startLiveUpdates()
         reconcilePersistedCredentialFailure()
         if !isBusy {
             deliveryStates = [:]
@@ -873,6 +917,7 @@ final class VoiceBridgeModel: ObservableObject {
                     ?? (hasGroqCredential ? .idle : .setup)
             }
             settingsExpanded = false
+            startLiveUpdates()
             Task { await refreshContext(showProgress: false) }
         } catch {
             reportFailure(error, stage: .configuration)
@@ -1232,6 +1277,7 @@ final class VoiceBridgeModel: ObservableObject {
                 ?? (hasGroqCredential ? .idle : .setup)
         }
         await refreshContext(showProgress: false)
+        await retryPendingInBackground()
     }
 
     private func refreshContext(showProgress: Bool) async {
@@ -1277,13 +1323,8 @@ final class VoiceBridgeModel: ObservableObject {
             } else {
                 if !isRecording && !isBusy { contextMessage = "No focused activity — using general dictation." }
             }
-            if !isRecording && !isBusy {
-                pipeline = try? makeLinkedPipeline()
-                await updateRetryCount()
-                if pendingRetryCount > 0, pipeline != nil {
-                    Task { await retryPendingInBackground() }
-                }
-            }
+            // Focus refresh is intentionally read-only. Capture reconciliation
+            // is driven by Voice events, startup/wake, or an explicit retry.
         } catch {
             guard ContextRefreshOrderingPolicy.shouldApply(
                 requestID: requestID,
@@ -1336,17 +1377,48 @@ final class VoiceBridgeModel: ObservableObject {
         }
     }
 
-    private func startContextPolling() {
+    private func startLiveUpdates() {
         contextPollTask?.cancel()
         contextPollTask = Task { [weak self] in
+            var fallbackAttempt = 0
+            let fallbackPolicy = VoiceLiveUpdateFallbackPolicy()
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
                 guard
                     let self,
                     self.linkToInterviewArc,
-                    !self.timerMutationInFlight
-                else { continue }
-                await self.refreshContext(showProgress: false)
+                    let baseURL = URL(string: self.apiBaseURL)
+                else {
+                    try? await Task.sleep(for: .seconds(15))
+                    continue
+                }
+                let token = self.connectionTokenDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !token.isEmpty else {
+                    try? await Task.sleep(for: .seconds(15))
+                    continue
+                }
+                do {
+                    let client = InterviewArcAPIClient(baseURL: baseURL, token: token)
+                    let updates = await client.liveUpdates()
+                    for try await update in updates {
+                        guard !Task.isCancelled else { return }
+                        fallbackAttempt = 0
+                        if ["voice_intent", "voice_capture"].contains(update.scope) {
+                            await self.retryPendingInBackground()
+                        } else if !self.timerMutationInFlight {
+                            await self.refreshContext(showProgress: false)
+                        }
+                    }
+                } catch {
+                    guard !Task.isCancelled else { return }
+                }
+                let delay = fallbackPolicy.delaySeconds(attempt: fallbackAttempt)
+                fallbackAttempt += 1
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled else { return }
+                if !self.timerMutationInFlight {
+                    await self.refreshContext(showProgress: false)
+                }
+                await self.retryPendingInBackground()
             }
         }
     }
@@ -1647,7 +1719,7 @@ final class VoiceBridgeModel: ObservableObject {
             lastInsertionSucceeded = false
             let builtPipeline = try makeLinkedPipeline()
             pipeline = builtPipeline
-            let result = try await builtPipeline.process(
+            _ = try await builtPipeline.process(
                 recordingURL: recording.url,
                 durationSeconds: recording.duration,
                 activity: activity,
@@ -1675,10 +1747,8 @@ final class VoiceBridgeModel: ObservableObject {
                 )
             } else {
                 clearFailureAfterSuccess()
-                phase = result.hasQueuedRetry ? .queued : .delivered
-                contextMessage = result.hasQueuedRetry
-                    ? "Inserted at the cursor; one background step will retry."
-                    : "Inserted at the cursor. Press Send when ready."
+                phase = .delivered
+                contextMessage = "Inserted at the cursor · waiting for specialist permission."
             }
         } catch {
             guard generation == captureGeneration else { return }
@@ -1695,8 +1765,14 @@ final class VoiceBridgeModel: ObservableObject {
         if pipeline == nil { pipeline = try? makeLinkedPipeline() }
         pendingVoiceCaptures = await pipeline?.pendingCaptures() ?? []
         legacyVoiceOrphans = await pipeline?.legacyVoiceOrphans() ?? []
-        let pendingCaptureCount = await pipeline?.localPendingCaptureCount() ?? 0
-        pendingRetryCount = legacyCount + pendingCaptureCount
+        let transientCaptureCount = pendingVoiceCaptures.filter {
+            $0.nextAttemptAt != nil
+                && $0.localState != .waitingForSpecialist
+                && $0.localState != .needsDecision
+                && $0.localState != .excludedGracePeriod
+                && $0.localState != .quarantinedConflict
+        }.count
+        pendingRetryCount = legacyCount + transientCaptureCount
     }
 
     func resolvePendingVoiceCapture(_ capture: PendingVoiceCapture, attach: Bool) {
@@ -2274,6 +2350,7 @@ private struct WidgetThemePreview: View {
 
 private struct VoiceBridgeMenu: View {
     @ObservedObject var model: VoiceBridgeModel
+    @State private var showsAllCaptures = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -2286,7 +2363,7 @@ private struct VoiceBridgeMenu: View {
             if model.isFailurePresented { failureCard }
             if model.showsDeliverySteps { deliveryProgress }
             if model.hasLastMemo { transcriptPreview }
-            if !model.pendingVoiceCaptures.isEmpty { pendingCapturesCard }
+            if !model.pendingVoiceCaptures.isEmpty { recentCapturesCard }
             if !model.legacyVoiceOrphans.isEmpty { legacyVoiceOrphansCard }
             if model.pendingRetryCount > 0 { retryRow }
             settings
@@ -2572,34 +2649,102 @@ private struct VoiceBridgeMenu: View {
         .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
     }
 
-    private var pendingCapturesCard: some View {
+    private var recentCapturesCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Needs an activity decision", systemImage: "questionmark.bubble")
-                .font(.caption.weight(.semibold))
-            ForEach(model.pendingVoiceCaptures) { capture in
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(capture.transcript)
-                        .font(.caption2)
-                        .lineLimit(2)
-                    HStack {
-                        Button("Delete") {
-                            model.resolvePendingVoiceCapture(capture, attach: false)
-                        }
-                        .buttonStyle(.borderless)
-                        Spacer()
-                        Button("Attach") {
-                            model.resolvePendingVoiceCapture(capture, attach: true)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
+            HStack {
+                Label("Recent Captures", systemImage: "waveform.badge.magnifyingglass")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                if model.pendingVoiceCaptures.count > 3 {
+                    Button(showsAllCaptures ? "Show less" : "Show all") {
+                        showsAllCaptures.toggle()
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption2.weight(.semibold))
+                }
+            }
+            ScrollView {
+                VStack(spacing: 7) {
+                    ForEach(Array(model.pendingVoiceCaptures.reversed().prefix(
+                        showsAllCaptures ? model.pendingVoiceCaptures.count : 3
+                    ))) { capture in
+                        captureRow(capture)
                     }
                 }
-                .padding(8)
-                .background(Color.yellow.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
             }
+            .frame(maxHeight: showsAllCaptures ? 220 : 184)
         }
         .padding(10)
         .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func captureRow(_ capture: PendingVoiceCapture) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(capture.transcript)
+                .font(.caption2)
+                .lineLimit(2)
+            HStack(spacing: 4) {
+                Text(capture.activity.title)
+                    .font(.caption2.weight(.medium))
+                    .lineLimit(1)
+                Spacer()
+                Text(captureStatus(capture))
+                    .font(.caption2)
+                    .foregroundStyle(capture.localState == .quarantinedConflict ? .red : .secondary)
+            }
+            HStack(spacing: 5) {
+                captureAction("Insert Again", symbol: "text.cursor") {
+                    model.insertPendingAgain(capture)
+                }
+                captureAction("Copy transcript", symbol: "doc.on.doc") {
+                    model.copyPendingTranscript(capture)
+                }
+                captureAction("Copy for Codex", symbol: "chevron.left.forwardslash.chevron.right") {
+                    model.copyPendingForCodex(capture)
+                }
+                Spacer()
+                if capture.localState == .needsDecision {
+                    Button("Delete") {
+                        model.resolvePendingVoiceCapture(capture, attach: false)
+                    }
+                    .buttonStyle(.borderless)
+                    Button("Attach") {
+                        model.resolvePendingVoiceCapture(capture, attach: true)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.mini)
+                }
+            }
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func captureAction(
+        _ label: String,
+        symbol: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .frame(width: 18, height: 18)
+        }
+        .buttonStyle(.borderless)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
+    private func captureStatus(_ capture: PendingVoiceCapture) -> String {
+        switch capture.localState ?? .insertedRegistrationPending {
+        case .insertedRegistrationPending:
+            return capture.nextAttemptAt == nil ? "Syncing" : "Retry scheduled"
+        case .waitingForSpecialist: return "Waiting for specialist"
+        case .needsDecision: return "Needs decision"
+        case .excludedGracePeriod: return "Excluded · expires in 24h"
+        case .acceptedDelivering: return "Related · syncing"
+        case .quarantinedConflict: return "Conflict · review required"
+        case .complete: return "Complete"
+        }
     }
 
     private var legacyVoiceOrphansCard: some View {

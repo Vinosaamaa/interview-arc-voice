@@ -218,6 +218,7 @@ public struct VoiceCaptureIntentListResponse: Codable, Equatable, Sendable {
     public let protocolVersion: Int
     public let intents: [VoiceCaptureIntent]
     public let legacyOrphans: [LegacyVoiceCapture]
+    public let nextCursor: String?
 }
 
 public struct LegacyVoiceCapture: Codable, Equatable, Identifiable, Sendable {
@@ -291,5 +292,23 @@ public enum VoiceBridgeError: LocalizedError, Sendable {
             return "The transcript may be incomplete. The original audio was preserved; use Play, Save, or Retry."
         case .codexUnavailable(let detail): return "Codex could not receive the answer: \(detail)"
         }
+    }
+}
+
+public struct InterviewArcAPIError: LocalizedError, Equatable, Sendable {
+    public let statusCode: Int
+    public let message: String
+    public let code: String?
+    public let retryable: Bool
+
+    public init(statusCode: Int, message: String, code: String?, retryable: Bool) {
+        self.statusCode = statusCode
+        self.message = message
+        self.code = code
+        self.retryable = retryable
+    }
+
+    public var errorDescription: String? {
+        "Request failed (\(statusCode)): \(message)"
     }
 }
