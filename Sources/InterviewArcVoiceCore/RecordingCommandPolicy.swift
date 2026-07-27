@@ -1,3 +1,5 @@
+import Foundation
+
 public enum RecordingCommandAction: Equatable, Sendable {
     case start
     case stop
