@@ -2,9 +2,12 @@
 
 ## Linked practice flow
 
-1. Refresh and cache the focused Interview Arc activity through the
-   authenticated API continuously, including during recording and processing.
-   A transient refresh failure retains the last verified display context.
+1. Fetch and cache the focused Interview Arc activity through the authenticated
+   API at startup, reconnect, wake, explicit refresh, and revisioned
+   owner-scoped server events. Visible clocks advance locally. A disconnected
+   client falls back at a bounded 15–120-second cadence; it never performs an
+   unconditional one-second HTTP loop. A transient refresh failure retains the
+   last verified display context.
 2. Resolve a deterministic vocabulary prompt from explicit terms, stored pack
    IDs, metadata triggers, and the specialty base pack.
 3. Open the microphone immediately from the fresh cached routing snapshot and record
@@ -28,14 +31,19 @@
    restores the original pasteboard only if no other owner changed it. A
    read-back-verified Accessibility write remains the fallback; Voice never
    submits the message.
-7. Upload the original recording to private R2 and link it to the resulting
-   user transcript turn.
-8. Start delivery analysis in a background Codex task.
-9. Persist per-answer delivery evidence in D1. On activity completion, the
+7. Persist the protected local v2 record, insert its full envelope, and
+   register minimal intent identity in a single-flight background task.
+   Specialist permission may arrive before registration through a short-lived,
+   identity-only deferred decision.
+8. After an `activity_related` decision, upload the original recording to
+   private R2 and link it to the resulting user transcript turn.
+9. Start delivery analysis in a background Codex task.
+10. Persist per-answer delivery evidence in D1. On activity completion, the
    specialist includes a combined delivery review in the dated attempt bundle.
 
 R2 upload and delivery analysis continue after visible cursor insertion.
-Failures enter a local retry queue.
+Only genuine transient failures receive local retry scheduling. Waiting for a
+specialist or user does not. Permanent identity conflicts are quarantined.
 
 The normal transcription path performs one provider request. Existing response
 metadata is checked without another network call. A concrete failure,
@@ -61,6 +69,12 @@ Recovery actions that change capsule geometry first dismiss and settle their
 anchored native popover. AppKit's completed-close notification—not a guessed
 animation delay—releases playback and Record again, so they never resize the
 anchor during popover teardown.
+
+When the linked timer drawer is expanded and a previous capture exists, the
+recorder row replaces its duplicate timer cluster with Play, Copy transcript,
+and Save. The expanded timer surface above remains authoritative. Voice stays
+an `LSUIElement` accessory app: it does not occupy the Dock or Command-Tab, and
+Settings explicitly raises its existing window.
 
 Background-audio lowering is one recording-scoped session rather than one
 device write. Voice records the pre-capture route signature before acquiring
@@ -94,8 +108,8 @@ general route:
    explicit recovery when recording or transcription integrity fails.
 
 This route never calls the Interview Arc capture, audio, delivery-analysis, or
-Codex APIs. Automatic one-second context refresh keeps the next capture's
-routing snapshot current without delaying microphone start.
+Codex APIs. Server events keep the next routing snapshot current without
+delaying microphone start.
 
 ## Vocabulary resolution without runtime AI
 
@@ -135,6 +149,12 @@ Protocol v2 treats capture acceptance as a permission boundary. Voice retains
 exact transcript/audio locally and sends only stable identity plus checksum
 until the specialist or user resolves intent. Activity completion and
 finalization pause while an intent is unresolved. See `protocol-v2.md`.
+
+Detailed capture recovery belongs to the 260-point menu-bar popover, not the
+floating widget. Recent Captures shows waiting, decision, excluded, delivering,
+retry, and conflict states; it reconstructs the exact v2 envelope from the
+protected local record for Insert Again or Copy for Codex. The top refresh
+button refreshes focused activity only.
 
 The client must negotiate an explicit protocol version before mutating server
 state. Unknown versions fail closed with a user-visible update prompt.

@@ -1,5 +1,15 @@
 import Foundation
 
+public enum LocalVoiceCaptureState: String, Codable, Equatable, Sendable {
+    case insertedRegistrationPending = "inserted_registration_pending"
+    case waitingForSpecialist = "waiting_for_specialist"
+    case needsDecision = "needs_decision"
+    case excludedGracePeriod = "excluded_grace_period"
+    case acceptedDelivering = "accepted_delivering"
+    case quarantinedConflict = "quarantined_conflict"
+    case complete
+}
+
 public struct PendingVoiceCapture: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let turnID: String
@@ -12,6 +22,50 @@ public struct PendingVoiceCapture: Codable, Equatable, Identifiable, Sendable {
     public let occurredAt: Date
     public let transcription: TranscriptionResult
     public let createdAt: Date
+    public var localState: LocalVoiceCaptureState?
+    public var retryAttempt: Int?
+    public var nextAttemptAt: Date?
+    public var lastErrorCode: String?
+    public var transcriptInsertedAt: Date?
+    public var registrationCompletedAt: Date?
+
+    public init(
+        id: String,
+        turnID: String,
+        clipID: String,
+        checksum: String,
+        activity: FocusedVoiceActivity,
+        transcript: String,
+        audioURL: URL,
+        durationSeconds: Double,
+        occurredAt: Date,
+        transcription: TranscriptionResult,
+        createdAt: Date,
+        localState: LocalVoiceCaptureState? = nil,
+        retryAttempt: Int? = nil,
+        nextAttemptAt: Date? = nil,
+        lastErrorCode: String? = nil,
+        transcriptInsertedAt: Date? = nil,
+        registrationCompletedAt: Date? = nil
+    ) {
+        self.id = id
+        self.turnID = turnID
+        self.clipID = clipID
+        self.checksum = checksum
+        self.activity = activity
+        self.transcript = transcript
+        self.audioURL = audioURL
+        self.durationSeconds = durationSeconds
+        self.occurredAt = occurredAt
+        self.transcription = transcription
+        self.createdAt = createdAt
+        self.localState = localState
+        self.retryAttempt = retryAttempt
+        self.nextAttemptAt = nextAttemptAt
+        self.lastErrorCode = lastErrorCode
+        self.transcriptInsertedAt = transcriptInsertedAt
+        self.registrationCompletedAt = registrationCompletedAt
+    }
 }
 
 public actor PendingVoiceCaptureStore {
@@ -34,6 +88,15 @@ public actor PendingVoiceCaptureStore {
         let url = directory.appending(path: "\(capture.id).json")
         try encoder.encode(capture).write(to: url, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    public func update(
+        id: String,
+        _ transform: (inout PendingVoiceCapture) -> Void
+    ) throws {
+        guard var capture = try items().first(where: { $0.id == id }) else { return }
+        transform(&capture)
+        try save(capture)
     }
 
     public func items() throws -> [PendingVoiceCapture] {

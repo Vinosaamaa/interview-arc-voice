@@ -108,30 +108,31 @@ public actor VoicePipeline {
             durationSeconds: durationSeconds,
             occurredAt: occurredAt,
             transcription: transcription,
-            createdAt: Date()
+            createdAt: Date(),
+            localState: .insertedRegistrationPending
         )
         try await pendingCaptureStore.save(pending)
-        do {
-            _ = try await api.registerIntent(pending)
-            await progress(.init(component: .transcript, state: .complete))
-        } catch {
-            // The local pending record is the durable source until metadata can
-            // be registered. Reconciliation retries without uploading content.
-            await progress(.init(component: .transcript, state: .queued))
-        }
+        await progress(.init(component: .transcript, state: .complete))
         await transcriptReady(VoiceCaptureEnvelope(
             captureID: captureID,
             activityID: activity.activityId,
             turnID: turnID,
             transcript: transcription.text
         ))
+        try? await pendingCaptureStore.update(id: captureID) {
+            $0.transcriptInsertedAt = Date()
+        }
+        // Registration is deliberately outside the foreground insertion
+        // boundary. Stable IDs and the permission-0600 record already make the
+        // envelope recoverable; server synchronization continues single-flight.
+        Task { await self.registerPendingCapture(captureID: captureID) }
         await progress(.init(component: .audio, state: .queued))
         await progress(.init(component: .coach, state: .queued))
         return VoicePipelineResult(
             turnID: turnID,
             transcript: transcription.text,
             clipID: nil,
-            capturePersisted: false,
+            capturePersisted: true,
             audioUploaded: false,
             deliveryCoachQueued: false,
             transcriptionChunkCount: transcription.chunkCount
@@ -223,10 +224,7 @@ public actor VoicePipeline {
     }
 
     public func pendingCaptures() async -> [PendingVoiceCapture] {
-        guard let captures = try? await pendingCaptureStore.items(), !captures.isEmpty else { return [] }
-        guard let intents = try? await api.intents(captureIDs: captures.map(\.id)) else { return [] }
-        let visible = Set(intents.filter { $0.status == "uncertain" }.map(\.captureId))
-        return captures.filter { visible.contains($0.id) }
+        (try? await pendingCaptureStore.items()) ?? []
     }
 
     public func localPendingCaptureCount() async -> Int {
@@ -263,21 +261,81 @@ public actor VoicePipeline {
     }
 
     private func reconcilePendingCaptures() async -> Int {
-        guard let captures = try? await pendingCaptureStore.items(),
+        let now = Date()
+        let retryPolicy = VoiceCaptureRetryPolicy()
+        guard var captures = try? await pendingCaptureStore.items(),
               !captures.isEmpty else { return 0 }
-        for capture in captures {
-            try? await api.registerIntent(capture)
+        var completed = 0
+        for capture in captures where retryPolicy.isExpired(capture, now: now) {
+            try? await pendingCaptureStore.remove(id: capture.id, deleteAudio: true)
+            completed += 1
         }
-        guard let intents = try? await api.intents(captureIDs: captures.map(\.id)) else {
-            return 0
+        captures = (try? await pendingCaptureStore.items()) ?? []
+        guard !captures.isEmpty else { return completed }
+        guard var intents = try? await api.retainedIntents() else {
+            return completed
+        }
+        let idsToRegister = PendingCaptureRegistrationPolicy().captureIDsToRegister(
+            localCaptureIDs: captures.map(\.id),
+            serverCaptureIDs: intents.map(\.captureId)
+        )
+        if !idsToRegister.isEmpty {
+            let capturesByID = Dictionary(uniqueKeysWithValues: captures.map { ($0.id, $0) })
+            for captureID in idsToRegister {
+                guard let capture = capturesByID[captureID] else { continue }
+                guard retryPolicy.isDue(capture, now: now) else { continue }
+                do {
+                    let registered = try await api.registerIntent(capture)
+                    intents.removeAll { $0.captureId == captureID }
+                    intents.append(registered.intent)
+                    try? await pendingCaptureStore.update(id: captureID) {
+                        $0.localState = .waitingForSpecialist
+                        $0.retryAttempt = 0
+                        $0.nextAttemptAt = nil
+                        $0.lastErrorCode = nil
+                        $0.registrationCompletedAt = now
+                    }
+                } catch let error as InterviewArcAPIError
+                    where error.code == "voice_capture_identity_conflict" || !error.retryable {
+                    try? await pendingCaptureStore.update(id: captureID) {
+                        $0.localState = .quarantinedConflict
+                        $0.nextAttemptAt = nil
+                        $0.lastErrorCode = error.code ?? "permanent_registration_failure"
+                    }
+                } catch {
+                    let attempt = (capture.retryAttempt ?? 0) + 1
+                    try? await pendingCaptureStore.update(id: captureID) {
+                        $0.localState = .insertedRegistrationPending
+                        $0.retryAttempt = attempt
+                        $0.nextAttemptAt = retryPolicy.nextAttempt(attempt: attempt, now: now)
+                        $0.lastErrorCode = "transient_registration_failure"
+                    }
+                }
+            }
         }
         let byID = Dictionary(uniqueKeysWithValues: intents.map { ($0.captureId, $0) })
-        var completed = 0
         for capture in captures {
             guard let intent = byID[capture.id] else { continue }
             do {
                 switch intent.status {
+                case "pending":
+                    try await pendingCaptureStore.update(id: capture.id) {
+                        $0.localState = .waitingForSpecialist
+                        $0.nextAttemptAt = nil
+                        $0.lastErrorCode = nil
+                    }
+                case "uncertain":
+                    try await pendingCaptureStore.update(id: capture.id) {
+                        $0.localState = .needsDecision
+                        $0.nextAttemptAt = nil
+                    }
                 case "activity_related":
+                    if let nextAttemptAt = capture.nextAttemptAt, nextAttemptAt > now {
+                        continue
+                    }
+                    try await pendingCaptureStore.update(id: capture.id) {
+                        $0.localState = .acceptedDelivering
+                    }
                     _ = try await api.persistCapture(
                         activity: capture.activity,
                         turnID: capture.turnID,
@@ -294,13 +352,14 @@ public actor VoicePipeline {
                     try await pendingCaptureStore.remove(id: capture.id, deleteAudio: true)
                     completed += 1
                 case "unrelated":
-                    // Keep local recovery material for 24 hours, but never send
-                    // transcript or audio. The next reconciliation after the
-                    // grace period removes both local and server tombstones.
-                    if Date().timeIntervalSince(capture.createdAt) >= 86_400 {
-                        try await api.deleteCapture(captureID: capture.id)
-                        try await pendingCaptureStore.remove(id: capture.id, deleteAudio: true)
-                        completed += 1
+                    try await pendingCaptureStore.update(id: capture.id) {
+                        $0.localState = .excludedGracePeriod
+                        $0.nextAttemptAt = nil
+                    }
+                case "deleting":
+                    try await pendingCaptureStore.update(id: capture.id) {
+                        $0.localState = .excludedGracePeriod
+                        $0.nextAttemptAt = nil
                     }
                 case "deleted":
                     try await pendingCaptureStore.remove(id: capture.id, deleteAudio: true)
@@ -309,10 +368,49 @@ public actor VoicePipeline {
                     break
                 }
             } catch {
-                // Durable local data remains for the next idempotent pass.
+                let attempt = (capture.retryAttempt ?? 0) + 1
+                try? await pendingCaptureStore.update(id: capture.id) {
+                    $0.localState = .acceptedDelivering
+                    $0.retryAttempt = attempt
+                    $0.nextAttemptAt = retryPolicy.nextAttempt(attempt: attempt, now: now)
+                    $0.lastErrorCode = "transient_delivery_failure"
+                }
             }
         }
         return completed
+    }
+
+    private func registerPendingCapture(captureID: String) async {
+        guard let captures = try? await pendingCaptureStore.items(),
+              let capture = captures.first(where: { $0.id == captureID }) else {
+            return
+        }
+        do {
+            _ = try await api.registerIntent(capture)
+            try await pendingCaptureStore.update(id: captureID) {
+                $0.localState = .waitingForSpecialist
+                $0.retryAttempt = 0
+                $0.nextAttemptAt = nil
+                $0.lastErrorCode = nil
+                $0.registrationCompletedAt = Date()
+            }
+        } catch let error as InterviewArcAPIError
+            where error.code == "voice_capture_identity_conflict" || !error.retryable {
+            try? await pendingCaptureStore.update(id: captureID) {
+                $0.localState = .quarantinedConflict
+                $0.nextAttemptAt = nil
+                $0.lastErrorCode = error.code ?? "permanent_registration_failure"
+            }
+        } catch {
+            let retryPolicy = VoiceCaptureRetryPolicy()
+            let attempt = (capture.retryAttempt ?? 0) + 1
+            try? await pendingCaptureStore.update(id: captureID) {
+                $0.localState = .insertedRegistrationPending
+                $0.retryAttempt = attempt
+                $0.nextAttemptAt = retryPolicy.nextAttempt(attempt: attempt)
+                $0.lastErrorCode = "transient_registration_failure"
+            }
+        }
     }
 
     private func finishAcceptedCapture(_ capture: PendingVoiceCapture) async throws {
