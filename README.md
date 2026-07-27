@@ -117,6 +117,16 @@ Save, and Retry instead of being discarded.
 - The finalized AAC payload must contain a plausible amount of encoded audio
   for its duration. A timed but near-silent container is rejected before Groq
   so ambient noise cannot become a guessed one-word transcript.
+- Settings → Silence protection offers `Off`, `Basic`, and
+  `Enhanced — Experimental`. Basic rejects an entire recording with no
+  sustained speech. Enhanced reuses the same local scan and Groq request, then
+  omits a returned segment only when its local timestamped audio and Groq's
+  confidence metadata both identify it as unsupported non-speech. It never
+  cuts, rewrites, or replaces the original M4A.
+- Settings → Diagnostics records a bounded local timing breakdown for capture,
+  validation, Groq, segment corroboration, response handling, and insertion.
+  The report can be copied, revealed, or cleared and never contains transcript
+  text, audio, credentials, tokens, or private URLs.
 
 ## First-time setup
 
