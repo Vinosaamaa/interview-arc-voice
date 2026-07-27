@@ -28,6 +28,80 @@ import Testing
     #expect(!policy.shouldApply(revision: 0, latestRevision: 8))
 }
 
+@Test func connectedFrameTriggersOneAuthoritativeSynchronization() throws {
+    var latestRevision = 0
+    let signal = try VoiceLiveFrameDecoder().decode(
+        Data(#"{"type":"connected","revision":123}"#.utf8),
+        latestRevision: &latestRevision
+    )
+
+    #expect(signal == .connected(revision: 123))
+    #expect(latestRevision == 123)
+}
+
+@Test func liveDecoderAppliesOnlyNewPracticeRevisionsAfterConnection() throws {
+    var latestRevision = 123
+    let decoder = VoiceLiveFrameDecoder()
+    let update = try decoder.decode(
+        Data(
+            #"{"type":"practice_changed","revision":124,"scope":"voice_intent","occurredAt":1000}"#
+                .utf8
+        ),
+        latestRevision: &latestRevision
+    )
+    let stale = try decoder.decode(
+        Data(
+            #"{"type":"practice_changed","revision":123,"scope":"voice_intent","occurredAt":999}"#
+                .utf8
+        ),
+        latestRevision: &latestRevision
+    )
+
+    #expect(
+        update == .practiceChanged(
+            VoiceLiveUpdate(
+                type: "practice_changed",
+                revision: 124,
+                scope: "voice_intent",
+                occurredAt: 1_000
+            )
+        )
+    )
+    #expect(stale == nil)
+    #expect(latestRevision == 124)
+}
+
+@Test func unresolvedCaptureUsesBoundedSafetyReconciliation() {
+    var capture = pendingCapture()
+    capture.localState = .waitingForSpecialist
+    let policy = VoicePendingReconciliationPolicy()
+
+    #expect(policy.delaySeconds(captures: [capture], attempt: 0) == 15)
+    #expect(policy.delaySeconds(captures: [capture], attempt: 1) == 30)
+    #expect(policy.delaySeconds(captures: [capture], attempt: 9) == 120)
+}
+
+@Test func settledCapturesDoNotCreateRecurringStatusRequests() {
+    var capture = pendingCapture()
+    capture.localState = .excludedGracePeriod
+
+    #expect(
+        VoicePendingReconciliationPolicy()
+            .delaySeconds(captures: [capture], attempt: 0) == nil
+    )
+}
+
+@Test func interruptedAcceptedDeliveryRemainsReconciliationWorkAfterRelaunch() {
+    var capture = pendingCapture()
+    capture.localState = .acceptedDelivering
+    capture.nextAttemptAt = nil
+
+    #expect(
+        VoicePendingReconciliationPolicy()
+            .delaySeconds(captures: [capture], attempt: 0) == 15
+    )
+}
+
 @Test func expandedTimerReplacesDuplicateClockClusterWithPreviousMemoActions() {
     #expect(FloatingWidgetCompactTimerLayoutPolicy.showsPreviousMemoActionsWhenExpanded)
 }

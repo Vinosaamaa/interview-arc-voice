@@ -20,6 +20,34 @@ public struct VoiceLiveUpdateFallbackPolicy: Sendable {
     }
 }
 
+public struct VoicePendingReconciliationPolicy: Sendable {
+    public init() {}
+
+    public func delaySeconds(
+        captures: [PendingVoiceCapture],
+        attempt: Int,
+        now: Date = Date()
+    ) -> TimeInterval? {
+        let unresolved = captures.filter {
+            switch $0.localState ?? .insertedRegistrationPending {
+            case .insertedRegistrationPending, .waitingForSpecialist, .needsDecision:
+                return true
+            case .acceptedDelivering:
+                return true
+            case .excludedGracePeriod, .quarantinedConflict, .complete:
+                return false
+            }
+        }
+        guard !unresolved.isEmpty else { return nil }
+
+        let safetyDelay = VoiceLiveUpdateFallbackPolicy().delaySeconds(attempt: attempt)
+        let scheduledDelay = unresolved.compactMap(\.nextAttemptAt)
+            .map { max(0, $0.timeIntervalSince(now)) }
+            .min()
+        return min(safetyDelay, scheduledDelay ?? safetyDelay)
+    }
+}
+
 public struct VoiceCaptureRetryPolicy: Sendable {
     public init() {}
 
@@ -52,6 +80,45 @@ public struct VoiceLiveUpdate: Codable, Equatable, Sendable {
         self.revision = revision
         self.scope = scope
         self.occurredAt = occurredAt
+    }
+}
+
+public enum VoiceLiveSignal: Equatable, Sendable {
+    case connected(revision: Int)
+    case practiceChanged(VoiceLiveUpdate)
+}
+
+public struct VoiceLiveFrameDecoder: Sendable {
+    private struct FrameHeader: Decodable {
+        let type: String
+        let revision: Int
+    }
+
+    public init() {}
+
+    public func decode(
+        _ data: Data,
+        latestRevision: inout Int
+    ) throws -> VoiceLiveSignal? {
+        let decoder = JSONDecoder()
+        let header = try decoder.decode(FrameHeader.self, from: data)
+        switch header.type {
+        case "connected":
+            latestRevision = max(latestRevision, header.revision)
+            return .connected(revision: header.revision)
+        case "practice_changed":
+            guard VoiceLiveRevisionPolicy().shouldApply(
+                revision: header.revision,
+                latestRevision: latestRevision
+            ) else {
+                return nil
+            }
+            let update = try decoder.decode(VoiceLiveUpdate.self, from: data)
+            latestRevision = update.revision
+            return .practiceChanged(update)
+        default:
+            return nil
+        }
     }
 }
 

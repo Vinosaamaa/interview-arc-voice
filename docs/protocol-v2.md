@@ -33,6 +33,14 @@ classifies the capture.
    `POST /voice/captures` and `/audio/upload`. A disconnected client uses
    bounded 15–120-second snapshot fallback, never a one-second loop.
 
+WebSocket open/reopen also carries an owner revision and triggers exactly one
+status-first reconciliation. Because revision events are best-effort, an
+in-memory safety loop runs only while a protected local record is waiting,
+needs a decision, or is completing accepted delivery. It reconciles at 15, 30,
+60, and then 120 seconds, reads the paginated owner status before any mutation,
+and stops when no such local record remains. A waiting state does not increment
+retry counters, and known capture identities are never registered again.
+
 If a specialist decision arrives before registration, the Worker stores a
 24-hour identity-only deferred decision. Registration atomically validates the
 activity and turn identity before merging it. A mismatch is a structured,

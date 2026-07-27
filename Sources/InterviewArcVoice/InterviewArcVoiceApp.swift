@@ -210,6 +210,9 @@ final class VoiceBridgeModel: ObservableObject {
     private var linkShortcutMonitor: Any?
     private var lastInsertionSucceeded = false
     private var contextPollTask: Task<Void, Never>?
+    private var pendingReconciliationTask: Task<Void, Never>?
+    private var pendingReconciliationGeneration = UUID()
+    private var lastLiveRevision = 0
     private var contextRefreshRequestID = 0
     private var contextLastVerifiedAt: Date?
     private var timerInstrumentReceivedAt = Date()
@@ -870,6 +873,7 @@ final class VoiceBridgeModel: ObservableObject {
         linkToInterviewArc = enabled
         UserDefaults.standard.set(enabled, forKey: "voice.linkToInterviewArc")
         startLiveUpdates()
+        synchronizePendingReconciliationLoop()
         reconcilePersistedCredentialFailure()
         if !isBusy {
             deliveryStates = [:]
@@ -1410,14 +1414,24 @@ final class VoiceBridgeModel: ObservableObject {
                 }
                 do {
                     let client = InterviewArcAPIClient(baseURL: baseURL, token: token)
-                    let updates = await client.liveUpdates()
-                    for try await update in updates {
+                    let updates = await client.liveUpdates(afterRevision: self.lastLiveRevision)
+                    for try await signal in updates {
                         guard !Task.isCancelled else { return }
                         fallbackAttempt = 0
-                        if ["voice_intent", "voice_capture"].contains(update.scope) {
+                        switch signal {
+                        case .connected(let revision):
+                            self.lastLiveRevision = max(self.lastLiveRevision, revision)
                             await self.retryPendingInBackground()
-                        } else if !self.timerMutationInFlight {
-                            await self.refreshContext(showProgress: false)
+                            if !self.timerMutationInFlight {
+                                await self.refreshContext(showProgress: false)
+                            }
+                        case .practiceChanged(let update):
+                            self.lastLiveRevision = max(self.lastLiveRevision, update.revision)
+                            if ["voice_intent", "voice_capture"].contains(update.scope) {
+                                await self.retryPendingInBackground()
+                            } else if !self.timerMutationInFlight {
+                                await self.refreshContext(showProgress: false)
+                            }
                         }
                     }
                 } catch {
@@ -1785,6 +1799,40 @@ final class VoiceBridgeModel: ObservableObject {
                 && $0.localState != .quarantinedConflict
         }.count
         pendingRetryCount = legacyCount + transientCaptureCount
+        synchronizePendingReconciliationLoop()
+    }
+
+    private func synchronizePendingReconciliationLoop() {
+        let policy = VoicePendingReconciliationPolicy()
+        guard
+            linkToInterviewArc,
+            policy.delaySeconds(captures: pendingVoiceCaptures, attempt: 0) != nil
+        else {
+            pendingReconciliationGeneration = UUID()
+            pendingReconciliationTask?.cancel()
+            pendingReconciliationTask = nil
+            return
+        }
+        guard pendingReconciliationTask == nil else { return }
+
+        let generation = UUID()
+        pendingReconciliationGeneration = generation
+        pendingReconciliationTask = Task { [weak self] in
+            var attempt = 0
+            while !Task.isCancelled {
+                guard let self else { return }
+                guard let delay = policy.delaySeconds(
+                    captures: self.pendingVoiceCaptures,
+                    attempt: attempt
+                ) else { break }
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled else { return }
+                await self.retryPendingInBackground()
+                attempt += 1
+            }
+            guard let self, self.pendingReconciliationGeneration == generation else { return }
+            self.pendingReconciliationTask = nil
+        }
     }
 
     func resolvePendingVoiceCapture(_ capture: PendingVoiceCapture, attach: Bool) {
@@ -1916,7 +1964,9 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     private func retryPendingInBackground() async {
-        guard let pipeline, !pendingRetryInFlight else { return }
+        guard linkToInterviewArc, !pendingRetryInFlight else { return }
+        if pipeline == nil { pipeline = try? makeLinkedPipeline() }
+        guard let pipeline else { return }
         pendingRetryInFlight = true
         defer { pendingRetryInFlight = false }
         let previousPhase = phase
