@@ -46,6 +46,22 @@ public struct VocabularyCatalog: Codable, Equatable, Sendable {
             from: Data(contentsOf: url)
         )
     }
+
+    public func generalDictationPrompt(maxTerms: Int = 32) -> String {
+        var seen = Set<String>()
+        return packs
+            .filter(\.isBase)
+            .sorted {
+                if $0.priority != $1.priority { return $0.priority > $1.priority }
+                return $0.id < $1.id
+            }
+            .flatMap(\.terms)
+            .filter { term in
+                seen.insert(term.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)).inserted
+            }
+            .prefix(max(1, maxTerms))
+            .joined(separator: ", ")
+    }
 }
 
 public struct VocabularySource: Codable, Equatable, Sendable {

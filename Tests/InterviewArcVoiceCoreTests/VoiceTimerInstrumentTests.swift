@@ -42,6 +42,125 @@ import Testing
     )
 }
 
+@Test func timerInstrumentDistinguishesCareerFocusFromPracticeResults() throws {
+    let focus = try JSONDecoder().decode(
+        VoiceTimerActivity.self,
+        from: Data(
+            #"{"id":"focus-1","questionId":null,"type":"focus_block","title":"Job applications","url":null,"allocatedSeconds":3600,"timer":null,"starred":false,"activityClass":"focus_block","requiresOutcome":false}"#
+                .utf8
+        )
+    )
+    let practice = try JSONDecoder().decode(
+        VoiceTimerActivity.self,
+        from: Data(
+            #"{"id":"practice-1","questionId":"course-schedule","type":"leetcode","title":"Course Schedule","url":null,"allocatedSeconds":2400,"timer":null,"starred":false,"activityClass":"practice","requiresOutcome":true}"#
+                .utf8
+        )
+    )
+
+    #expect(focus.isFocusBlock)
+    #expect(!focus.needsOutcome)
+    #expect(!practice.isFocusBlock)
+    #expect(practice.needsOutcome)
+}
+
+@Test func sessionFinishBlocksOnlyStartedPracticeWithoutAnOutcome() throws {
+    let response = try JSONDecoder().decode(
+        VoiceContextResponse.self,
+        from: Data(
+            #"""
+            {
+              "protocolVersion": 2,
+              "date": "2026-07-27",
+              "focusedActivity": null,
+              "specialist": null,
+              "message": null,
+              "timerInstrument": {
+                "serverNow": 10000,
+                "session": null,
+                "activity": null,
+                "activities": [
+                  {
+                    "id": "focus-started",
+                    "questionId": null,
+                    "type": "focus_block",
+                    "title": "Job applications",
+                    "url": null,
+                    "allocatedSeconds": 3600,
+                    "timer": {
+                      "accumulatedSeconds": 10,
+                      "startedAt": 1000,
+                      "runningSince": null,
+                      "completed": false,
+                      "completedAt": null,
+                      "revision": 1
+                    },
+                    "starred": false,
+                    "activityClass": "focus_block",
+                    "requiresOutcome": false
+                  },
+                  {
+                    "id": "practice-needs-result",
+                    "questionId": "course-schedule",
+                    "type": "leetcode",
+                    "title": "Course Schedule",
+                    "url": null,
+                    "allocatedSeconds": 2400,
+                    "timer": {
+                      "accumulatedSeconds": 10,
+                      "startedAt": 1000,
+                      "runningSince": null,
+                      "completed": false,
+                      "completedAt": null,
+                      "revision": 1
+                    },
+                    "starred": false,
+                    "activityClass": "practice",
+                    "requiresOutcome": true
+                  },
+                  {
+                    "id": "practice-not-started",
+                    "questionId": "number-of-islands",
+                    "type": "leetcode",
+                    "title": "Number of Islands",
+                    "url": null,
+                    "allocatedSeconds": 2400,
+                    "timer": null,
+                    "starred": false,
+                    "activityClass": "practice",
+                    "requiresOutcome": true
+                  },
+                  {
+                    "id": "practice-with-result",
+                    "questionId": "two-sum",
+                    "type": "leetcode",
+                    "title": "Two Sum",
+                    "url": null,
+                    "allocatedSeconds": 2400,
+                    "timer": {
+                      "accumulatedSeconds": 10,
+                      "startedAt": 1000,
+                      "runningSince": null,
+                      "completed": false,
+                      "completedAt": null,
+                      "revision": 1
+                    },
+                    "starred": false,
+                    "activityClass": "practice",
+                    "requiresOutcome": true,
+                    "outcome": "solved"
+                  }
+                ]
+              }
+            }
+            """#.utf8
+        )
+    )
+
+    #expect(response.timerInstrument?.sessionFinishBlockers.map(\.id) == ["practice-needs-result"])
+    #expect(VoiceLiveConnectionPolicy.heartbeatIntervalSeconds == 20)
+}
+
 @Test func expandedTimerUsesOneTransparentHostForTwoSeparatedSurfaces() {
     #expect(FloatingWidgetWindowPolicy.expandedWidth > FloatingWidgetWindowPolicy.collapsedWidth)
     #expect(FloatingWidgetWindowPolicy.recordingWidth > FloatingWidgetWindowPolicy.collapsedWidth)

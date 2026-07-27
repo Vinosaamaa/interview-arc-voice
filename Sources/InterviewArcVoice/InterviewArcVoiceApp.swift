@@ -146,6 +146,7 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var timerPanelExpanded = false
     @Published var activityPickerExpanded = false
     @Published private(set) var finishingActivityID: String?
+    @Published var sessionFinishResolutionRequested = false
     @Published var finishOutcome: VoicePracticeOutcome?
     @Published var finishStarred = false
     @Published var contextMessage = "Loading secure settings…"
@@ -185,6 +186,9 @@ final class VoiceBridgeModel: ObservableObject {
     private var pendingFailurePopoverActionTask: Task<Void, Never>?
     private var pendingFailurePopoverCloseObserver: NSObjectProtocol?
     private var pendingRetryInFlight = false
+    private lazy var generalDictationPrompt: String = {
+        (try? VocabularyCatalog.bundled().generalDictationPrompt()) ?? "LeetCode"
+    }()
 
     let recorder = AnswerRecorder()
 
@@ -360,7 +364,9 @@ final class VoiceBridgeModel: ObservableObject {
         guard timerPanelExpanded && hasTimerInstrument else {
             return FloatingWidgetWindowPolicy.hostHeight
         }
-        return finishingActivityID == nil && !activityPickerExpanded
+        return finishingActivityID == nil
+            && !activityPickerExpanded
+            && !sessionFinishResolutionRequested
             ? FloatingWidgetWindowPolicy.expandedHostHeight
             : FloatingWidgetWindowPolicy.expandedDrawerHostHeight
     }
@@ -377,6 +383,10 @@ final class VoiceBridgeModel: ObservableObject {
     }
     var availableTimerActivities: [VoiceTimerActivity] {
         timerInstrument?.activities ?? []
+    }
+    var sessionFinishBlockers: [VoiceTimerActivity] {
+        guard sessionFinishResolutionRequested else { return [] }
+        return timerInstrument?.sessionFinishBlockers ?? []
     }
     var compactTimerTitle: String {
         timerInstrument?.activity?.title
@@ -545,6 +555,10 @@ final class VoiceBridgeModel: ObservableObject {
 
     func openFinishDrawer(for activity: VoiceTimerActivity) {
         guard activity.timer?.startedAt != nil, !timerMutationInFlight else { return }
+        if activity.isFocusBlock {
+            performTimerAction(subjectID: activity.id, kind: "activity", action: "finish")
+            return
+        }
         withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
             finishingActivityID = activity.id
             finishOutcome = nil
@@ -576,6 +590,61 @@ final class VoiceBridgeModel: ObservableObject {
                     subjectID: subjectID,
                     kind: kind,
                     action: action
+                )
+            }
+        }
+    }
+
+    func requestFinishSession(_ session: VoiceTimerSession) {
+        guard session.timer.startedAt != nil, !timerMutationInFlight else { return }
+        let blockers = timerInstrument?.sessionFinishBlockers ?? []
+        guard !blockers.isEmpty else {
+            performTimerAction(subjectID: session.id, kind: "session", action: "finish")
+            return
+        }
+        withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
+            sessionFinishResolutionRequested = true
+            finishingActivityID = nil
+            activityPickerExpanded = false
+            timerMutationMessage = nil
+        }
+        synchronizeFloatingPanelSize()
+        NSApp.requestUserAttention(.informationalRequest)
+    }
+
+    func cancelSessionFinishResolution() {
+        withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
+            sessionFinishResolutionRequested = false
+        }
+        synchronizeFloatingPanelSize()
+    }
+
+    func requestSessionFinishReview() {
+        NSApp.requestUserAttention(.informationalRequest)
+    }
+
+    func resolveSessionActivity(
+        _ activity: VoiceTimerActivity,
+        outcome: VoicePracticeOutcome
+    ) {
+        guard !timerMutationInFlight, !activity.isFocusBlock else { return }
+        Task {
+            let succeeded = await runTimerMutation {
+                try await self.timerAPIClient().finishActivity(
+                    activityID: activity.id,
+                    outcome: outcome,
+                    starred: activity.starred
+                )
+            }
+            guard succeeded else { return }
+            let blockers = self.timerInstrument?.sessionFinishBlockers ?? []
+            guard blockers.isEmpty, let session = self.timerInstrument?.session else { return }
+            self.cancelSessionFinishResolution()
+            _ = await self.runTimerMutation {
+                try await self.timerAPIClient().mutateTimer(
+                    subjectID: session.id,
+                    kind: "session",
+                    action: "finish"
                 )
             }
         }
@@ -1343,6 +1412,9 @@ final class VoiceBridgeModel: ObservableObject {
                 timerPanelExpanded = false
                 cancelFinishDrawer()
             }
+            if loaded.timerInstrument?.session == nil {
+                sessionFinishResolutionRequested = false
+            }
             contextLastVerifiedAt = Date()
             applyLateCaptureBinding(from: loaded)
             if let activity = loaded.focusedActivity {
@@ -1395,6 +1467,9 @@ final class VoiceBridgeModel: ObservableObject {
             if !hasTimerInstrument {
                 timerPanelExpanded = false
                 cancelFinishDrawer()
+            }
+            if response.timerInstrument.session == nil {
+                sessionFinishResolutionRequested = false
             }
             await refreshContext(showProgress: false)
             return true
@@ -1721,7 +1796,8 @@ final class VoiceBridgeModel: ObservableObject {
         do {
             let generalPipeline = GeneralDictationPipeline(
                 transcriber: GroqTranscriber(apiKey: groqKeyDraft),
-                temporaryDirectory: recordingStore.temporaryDirectory
+                temporaryDirectory: recordingStore.temporaryDirectory,
+                vocabularyPrompt: generalDictationPrompt
             )
             let result = try await generalPipeline.process(
                 recordingURL: recording.url,
@@ -2487,6 +2563,7 @@ private struct VoiceBridgeMenu: View {
                 microphoneSignalWarning
             }
             if model.isFailurePresented { failureCard }
+            if model.sessionFinishResolutionRequested { sessionFinishResolver }
             if model.showsDeliverySteps { deliveryProgress }
             if model.hasLastMemo { transcriptPreview }
             if !model.pendingVoiceCaptures.isEmpty { recentCapturesCard }
@@ -2669,6 +2746,56 @@ private struct VoiceBridgeMenu: View {
             tint: model.isRecording ? .red : .teal
         )
         .disabled(!model.isRecording && !model.canRecord)
+    }
+
+    private var sessionFinishResolver: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("FINISH SESSION")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.8)
+                        .foregroundStyle(.secondary)
+                    Text("Choose a result for each started activity.")
+                        .font(.caption)
+                }
+                Spacer()
+                Button(action: model.cancelSessionFinishResolution) {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Cancel finishing session")
+            }
+            ForEach(model.sessionFinishBlockers) { activity in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(activity.title)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        resultButton("Solved", outcome: .solved, activity: activity)
+                        resultButton("With help", outcome: .solvedAfterReviewingApproach, activity: activity)
+                        resultButton("Failed", outcome: .failed, activity: activity)
+                    }
+                }
+                .padding(8)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 9))
+            }
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func resultButton(
+        _ label: String,
+        outcome: VoicePracticeOutcome,
+        activity: VoiceTimerActivity
+    ) -> some View {
+        Button(label) {
+            model.resolveSessionActivity(activity, outcome: outcome)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(model.timerMutationInFlight)
     }
 
     private var deliveryProgress: some View {

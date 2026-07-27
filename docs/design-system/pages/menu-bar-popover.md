@@ -48,6 +48,12 @@ collapse.
 The activity title keeps the remaining flexible width. The authoritative
 session/activity clocks remain in the drawer above.
 
+Career Focus appears in the timer instrument with a `J` mark and finishes
+directly without a result drawer. If a session finish is blocked by started
+practice activities without results, the menu-bar popover owns the compact
+multi-activity result resolver. The floating capsule shows only the attention
+message and never contains the whole resolver.
+
 ## Accessory behavior
 
 Voice is a menu-bar/floating accessory (`LSUIElement`). It does not appear in

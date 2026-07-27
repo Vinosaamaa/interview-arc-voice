@@ -9,8 +9,10 @@
    the last observed revision across reconnects, and performs one status-first
    snapshot. Visible clocks advance locally. A disconnected client falls back
    at a bounded 15–120-second cadence; it never performs an unconditional
-   one-second HTTP loop. A transient refresh failure retains the last verified
-   display context.
+   one-second HTTP loop. A 20-second WebSocket ping detects a half-open
+   connection and forces the existing reconnect/fallback path instead of
+   leaving the widget on an indefinitely stale workbench. A transient refresh
+   failure retains the last verified display context.
 2. Resolve a deterministic vocabulary prompt from explicit terms, stored pack
    IDs, metadata triggers, and the specialty base pack.
 3. Open the microphone immediately from the fresh cached routing snapshot and record
@@ -53,6 +55,11 @@ reconciliation, so an idle healthy client produces no recurring intent reads.
 This safety path recovers a decision whose best-effort live invalidation was
 missed without re-registering known captures. Permanent identity conflicts are
 quarantined.
+
+General Dictation does not use activity matching. It sends a bounded,
+terms-only prompt made from the highest-priority bundled base vocabulary. This
+provides stable spellings such as LeetCode without creating a personal
+dictionary, local replacement engine, or additional AI formatting stage.
 
 Background reconciliation never owns the foreground recording, transcription,
 insertion, playback, or failure presentation. Its completion may publish a

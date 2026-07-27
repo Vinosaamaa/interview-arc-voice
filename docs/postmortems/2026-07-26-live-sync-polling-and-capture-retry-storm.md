@@ -109,3 +109,28 @@ change observation to resize the native panel, so its label could say
 - The floating memo controls now expose Insert beside Play, Copy, and Save.
 - Regression coverage protects foreground ownership, insertion-target
   eligibility, and recorder-command authority.
+
+## Native follow-up: healthy-looking half-open socket retained an old workbench
+
+### Detection and impact
+
+After the website opened a fresh workbench and later started a new activity,
+the pop-out website timer updated while Voice continued to display the prior
+workbench until the user pressed Refresh. The connection had not surfaced an
+error, so the bounded disconnected fallback never ran.
+
+### Root cause
+
+The client treated an open WebSocket task as proof of liveness. It had no
+application heartbeat, so a half-open path could keep the read loop suspended
+without delivering the owner revision that invalidated the timer snapshot.
+
+### Repair and prevention
+
+- Voice sends a WebSocket ping every 20 seconds.
+- A failed ping closes the task and terminates the stream, activating the
+  existing reconnect and bounded snapshot fallback.
+- D1 and REST remain authoritative; the heartbeat only proves transport
+  liveness and never becomes another polling path.
+- Timer fixtures cover both practice activities and result-free Career Focus
+  blocks so reconnect snapshots preserve their different lifecycle rules.
