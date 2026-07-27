@@ -276,6 +276,123 @@ enum SettingsWindowPresenter {
     }
 }
 
+@MainActor
+final class SessionFinishResolverWindowPresenter {
+    static let shared = SessionFinishResolverWindowPresenter()
+
+    private var panel: NSPanel?
+
+    func present(model: VoiceBridgeModel) {
+        let content = SessionFinishResolverCard(
+            model: model,
+            onDismiss: { [weak self] in self?.dismiss() }
+        )
+        if let panel {
+            panel.contentViewController = NSHostingController(rootView: content)
+            show(panel)
+            return
+        }
+
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 330),
+            styleMask: [.titled, .closable, .utilityWindow],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "Finish Interview Arc Session"
+        panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.contentViewController = NSHostingController(rootView: content)
+        panel.center()
+        self.panel = panel
+        show(panel)
+    }
+
+    func dismiss() {
+        panel?.orderOut(nil)
+    }
+
+    private func show(_ panel: NSPanel) {
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+        panel.orderFrontRegardless()
+    }
+}
+
+struct SessionFinishResolverCard: View {
+    @ObservedObject var model: VoiceBridgeModel
+    var onDismiss: (() -> Void)? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("FINISH SESSION")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.8)
+                        .foregroundStyle(.secondary)
+                    Text("Choose a result for each started activity.")
+                        .font(.caption)
+                }
+                Spacer()
+                Button {
+                    model.cancelSessionFinishResolution()
+                    onDismiss?()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Cancel finishing session")
+            }
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(model.sessionFinishBlockers) { activity in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(activity.title)
+                                .font(.caption.weight(.semibold))
+                                .lineLimit(1)
+                            HStack(spacing: 6) {
+                                resultButton("Solved", outcome: .solved, activity: activity)
+                                resultButton(
+                                    "With help",
+                                    outcome: .solvedAfterReviewingApproach,
+                                    activity: activity
+                                )
+                                resultButton("Failed", outcome: .failed, activity: activity)
+                            }
+                        }
+                        .padding(8)
+                        .background(
+                            Color(nsColor: .controlBackgroundColor),
+                            in: RoundedRectangle(cornerRadius: 9)
+                        )
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .onChange(of: model.sessionFinishResolutionRequested) { _, requested in
+            if !requested { onDismiss?() }
+        }
+    }
+
+    private func resultButton(
+        _ label: String,
+        outcome: VoicePracticeOutcome,
+        activity: VoiceTimerActivity
+    ) -> some View {
+        Button(label) {
+            model.resolveSessionActivity(activity, outcome: outcome)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(model.timerMutationInFlight)
+    }
+}
+
 struct ForegroundSettingsLink<Label: View>: View {
     @Environment(\.openSettings) private var openSettings
     private let label: Label
