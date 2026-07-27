@@ -33,6 +33,9 @@ public struct VoicePipelineResult: Equatable, Sendable {
     public let audioUploaded: Bool
     public let deliveryCoachQueued: Bool
     public let transcriptionChunkCount: Int
+    public let omittedUnsupportedSegmentCount: Int
+    public let segmentValidationSeconds: Double
+    public let transcriptionTiming: TranscriptionTiming?
 
     public var hasQueuedRetry: Bool {
         !capturePersisted || !audioUploaded || !deliveryCoachQueued
@@ -79,6 +82,8 @@ public actor VoicePipeline {
         durationSeconds: Double,
         activity: FocusedVoiceActivity,
         occurredAt: Date = Date(),
+        speechEvidence: SpeechEvidenceResult? = nil,
+        protectionMode: SpeechProtectionMode = .basic,
         transcriptReady: @escaping @Sendable (VoiceCaptureEnvelope) async -> Void = { _ in },
         progress: @escaping @Sendable (VoicePipelineUpdate) async -> Void = { _ in }
     ) async throws -> VoicePipelineResult {
@@ -88,7 +93,9 @@ public actor VoicePipeline {
             fileURL: recordingURL,
             prompt: vocabulary.prompt,
             temporaryDirectory: temporaryDirectory,
-            audioDurationSeconds: durationSeconds
+            audioDurationSeconds: durationSeconds,
+            speechEvidence: speechEvidence,
+            protectionMode: protectionMode
         )
         let transcription = reliable.transcription
         let captureID = "capture-\(UUID().uuidString.lowercased())"
@@ -135,7 +142,10 @@ public actor VoicePipeline {
             capturePersisted: true,
             audioUploaded: false,
             deliveryCoachQueued: false,
-            transcriptionChunkCount: transcription.chunkCount
+            transcriptionChunkCount: transcription.chunkCount,
+            omittedUnsupportedSegmentCount: reliable.omittedUnsupportedSegmentCount,
+            segmentValidationSeconds: reliable.segmentValidationSeconds,
+            transcriptionTiming: transcription.timing
         )
     }
 

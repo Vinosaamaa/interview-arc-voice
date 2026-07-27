@@ -1,6 +1,26 @@
 @preconcurrency import AVFoundation
 import Foundation
 
+public struct SpeechIntervalEvidence: Equatable, Sendable {
+    public let frameCount: Int
+    public let speechLikeFrameCount: Int
+    public let longestSpeechRunFrames: Int
+    public let activeLevelRangeDecibels: Float
+    public let peakFrameDecibels: Float
+
+    public var speechLikeFraction: Double {
+        guard frameCount > 0 else { return 0 }
+        return Double(speechLikeFrameCount) / Double(frameCount)
+    }
+
+    public var hasSustainedSpeech: Bool {
+        longestSpeechRunFrames >= 4
+            && speechLikeFrameCount >= 4
+            && activeLevelRangeDecibels >= 2.5
+            && peakFrameDecibels >= -52
+    }
+}
+
 public struct SpeechEvidenceResult: Equatable, Sendable {
     public let containsSpeech: Bool
     public let analyzedDurationSeconds: Double
@@ -8,6 +28,9 @@ public struct SpeechEvidenceResult: Equatable, Sendable {
     public let longestSpeechRunFrames: Int
     public let noiseFloorDecibels: Float
     public let peakFrameDecibels: Float
+    public let frameDurationSeconds: Double
+    public let speechLikeFrames: [Bool]
+    public let frameDecibels: [Float]
 
     public init(
         containsSpeech: Bool,
@@ -15,7 +38,10 @@ public struct SpeechEvidenceResult: Equatable, Sendable {
         speechLikeFrameCount: Int,
         longestSpeechRunFrames: Int,
         noiseFloorDecibels: Float,
-        peakFrameDecibels: Float
+        peakFrameDecibels: Float,
+        frameDurationSeconds: Double,
+        speechLikeFrames: [Bool],
+        frameDecibels: [Float]
     ) {
         self.containsSpeech = containsSpeech
         self.analyzedDurationSeconds = analyzedDurationSeconds
@@ -23,6 +49,70 @@ public struct SpeechEvidenceResult: Equatable, Sendable {
         self.longestSpeechRunFrames = longestSpeechRunFrames
         self.noiseFloorDecibels = noiseFloorDecibels
         self.peakFrameDecibels = peakFrameDecibels
+        self.frameDurationSeconds = frameDurationSeconds
+        self.speechLikeFrames = speechLikeFrames
+        self.frameDecibels = frameDecibels
+    }
+
+    public func evidence(from startSeconds: Double, to endSeconds: Double) -> SpeechIntervalEvidence {
+        guard frameDurationSeconds > 0,
+              endSeconds > startSeconds,
+              !speechLikeFrames.isEmpty else {
+            return SpeechIntervalEvidence(
+                frameCount: 0,
+                speechLikeFrameCount: 0,
+                longestSpeechRunFrames: 0,
+                activeLevelRangeDecibels: 0,
+                peakFrameDecibels: -160
+            )
+        }
+        let lower = max(
+            0,
+            min(
+                speechLikeFrames.count,
+                Int(floor(max(0, startSeconds) / frameDurationSeconds))
+            )
+        )
+        let upper = max(
+            lower,
+            min(
+                speechLikeFrames.count,
+                Int(ceil(max(0, endSeconds) / frameDurationSeconds))
+            )
+        )
+        var speechCount = 0
+        var currentRun = 0
+        var longestRun = 0
+        var activeLevels: [Float] = []
+        for index in lower..<upper {
+            let isSpeechLike = speechLikeFrames[index]
+            if isSpeechLike {
+                speechCount += 1
+                currentRun += 1
+                longestRun = max(longestRun, currentRun)
+                if frameDecibels.indices.contains(index) {
+                    activeLevels.append(frameDecibels[index])
+                }
+            } else {
+                currentRun = 0
+            }
+        }
+        let activeRange: Float
+        if let minimum = activeLevels.min(), let maximum = activeLevels.max() {
+            activeRange = maximum - minimum
+        } else {
+            activeRange = 0
+        }
+        return SpeechIntervalEvidence(
+            frameCount: upper - lower,
+            speechLikeFrameCount: speechCount,
+            longestSpeechRunFrames: longestRun,
+            activeLevelRangeDecibels: activeRange,
+            peakFrameDecibels:
+                frameDecibels.indices.contains(lower)
+                ? frameDecibels[lower..<upper].max() ?? -160
+                : -160
+        )
     }
 }
 
@@ -93,12 +183,15 @@ public enum LocalSpeechEvidenceAnalyzer {
         var currentRun = 0
         var longestRun = 0
         var activeLevels: [Float] = []
+        var speechLikeFrames: [Bool] = []
+        speechLikeFrames.reserveCapacity(frames.count)
         for frame in frames {
             let isSpeechLike =
                 frame.decibels >= activeThreshold
                 && frame.zeroCrossingRate >= 0.006
                 && frame.zeroCrossingRate <= 0.34
                 && frame.crestFactor <= 11
+            speechLikeFrames.append(isSpeechLike)
             if isSpeechLike {
                 speechLikeCount += 1
                 currentRun += 1
@@ -130,7 +223,10 @@ public enum LocalSpeechEvidenceAnalyzer {
             speechLikeFrameCount: speechLikeCount,
             longestSpeechRunFrames: longestRun,
             noiseFloorDecibels: noiseFloor,
-            peakFrameDecibels: peak
+            peakFrameDecibels: peak,
+            frameDurationSeconds: Double(frameSize) / sampleRate,
+            speechLikeFrames: speechLikeFrames,
+            frameDecibels: frames.map(\.decibels)
         )
     }
 
@@ -164,6 +260,9 @@ public enum LocalSpeechEvidenceAnalyzer {
         speechLikeFrameCount: 0,
         longestSpeechRunFrames: 0,
         noiseFloorDecibels: -160,
-        peakFrameDecibels: -160
+        peakFrameDecibels: -160,
+        frameDurationSeconds: 0.020,
+        speechLikeFrames: [],
+        frameDecibels: []
     )
 }

@@ -34,21 +34,29 @@
    four-byte packets never reach speech-to-text.
 5. Produce a speech-optimized transcription derivative and send it with the
    bounded vocabulary prompt to Groq Large v3.
-6. Insert the plain transcript plus a Markdown comment envelope containing its
+6. Apply the selected silence-protection policy. Basic uses the existing
+   whole-recording speech gate. Enhanced retains that same 20 ms local evidence
+   timeline and Groq's verbose segment metadata, then omits a segment only when
+   both sources identify its padded timestamp interval as unsupported
+   non-speech. Missing metadata, an incomplete segment representation, genuine
+   local speech, or provider confidence preserves the returned text. Validation
+   does not segment, re-encode, re-upload, retranscribe, or alter the canonical
+   M4A.
+7. Insert the plain transcript plus a Markdown comment envelope containing its
    activity and turn IDs into the captured editor. Voice activates the captured
    application, snapshots the macOS pasteboard, posts a real Command-V through
    the HID event stream, waits for a renderer-backed editor to consume it, and
    restores the original pasteboard only if no other owner changed it. A
    read-back-verified Accessibility write remains the fallback; Voice never
    submits the message.
-7. Persist the protected local v2 record, insert its full envelope, and
+8. Persist the protected local v2 record, insert its full envelope, and
    register minimal intent identity in a single-flight background task.
    Specialist permission may arrive before registration through a short-lived,
    identity-only deferred decision.
-8. After an `activity_related` decision, upload the original recording to
+9. After an `activity_related` decision, upload the original recording to
    private R2 and link it to the resulting user transcript turn.
-9. Start delivery analysis in a background Codex task.
-10. Persist per-answer delivery evidence in D1. On activity completion, the
+10. Start delivery analysis in a background Codex task.
+11. Persist per-answer delivery evidence in D1. On activity completion, the
    specialist includes a combined delivery review in the dated attempt bundle.
 
 R2 upload and delivery analysis continue after visible cursor insertion.
@@ -85,6 +93,31 @@ incomplete provider result, implausible duration, known prompt leakage, or
 missing output triggers exactly one unprompted retry. If the retry is also
 suspicious, Voice does not claim success; it retains the original audio and
 offers Play, Save, and Retry.
+
+Silence protection has three persistent modes:
+
+- **Off** skips local no-speech validation and displays a warning.
+- **Basic** is the default and preserves the existing whole-recording gate.
+- **Enhanced — Experimental** adds the segment-local corroboration described
+  above without another decode, provider request, or AI layer.
+
+Enhanced removal requires a complete segment representation of the canonical
+provider text, high provider no-speech probability, low provider log
+probability, and no sustained speech in the matching local interval. This
+fail-open-for-speech rule preserves legitimate “Thank you,” quiet speech,
+hesitations, breathing, short pauses, and any result on which the two evidence
+sources disagree. Filtered text is removed before cursor insertion and before a
+pending linked capture can be created, so it cannot reach D1, accepted private
+R2 metadata, or Delivery Coach. The original M4A remains the sole playback and
+upload object.
+
+Every completed attempt appends one bounded, permission-0600 diagnostic record
+containing only numeric stage timings, the selected protection mode, omission
+count, and outcome. The Settings diagnostics surface can copy, reveal, and
+clear that file. It never records transcript text, audio, credentials, tokens,
+private URLs, or activity descriptions. Segment-validation time is recorded
+separately from decoding, upload/provider wait, and response assembly so the
+experimental comparison's incremental cost remains observable.
 
 The compact recorder uses a layered material surface. Playback widens it,
 exposes a seekable timeline, elapsed/duration text, explicit Stop, and timer

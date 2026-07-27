@@ -145,6 +145,16 @@ final class VoiceBridgeModel: ObservableObject {
         case export
     }
 
+    private struct CaptureDiagnosticSeed {
+        let id: UUID
+        let startedAt: Date
+        let recordingDurationSeconds: Double
+        let fileFinalizationSeconds: Double
+        let integrityInspectionSeconds: Double
+        let localSpeechScanSeconds: Double
+        let protectionMode: SpeechProtectionMode
+    }
+
     @Published var phase: Phase = .setup
     @Published var context: VoiceContextResponse?
     @Published private(set) var timerInstrument: VoiceTimerInstrument?
@@ -172,6 +182,8 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var backgroundAudioMode: BackgroundAudioRecordingMode
     @Published var backgroundAudioRelativeLevel: Double
     @Published var dynamicRecordingInterfaceEnabled: Bool
+    @Published var speechProtectionMode: SpeechProtectionMode
+    @Published private(set) var diagnosticRecords: [VoiceDiagnosticRecord] = []
     @Published private(set) var dynamicRecordingInterfaceActive = false
     @Published var shortcut: HotKeyShortcut
     @Published var shortcutCapturing = false
@@ -211,6 +223,7 @@ final class VoiceBridgeModel: ObservableObject {
     private let textInjector = DictationTextInjector()
     private let outputVolumeController = SystemOutputVolumeController()
     private var recordingStore: RecordingStore?
+    private var diagnosticsStore: VoiceDiagnosticsStore?
     private var pipeline: VoicePipeline?
     private var captureDestination: CaptureDestination?
     private var captureStartedInCodex = false
@@ -243,6 +256,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var processingIndicatorTask: Task<Void, Never>?
     private var disclosureStateBeforeRecording: FloatingWidgetDisclosureState?
     private var recordingStartupTask: Task<Void, Never>?
+    private var currentInsertionDurationSeconds: Double = 0
     @Published private(set) var isStartingRecording = false
 
     var isRecording: Bool { recorder.isRecording }
@@ -456,6 +470,7 @@ final class VoiceBridgeModel: ObservableObject {
         dynamicRecordingInterfaceEnabled = defaults.object(
             forKey: "voice.dynamicRecordingInterfaceEnabled"
         ) as? Bool ?? false
+        speechProtectionMode = SpeechProtectionMode.load(from: defaults)
         let resolvedShortcut: HotKeyShortcut
         if let data = defaults.data(forKey: "voice.shortcut"),
            let saved = try? JSONDecoder().decode(HotKeyShortcut.self, from: data) {
@@ -481,6 +496,11 @@ final class VoiceBridgeModel: ObservableObject {
             failureNotice = storedFailure
         }
         recordingStore = try? RecordingStore()
+        if let recordingStore {
+            diagnosticsStore = try? VoiceDiagnosticsStore(
+                directory: recordingStore.diagnosticsDirectory
+            )
+        }
         if let frontmost = NSWorkspace.shared.frontmostApplication,
            CaptureTargetApplicationPolicy.canReceiveDictation(
                bundleIdentifier: frontmost.bundleIdentifier
@@ -499,6 +519,7 @@ final class VoiceBridgeModel: ObservableObject {
             outputVolumeController.recoverInterruptedSessionIfNeeded()
             registerGlobalShortcuts()
             await loadSecureSettings()
+            await refreshDiagnostics()
             startLiveUpdates()
         }
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -905,6 +926,34 @@ final class VoiceBridgeModel: ObservableObject {
             if !FileManager.default.fileExists(atPath: retryURL.path) {
                 try lastAudioData.write(to: retryURL, options: .atomic)
             }
+            let retryStartedAt = Date()
+            let speechScanStartedAt = Date()
+            let speechEvidence = speechProtectionMode == .off
+                ? nil
+                : try LocalSpeechEvidenceAnalyzer.inspect(retryURL)
+            let speechScanSeconds = speechProtectionMode == .off
+                ? 0
+                : Date().timeIntervalSince(speechScanStartedAt)
+            guard speechEvidence?.containsSpeech != false else {
+                canRetryLastTranscription = false
+                reportFailure(
+                    kind: .recording,
+                    title: "No speech detected",
+                    message: "Nothing was inserted or sent · record again when ready",
+                    detail: "Local speech detection found no sustained speech-shaped frames in the preserved recording.",
+                    actions: [.recordAgain, .playRecording, .saveRecording]
+                )
+                return
+            }
+            let diagnosticSeed = CaptureDiagnosticSeed(
+                id: UUID(),
+                startedAt: retryStartedAt,
+                recordingDurationSeconds: lastAudioDuration,
+                fileFinalizationSeconds: 0,
+                integrityInspectionSeconds: 0,
+                localSpeechScanSeconds: speechScanSeconds,
+                protectionMode: speechProtectionMode
+            )
             targetApplicationPID = currentInsertionTargetPID()
             canRetryLastTranscription = false
             captureGeneration = UUID()
@@ -924,10 +973,17 @@ final class VoiceBridgeModel: ObservableObject {
                         recording: recording,
                         activity: activity,
                         startedAt: startedAt,
-                        generation: generation
+                        generation: generation,
+                        speechEvidence: speechEvidence,
+                        diagnosticSeed: diagnosticSeed
                     )
                 case .general, nil:
-                    await processGeneral(recording: recording, rememberAudio: false)
+                    await processGeneral(
+                        recording: recording,
+                        rememberAudio: false,
+                        speechEvidence: speechEvidence,
+                        diagnosticSeed: diagnosticSeed
+                    )
                 }
             }
         } catch {
@@ -964,6 +1020,64 @@ final class VoiceBridgeModel: ObservableObject {
             enabled,
             forKey: "voice.dynamicRecordingInterfaceEnabled"
         )
+    }
+
+    func setSpeechProtectionMode(_ mode: SpeechProtectionMode) {
+        speechProtectionMode = mode
+        mode.save()
+    }
+
+    func refreshDiagnostics() async {
+        diagnosticRecords = (try? await diagnosticsStore?.records()) ?? []
+    }
+
+    func copyDiagnostic(_ record: VoiceDiagnosticRecord) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(record.report, forType: .string)
+        contextMessage = "Diagnostic timing report copied."
+    }
+
+    func revealDiagnosticsFile() {
+        guard let fileURL = diagnosticsStore?.fileURL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+    }
+
+    func clearDiagnostics() {
+        Task {
+            try? await diagnosticsStore?.clear()
+            await refreshDiagnostics()
+        }
+    }
+
+    private func recordDiagnostic(
+        seed: CaptureDiagnosticSeed,
+        timing: TranscriptionTiming?,
+        segmentValidationSeconds: Double,
+        insertionSeconds: Double,
+        omittedUnsupportedSegmentCount: Int,
+        outcome: VoiceDiagnosticOutcome
+    ) async {
+        let record = VoiceDiagnosticRecord(
+            id: seed.id,
+            createdAt: seed.startedAt,
+            recordingDurationSeconds: seed.recordingDurationSeconds,
+            fileFinalizationSeconds: seed.fileFinalizationSeconds,
+            integrityInspectionSeconds: seed.integrityInspectionSeconds,
+            localSpeechScanSeconds: seed.localSpeechScanSeconds,
+            providerWaitSeconds:
+                (timing?.chunkPreparationSeconds ?? 0)
+                + (timing?.providerWaitSeconds ?? 0),
+            responseProcessingSeconds: timing?.responseProcessingSeconds ?? 0,
+            segmentValidationSeconds: segmentValidationSeconds,
+            insertionSeconds: insertionSeconds,
+            totalSeconds: Date().timeIntervalSince(seed.startedAt),
+            protectionMode: seed.protectionMode,
+            omittedUnsupportedSegmentCount: omittedUnsupportedSegmentCount,
+            outcome: outcome
+        )
+        try? await diagnosticsStore?.append(record)
+        await refreshDiagnostics()
     }
 
     func setLinkMode(_ enabled: Bool) {
@@ -1692,7 +1806,11 @@ final class VoiceBridgeModel: ObservableObject {
             return
         }
         do {
+            let diagnosticStartedAt = Date()
+            let fileFinalizationStartedAt = Date()
             var recording = try recorder.stop()
+            let fileFinalizationSeconds = Date()
+                .timeIntervalSince(fileFinalizationStartedAt)
             // The experiment is scoped to live capture. Transcription returns
             // immediately to the prior disclosure and uses the existing spinner.
             restoreDisclosureAfterRecording()
@@ -1730,29 +1848,61 @@ final class VoiceBridgeModel: ObservableObject {
                 }
                 return
             }
+            let integrityInspectionStartedAt = Date()
             let evidence = try RecordingFileInspector.inspect(recording)
+            let integrityInspectionSeconds = Date()
+                .timeIntervalSince(integrityInspectionStartedAt)
             let recovery = RecordingRecoveryPolicy.action(for: evidence)
             voiceBridgeLogger.info(
                 "Capture finalized: wall=\(evidence.wallDurationSeconds, privacy: .public)s decoded=\(evidence.decodedDurationSeconds, privacy: .public)s bytes=\(evidence.fileSizeBytes, privacy: .public) audioBytes=\(evidence.encodedAudioBytes ?? -1, privacy: .public) frames=\(evidence.decodedFrameCount, privacy: .public) recovery=\(String(describing: recovery), privacy: .public)"
             )
+            var speechEvidence: SpeechEvidenceResult?
+            var localSpeechScanSeconds = 0.0
+            if recovery == .transcribe, speechProtectionMode != .off {
+                let localSpeechScanStartedAt = Date()
+                speechEvidence = try LocalSpeechEvidenceAnalyzer.inspect(recording.url)
+                localSpeechScanSeconds = Date()
+                    .timeIntervalSince(localSpeechScanStartedAt)
+            }
+            let diagnosticSeed = CaptureDiagnosticSeed(
+                id: UUID(),
+                startedAt: diagnosticStartedAt,
+                recordingDurationSeconds: recording.duration,
+                fileFinalizationSeconds: fileFinalizationSeconds,
+                integrityInspectionSeconds: integrityInspectionSeconds,
+                localSpeechScanSeconds: localSpeechScanSeconds,
+                protectionMode: speechProtectionMode
+            )
+
             switch recovery {
             case .transcribe:
-                let speechEvidence = try LocalSpeechEvidenceAnalyzer.inspect(recording.url)
-                voiceBridgeLogger.info(
-                    "Local speech evidence: speech=\(speechEvidence.containsSpeech, privacy: .public) duration=\(speechEvidence.analyzedDurationSeconds, privacy: .public)s frames=\(speechEvidence.speechLikeFrameCount, privacy: .public) run=\(speechEvidence.longestSpeechRunFrames, privacy: .public) floor=\(speechEvidence.noiseFloorDecibels, privacy: .public)dB peak=\(speechEvidence.peakFrameDecibels, privacy: .public)dB"
-                )
-                guard speechEvidence.containsSpeech else {
-                    try? FileManager.default.removeItem(at: recording.url)
-                    lastRetryDestination = nil
-                    canRetryLastTranscription = false
-                    reportFailure(
-                        kind: .recording,
-                        title: "No speech detected",
-                        message: "Nothing was inserted or sent · record again when ready",
-                        detail: "Local speech detection found no sustained speech-shaped frames in the finalized recording.",
-                        actions: [.recordAgain]
+                if let speechEvidence {
+                    voiceBridgeLogger.info(
+                        "Local speech evidence: speech=\(speechEvidence.containsSpeech, privacy: .public) duration=\(speechEvidence.analyzedDurationSeconds, privacy: .public)s frames=\(speechEvidence.speechLikeFrameCount, privacy: .public) run=\(speechEvidence.longestSpeechRunFrames, privacy: .public) floor=\(speechEvidence.noiseFloorDecibels, privacy: .public)dB peak=\(speechEvidence.peakFrameDecibels, privacy: .public)dB"
                     )
-                    return
+                    guard speechEvidence.containsSpeech else {
+                        Task {
+                            await recordDiagnostic(
+                                seed: diagnosticSeed,
+                                timing: nil,
+                                segmentValidationSeconds: 0,
+                                insertionSeconds: 0,
+                                omittedUnsupportedSegmentCount: 0,
+                                outcome: .noSpeech
+                            )
+                        }
+                        try? FileManager.default.removeItem(at: recording.url)
+                        lastRetryDestination = nil
+                        canRetryLastTranscription = false
+                        reportFailure(
+                            kind: .recording,
+                            title: "No speech detected",
+                            message: "Nothing was inserted or sent · record again when ready",
+                            detail: "Local speech detection found no sustained speech-shaped frames in the finalized recording.",
+                            actions: [.recordAgain]
+                        )
+                        return
+                    }
                 }
                 rememberLastAudio(recording, activityTitle: memoActivityTitle)
             case .preserveWithoutRetry:
@@ -1788,10 +1938,17 @@ final class VoiceBridgeModel: ObservableObject {
                         recording: recording,
                         activity: activity,
                         startedAt: startedAt,
-                        generation: generation
+                        generation: generation,
+                        speechEvidence: speechEvidence,
+                        diagnosticSeed: diagnosticSeed
                     )
                 case .general:
-                    await processGeneral(recording: recording, rememberAudio: false)
+                    await processGeneral(
+                        recording: recording,
+                        rememberAudio: false,
+                        speechEvidence: speechEvidence,
+                        diagnosticSeed: diagnosticSeed
+                    )
                 }
             }
         } catch {
@@ -1818,7 +1975,9 @@ final class VoiceBridgeModel: ObservableObject {
 
     private func processGeneral(
         recording: RecordedCapture,
-        rememberAudio: Bool = true
+        rememberAudio: Bool = true,
+        speechEvidence: SpeechEvidenceResult? = nil,
+        diagnosticSeed: CaptureDiagnosticSeed? = nil
     ) async {
         guard let recordingStore else {
             endProcessing()
@@ -1834,6 +1993,7 @@ final class VoiceBridgeModel: ObservableObject {
             reportFailure(error, stage: .recording, hasRecoverableAudio: hasLastAudio)
             return
         }
+        currentInsertionDurationSeconds = 0
         do {
             let generalPipeline = GeneralDictationPipeline(
                 transcriber: GroqTranscriber(apiKey: groqKeyDraft),
@@ -1842,7 +2002,10 @@ final class VoiceBridgeModel: ObservableObject {
             )
             let result = try await generalPipeline.process(
                 recordingURL: recording.url,
-                durationSeconds: recording.duration
+                durationSeconds: recording.duration,
+                speechEvidence: speechEvidence,
+                protectionMode: diagnosticSeed?.protectionMode
+                    ?? speechProtectionMode
             )
             let transcript = result.transcription.text
             let inserted = await insertTranscript(
@@ -1863,10 +2026,31 @@ final class VoiceBridgeModel: ObservableObject {
                     hasRecoverableAudio: hasLastAudio
                 )
             }
+            if let diagnosticSeed {
+                await recordDiagnostic(
+                    seed: diagnosticSeed,
+                    timing: result.transcription.timing,
+                    segmentValidationSeconds: result.segmentValidationSeconds,
+                    insertionSeconds: currentInsertionDurationSeconds,
+                    omittedUnsupportedSegmentCount:
+                        result.omittedUnsupportedSegmentCount,
+                    outcome: inserted ? .delivered : .failed
+                )
+            }
         } catch {
             canRetryLastTranscription = hasLastAudio
             endProcessing()
             reportFailure(error, stage: .transcription, hasRecoverableAudio: hasLastAudio)
+            if let diagnosticSeed {
+                await recordDiagnostic(
+                    seed: diagnosticSeed,
+                    timing: nil,
+                    segmentValidationSeconds: 0,
+                    insertionSeconds: currentInsertionDurationSeconds,
+                    omittedUnsupportedSegmentCount: 0,
+                    outcome: .failed
+                )
+            }
         }
     }
 
@@ -1874,7 +2058,9 @@ final class VoiceBridgeModel: ObservableObject {
         recording: RecordedCapture,
         activity: FocusedVoiceActivity,
         startedAt: Date,
-        generation: UUID
+        generation: UUID,
+        speechEvidence: SpeechEvidenceResult? = nil,
+        diagnosticSeed: CaptureDiagnosticSeed? = nil
     ) async {
         do {
             try validateRecording(recording)
@@ -1885,15 +2071,19 @@ final class VoiceBridgeModel: ObservableObject {
             reportFailure(error, stage: .recording, hasRecoverableAudio: hasLastAudio)
             return
         }
+        currentInsertionDurationSeconds = 0
         do {
             lastInsertionSucceeded = false
             let builtPipeline = try makeLinkedPipeline()
             pipeline = builtPipeline
-            _ = try await builtPipeline.process(
+            let result = try await builtPipeline.process(
                 recordingURL: recording.url,
                 durationSeconds: recording.duration,
                 activity: activity,
                 occurredAt: startedAt,
+                speechEvidence: speechEvidence,
+                protectionMode: diagnosticSeed?.protectionMode
+                    ?? speechProtectionMode,
                 transcriptReady: { capture in
                     _ = await self.insertTranscript(
                         capture.transcript,
@@ -1920,11 +2110,32 @@ final class VoiceBridgeModel: ObservableObject {
                 phase = .delivered
                 contextMessage = "Inserted at the cursor · waiting for specialist permission."
             }
+            if let diagnosticSeed {
+                await recordDiagnostic(
+                    seed: diagnosticSeed,
+                    timing: result.transcriptionTiming,
+                    segmentValidationSeconds: result.segmentValidationSeconds,
+                    insertionSeconds: currentInsertionDurationSeconds,
+                    omittedUnsupportedSegmentCount:
+                        result.omittedUnsupportedSegmentCount,
+                    outcome: lastInsertionSucceeded ? .delivered : .failed
+                )
+            }
         } catch {
             guard generation == captureGeneration else { return }
             canRetryLastTranscription = hasLastAudio
             endProcessing()
             reportFailure(error, stage: .transcription, hasRecoverableAudio: hasLastAudio)
+            if let diagnosticSeed {
+                await recordDiagnostic(
+                    seed: diagnosticSeed,
+                    timing: nil,
+                    segmentValidationSeconds: 0,
+                    insertionSeconds: currentInsertionDurationSeconds,
+                    omittedUnsupportedSegmentCount: 0,
+                    outcome: .failed
+                )
+            }
         }
     }
 
@@ -2047,7 +2258,9 @@ final class VoiceBridgeModel: ObservableObject {
         lastInsertionText = editorText
         phase = .inserting
         if showDeliveryStep { deliveryStates[.insertion] = .working }
+        let insertionStartedAt = Date()
         let output = await textInjector.deliver(text: editorText, targetPID: targetApplicationPID)
+        currentInsertionDurationSeconds = Date().timeIntervalSince(insertionStartedAt)
         switch output {
         case .inserted:
             lastInsertionSucceeded = true
@@ -2357,6 +2570,24 @@ private struct VoiceSettingsWindow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Picker(
+                    "Silence protection",
+                    selection: Binding(
+                        get: { model.speechProtectionMode },
+                        set: { mode in model.setSpeechProtectionMode(mode) }
+                    )
+                ) {
+                    ForEach(SpeechProtectionMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                Text(speechProtectionDescription)
+                    .font(.caption)
+                    .foregroundStyle(
+                        model.speechProtectionMode == .off
+                            ? AnyShapeStyle(.orange)
+                            : AnyShapeStyle(.secondary)
+                    )
+                Picker(
                     "Background audio",
                     selection: Binding(
                         get: { model.backgroundAudioMode },
@@ -2462,6 +2693,84 @@ private struct VoiceSettingsWindow: View {
                     .textFieldStyle(.roundedBorder)
             }
 
+            Section("Diagnostics") {
+                if model.diagnosticRecords.isEmpty {
+                    Text("Timing details will appear after the next transcription.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.diagnosticRecords.prefix(5)) { record in
+                        DisclosureGroup {
+                            LabeledContent(
+                                "Recording",
+                                value: diagnosticDuration(record.recordingDurationSeconds)
+                            )
+                            LabeledContent(
+                                "File finalization",
+                                value: diagnosticDuration(record.fileFinalizationSeconds)
+                            )
+                            LabeledContent(
+                                "Integrity inspection",
+                                value: diagnosticDuration(record.integrityInspectionSeconds)
+                            )
+                            LabeledContent(
+                                "Local speech scan",
+                                value: diagnosticDuration(record.localSpeechScanSeconds)
+                            )
+                            LabeledContent(
+                                "Upload and Groq",
+                                value: diagnosticDuration(record.providerWaitSeconds)
+                            )
+                            LabeledContent(
+                                "Response processing",
+                                value: diagnosticDuration(record.responseProcessingSeconds)
+                            )
+                            LabeledContent(
+                                "Segment validation",
+                                value: diagnosticDuration(
+                                    record.segmentValidationSeconds ?? 0
+                                )
+                            )
+                            LabeledContent(
+                                "Cursor insertion",
+                                value: diagnosticDuration(record.insertionSeconds)
+                            )
+                            LabeledContent(
+                                "Total",
+                                value: diagnosticDuration(record.totalSeconds)
+                            )
+                            LabeledContent(
+                                "Protection",
+                                value: record.protectionMode.displayName
+                            )
+                            LabeledContent(
+                                "Unsupported segments omitted",
+                                value: "\(record.omittedUnsupportedSegmentCount)"
+                            )
+                            Button("Copy diagnostic report") {
+                                model.copyDiagnostic(record)
+                            }
+                        } label: {
+                            HStack {
+                                Text(record.createdAt.formatted(date: .abbreviated, time: .shortened))
+                                Spacer()
+                                Text(record.outcome.rawValue.capitalized)
+                                    .foregroundStyle(.secondary)
+                                Text(diagnosticDuration(record.totalSeconds))
+                                    .monospacedDigit()
+                            }
+                        }
+                    }
+                }
+                HStack {
+                    Button("Reveal diagnostic file", action: model.revealDiagnosticsFile)
+                    Button("Clear diagnostics", role: .destructive, action: model.clearDiagnostics)
+                        .disabled(model.diagnosticRecords.isEmpty)
+                }
+                Text("Stored locally with bounded retention. Diagnostics never include transcript text, audio, credentials, tokens, or private URLs.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             HStack {
                 Spacer()
                 Button("Save secure settings", action: model.saveSettings)
@@ -2472,6 +2781,27 @@ private struct VoiceSettingsWindow: View {
         .formStyle(.grouped)
         .padding(16)
         .frame(width: 620)
+        .task {
+            await model.refreshDiagnostics()
+        }
+    }
+
+    private var speechProtectionDescription: String {
+        switch model.speechProtectionMode {
+        case .off:
+            "Disables local no-speech checks. Silent audio may produce invented text."
+        case .basic:
+            "Rejects a complete recording when it contains no sustained speech."
+        case .enhanced:
+            "Also omits a returned segment only when local audio and Groq both identify its interval as non-speech."
+        }
+    }
+
+    private func diagnosticDuration(_ seconds: Double) -> String {
+        if seconds >= 1 {
+            return String(format: "%.2f s", seconds)
+        }
+        return String(format: "%.0f ms", seconds * 1_000)
     }
 }
 

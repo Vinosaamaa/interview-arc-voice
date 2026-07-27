@@ -233,6 +233,20 @@ public enum TranscriptionIntegrityEvaluator {
 public struct ReliableTranscription: Equatable, Sendable {
     public let transcription: TranscriptionResult
     public let wasRetried: Bool
+    public let omittedUnsupportedSegmentCount: Int
+    public let segmentValidationSeconds: Double
+
+    public init(
+        transcription: TranscriptionResult,
+        wasRetried: Bool,
+        omittedUnsupportedSegmentCount: Int = 0,
+        segmentValidationSeconds: Double = 0
+    ) {
+        self.transcription = transcription
+        self.wasRetried = wasRetried
+        self.omittedUnsupportedSegmentCount = omittedUnsupportedSegmentCount
+        self.segmentValidationSeconds = segmentValidationSeconds
+    }
 }
 
 public actor ReliableSpeechTranscriber {
@@ -247,7 +261,9 @@ public actor ReliableSpeechTranscriber {
         prompt: String,
         temporaryDirectory: URL,
         audioDurationSeconds: Double,
-        expectedChunkCount: Int = 1
+        expectedChunkCount: Int = 1,
+        speechEvidence: SpeechEvidenceResult? = nil,
+        protectionMode: SpeechProtectionMode = .basic
     ) async throws -> ReliableTranscription {
         let first: TranscriptionResult
         do {
@@ -271,7 +287,12 @@ public actor ReliableSpeechTranscriber {
             guard !retryCheck.isSuspicious else {
                 throw VoiceBridgeError.suspiciousTranscript(retryCheck.reasons)
             }
-            return ReliableTranscription(transcription: retry, wasRetried: true)
+            return try protectedResult(
+                retry,
+                wasRetried: true,
+                speechEvidence: speechEvidence,
+                protectionMode: protectionMode
+            )
         }
         let firstCheck = check(
             first,
@@ -280,7 +301,12 @@ public actor ReliableSpeechTranscriber {
             expectedChunkCount: expectedChunkCount
         )
         guard firstCheck.isSuspicious else {
-            return ReliableTranscription(transcription: first, wasRetried: false)
+            return try protectedResult(
+                first,
+                wasRetried: false,
+                speechEvidence: speechEvidence,
+                protectionMode: protectionMode
+            )
         }
 
         let retry = try await base.transcribe(
@@ -297,7 +323,44 @@ public actor ReliableSpeechTranscriber {
         guard !retryCheck.isSuspicious else {
             throw VoiceBridgeError.suspiciousTranscript(retryCheck.reasons)
         }
-        return ReliableTranscription(transcription: retry, wasRetried: true)
+        return try protectedResult(
+            retry,
+            wasRetried: true,
+            speechEvidence: speechEvidence,
+            protectionMode: protectionMode
+        )
+    }
+
+    private func protectedResult(
+        _ transcription: TranscriptionResult,
+        wasRetried: Bool,
+        speechEvidence: SpeechEvidenceResult?,
+        protectionMode: SpeechProtectionMode
+    ) throws -> ReliableTranscription {
+        guard let speechEvidence else {
+            return ReliableTranscription(
+                transcription: transcription,
+                wasRetried: wasRetried
+            )
+        }
+        let validationStartedAt = Date()
+        let protected = SegmentLocalTranscriptValidator.apply(
+            transcription,
+            speechEvidence: speechEvidence,
+            mode: protectionMode
+        )
+        let validationSeconds = Date().timeIntervalSince(validationStartedAt)
+        guard !protected.transcription.text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty else {
+            throw VoiceBridgeError.suspiciousTranscript([.emptyTranscript])
+        }
+        return ReliableTranscription(
+            transcription: protected.transcription,
+            wasRetried: wasRetried,
+            omittedUnsupportedSegmentCount: protected.omittedUnsupportedSegmentCount,
+            segmentValidationSeconds: validationSeconds
+        )
     }
 
     private func check(

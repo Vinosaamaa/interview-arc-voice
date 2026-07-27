@@ -11,6 +11,34 @@ public struct TranscriptSegment: Codable, Equatable, Sendable {
     public let start: Double
     public let end: Double
     public let text: String
+    public let averageLogProbability: Double?
+    public let compressionRatio: Double?
+    public let noSpeechProbability: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case start
+        case end
+        case text
+        case averageLogProbability = "avg_logprob"
+        case compressionRatio = "compression_ratio"
+        case noSpeechProbability = "no_speech_prob"
+    }
+
+    public init(
+        start: Double,
+        end: Double,
+        text: String,
+        averageLogProbability: Double? = nil,
+        compressionRatio: Double? = nil,
+        noSpeechProbability: Double? = nil
+    ) {
+        self.start = start
+        self.end = end
+        self.text = text
+        self.averageLogProbability = averageLogProbability
+        self.compressionRatio = compressionRatio
+        self.noSpeechProbability = noSpeechProbability
+    }
 }
 
 public struct GroqTranscription: Codable, Equatable, Sendable {
@@ -21,11 +49,45 @@ public struct GroqTranscription: Codable, Equatable, Sendable {
     public let segments: [TranscriptSegment]?
 }
 
+public struct TranscriptionTiming: Codable, Equatable, Sendable {
+    public let chunkPreparationSeconds: Double
+    public let providerWaitSeconds: Double
+    public let responseProcessingSeconds: Double
+
+    public init(
+        chunkPreparationSeconds: Double,
+        providerWaitSeconds: Double,
+        responseProcessingSeconds: Double
+    ) {
+        self.chunkPreparationSeconds = chunkPreparationSeconds
+        self.providerWaitSeconds = providerWaitSeconds
+        self.responseProcessingSeconds = responseProcessingSeconds
+    }
+}
+
 public struct TranscriptionResult: Codable, Equatable, Sendable {
     public let text: String
     public let words: [TranscriptWord]
+    public let segments: [TranscriptSegment]?
     public let durationSeconds: Double
     public let chunkCount: Int
+    public let timing: TranscriptionTiming?
+
+    public init(
+        text: String,
+        words: [TranscriptWord],
+        segments: [TranscriptSegment]? = nil,
+        durationSeconds: Double,
+        chunkCount: Int,
+        timing: TranscriptionTiming? = nil
+    ) {
+        self.text = text
+        self.words = words
+        self.segments = segments
+        self.durationSeconds = durationSeconds
+        self.chunkCount = chunkCount
+        self.timing = timing
+    }
 }
 
 public protocol SpeechTranscribing: Sendable {
@@ -46,7 +108,9 @@ public actor GroqTranscriber: SpeechTranscribing {
     }
 
     public func transcribe(fileURL: URL, prompt: String, temporaryDirectory: URL) async throws -> TranscriptionResult {
+        let chunkPreparationStartedAt = Date()
         let chunks = try await chunker.chunks(for: fileURL, temporaryDirectory: temporaryDirectory)
+        let chunkPreparationSeconds = Date().timeIntervalSince(chunkPreparationStartedAt)
         defer {
             for chunk in chunks where chunk.isTemporary {
                 try? FileManager.default.removeItem(at: chunk.url)
@@ -56,6 +120,7 @@ public actor GroqTranscriber: SpeechTranscribing {
         let apiKey = self.apiKey
         let model = self.model
         let session = self.session
+        let providerStartedAt = Date()
         let responses = try await withThrowingTaskGroup(of: (AudioChunk, GroqTranscription).self) { group in
             for chunk in chunks {
                 group.addTask {
@@ -73,16 +138,25 @@ public actor GroqTranscriber: SpeechTranscribing {
             for try await response in group { result.append(response) }
             return result.sorted { $0.0.offsetSeconds < $1.0.offsetSeconds }
         }
+        let providerWaitSeconds = Date().timeIntervalSince(providerStartedAt)
 
+        let responseProcessingStartedAt = Date()
         let assembled = TranscriptAssembler.assemble(responses)
         guard !assembled.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw VoiceBridgeError.emptyTranscript
         }
+        let responseProcessingSeconds = Date().timeIntervalSince(responseProcessingStartedAt)
         return TranscriptionResult(
             text: assembled.text,
             words: assembled.words,
+            segments: assembled.segments,
             durationSeconds: responses.last.map { $0.0.offsetSeconds + ($0.1.duration ?? $0.0.durationSeconds) } ?? 0,
-            chunkCount: chunks.count
+            chunkCount: chunks.count,
+            timing: TranscriptionTiming(
+                chunkPreparationSeconds: chunkPreparationSeconds,
+                providerWaitSeconds: providerWaitSeconds,
+                responseProcessingSeconds: responseProcessingSeconds
+            )
         )
     }
 
@@ -202,7 +276,9 @@ private final class ExportSessionBox: @unchecked Sendable {
 }
 
 public enum TranscriptAssembler {
-    public static func assemble(_ responses: [(AudioChunk, GroqTranscription)]) -> (text: String, words: [TranscriptWord]) {
+    public static func assemble(
+        _ responses: [(AudioChunk, GroqTranscription)]
+    ) -> (text: String, words: [TranscriptWord], segments: [TranscriptSegment]) {
         var assembledWords: [TranscriptWord] = []
         for (chunk, response) in responses {
             let previousChunkEnd = assembledWords.last?.end
@@ -221,6 +297,27 @@ public enum TranscriptAssembler {
             }
         }
 
+        var assembledSegments: [TranscriptSegment] = []
+        for (chunk, response) in responses {
+            let previousChunkEnd = assembledSegments.last?.end
+            for segment in response.segments ?? [] {
+                let adjusted = TranscriptSegment(
+                    start: segment.start + chunk.offsetSeconds,
+                    end: segment.end + chunk.offsetSeconds,
+                    text: segment.text,
+                    averageLogProbability: segment.averageLogProbability,
+                    compressionRatio: segment.compressionRatio,
+                    noSpeechProbability: segment.noSpeechProbability
+                )
+                if chunk.offsetSeconds > 0,
+                   let previousChunkEnd,
+                   adjusted.end <= previousChunkEnd + 0.2 {
+                    continue
+                }
+                assembledSegments.append(adjusted)
+            }
+        }
+
         // Groq's top-level `text` is the canonical transcription. Word
         // timestamps are a separate alignment product and can be sparse near
         // pauses or at the end of a long recording. Rebuilding user-visible
@@ -231,7 +328,11 @@ public enum TranscriptAssembler {
         for (_, response) in responses {
             text = appendRemovingOverlap(text, response.text)
         }
-        return (text.trimmingCharacters(in: .whitespacesAndNewlines), assembledWords)
+        return (
+            text.trimmingCharacters(in: .whitespacesAndNewlines),
+            assembledWords,
+            assembledSegments
+        )
     }
 
     private static func appendRemovingOverlap(_ current: String, _ next: String) -> String {

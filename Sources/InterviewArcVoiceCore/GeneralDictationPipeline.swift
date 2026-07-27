@@ -20,7 +20,9 @@ public actor GeneralDictationPipeline {
 
     public func process(
         recordingURL: URL,
-        durationSeconds: Double
+        durationSeconds: Double,
+        speechEvidence: SpeechEvidenceResult? = nil,
+        protectionMode: SpeechProtectionMode = .basic
     ) async throws -> ReliableTranscription {
         let result = try await reliableTranscriber.transcribe(
             fileURL: recordingURL,
@@ -29,7 +31,9 @@ public actor GeneralDictationPipeline {
             // those instructions to leak into user transcripts.
             prompt: vocabularyPrompt,
             temporaryDirectory: temporaryDirectory,
-            audioDurationSeconds: durationSeconds
+            audioDurationSeconds: durationSeconds,
+            speechEvidence: speechEvidence,
+            protectionMode: protectionMode
         )
         try? fileManager.removeItem(at: recordingURL)
         return result
