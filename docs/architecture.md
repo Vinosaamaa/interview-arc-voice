@@ -4,10 +4,13 @@
 
 1. Fetch and cache the focused Interview Arc activity through the authenticated
    API at startup, reconnect, wake, explicit refresh, and revisioned
-   owner-scoped server events. Visible clocks advance locally. A disconnected
-   client falls back at a bounded 15–120-second cadence; it never performs an
-   unconditional one-second HTTP loop. A transient refresh failure retains the
-   last verified display context.
+   owner-scoped server events. WebSocket connection/open is an authoritative
+   synchronization boundary: Voice consumes the connection revision, preserves
+   the last observed revision across reconnects, and performs one status-first
+   snapshot. Visible clocks advance locally. A disconnected client falls back
+   at a bounded 15–120-second cadence; it never performs an unconditional
+   one-second HTTP loop. A transient refresh failure retains the last verified
+   display context.
 2. Resolve a deterministic vocabulary prompt from explicit terms, stored pack
    IDs, metadata triggers, and the specialty base pack.
 3. Open the microphone immediately from the fresh cached routing snapshot and record
@@ -43,7 +46,13 @@
 
 R2 upload and delivery analysis continue after visible cursor insertion.
 Only genuine transient failures receive local retry scheduling. Waiting for a
-specialist or user does not. Permanent identity conflicts are quarantined.
+specialist or user does not. While unresolved local capture evidence exists,
+Voice also performs one single-flight, status-first safety reconciliation at
+15, 30, 60, and then 120 seconds. The loop stops as soon as no capture requires
+reconciliation, so an idle healthy client produces no recurring intent reads.
+This safety path recovers a decision whose best-effort live invalidation was
+missed without re-registering known captures. Permanent identity conflicts are
+quarantined.
 
 The normal transcription path performs one provider request. Existing response
 metadata is checked without another network call. A concrete failure,

@@ -23,7 +23,9 @@ public actor InterviewArcAPIClient {
         return response
     }
 
-    public func liveUpdates() -> AsyncThrowingStream<VoiceLiveUpdate, Error> {
+    public func liveUpdates(
+        afterRevision initialRevision: Int = 0
+    ) -> AsyncThrowingStream<VoiceLiveSignal, Error> {
         var components = URLComponents(
             url: baseURL.appending(path: "events"),
             resolvingAgainstBaseURL: false
@@ -33,11 +35,10 @@ public actor InterviewArcAPIClient {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("InterviewArcVoice/0.3", forHTTPHeaderField: "User-Agent")
         let socket = session.webSocketTask(with: request)
-        let liveDecoder = JSONDecoder()
-        let revisionPolicy = VoiceLiveRevisionPolicy()
+        let liveDecoder = VoiceLiveFrameDecoder()
         return AsyncThrowingStream { continuation in
             let reader = Task {
-                var latestRevision = 0
+                var latestRevision = initialRevision
                 socket.resume()
                 do {
                     while !Task.isCancelled {
@@ -48,16 +49,11 @@ public actor InterviewArcAPIClient {
                         case .string(let value): data = Data(value.utf8)
                         @unknown default: continue
                         }
-                        guard
-                            let update = try? liveDecoder.decode(VoiceLiveUpdate.self, from: data),
-                            update.type == "practice_changed",
-                            revisionPolicy.shouldApply(
-                                revision: update.revision,
-                                latestRevision: latestRevision
-                            )
-                        else { continue }
-                        latestRevision = update.revision
-                        continuation.yield(update)
+                        guard let signal = try? liveDecoder.decode(
+                            data,
+                            latestRevision: &latestRevision
+                        ) else { continue }
+                        continuation.yield(signal)
                     }
                     continuation.finish()
                 } catch {
