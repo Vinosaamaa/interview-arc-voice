@@ -44,7 +44,16 @@ public actor InterviewArcAPIClient {
                             for: .seconds(VoiceLiveConnectionPolicy.heartbeatIntervalSeconds)
                         )
                         guard !Task.isCancelled else { return }
-                        try await socket.sendPing()
+                        try await withCheckedThrowingContinuation {
+                            (continuation: CheckedContinuation<Void, Error>) in
+                            socket.sendPing { error in
+                                if let error {
+                                    continuation.resume(throwing: error)
+                                } else {
+                                    continuation.resume()
+                                }
+                            }
+                        }
                     }
                 } catch {
                     socket.cancel(with: .goingAway, reason: nil)
