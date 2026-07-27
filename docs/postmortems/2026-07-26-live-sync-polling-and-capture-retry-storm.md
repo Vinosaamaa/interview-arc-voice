@@ -66,3 +66,46 @@ envelope, and keeps a timer-disclosure control available when previous-memo
 actions replace the compact clocks. Regression coverage now treats successful
 and unsuccessful manual insertions as terminal states rather than relying on
 incidental phase changes elsewhere in the recording pipeline.
+
+## Native follow-up: foreground recording clobbered by reconciliation
+
+### Detection and impact
+
+During an installed-product recording, the floating widget returned to an idle
+surface without transcription, a visible error, or previous-memo recovery.
+Inspection found valid M4A files on disk. The failure was therefore not capture
+loss at the filesystem boundary; it was loss of foreground ownership and
+recovery visibility.
+
+### Root cause
+
+`retryPendingInBackground()` saved the current presentation phase, reconciled
+pending captures, and then published `.idle` or `.queued` whenever that phase
+was unchanged. When reconciliation began during `.recording`, an unchanged
+recording phase satisfied that condition. Background synchronization replaced
+the foreground phase even though `AnswerRecorder` was still writing audio.
+The UI and record command incorrectly treated the presentation phase as the
+authoritative microphone state.
+
+Menu-bar insertion had a related ownership problem: transient system
+applications could replace the remembered editor PID while the popover was
+open, allowing the Accessibility fallback to wait on a process that could
+never receive dictation. Timer disclosure also relied solely on SwiftUI
+change observation to resize the native panel, so its label could say
+“Hide timers” while the panel remained compact.
+
+### Repair and prevention
+
+- The active recorder stream is authoritative for Record/Stop behavior.
+- Background reconciliation publishes presentation status only from an
+  unchanged idle foreground.
+- Unexpected native recorder termination preserves the finalized audio and
+  opens a visible recovery path instead of silently submitting a partial
+  answer.
+- Insertion-target tracking excludes Voice and transient macOS system UI, and
+  Accessibility fallback messaging is bounded.
+- Timer disclosure performs an explicit native-frame synchronization after
+  the model transaction.
+- The floating memo controls now expose Insert beside Play, Copy, and Save.
+- Regression coverage protects foreground ownership, insertion-target
+  eligibility, and recorder-command authority.

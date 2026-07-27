@@ -233,7 +233,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var disclosureStateBeforeRecording: FloatingWidgetDisclosureState?
     @Published private(set) var isStartingRecording = false
 
-    var isRecording: Bool { phase == .recording }
+    var isRecording: Bool { recorder.isRecording }
     var isBusy: Bool { [.refreshing, .transcribing, .sending, .inserting].contains(phase) }
     var shouldCenterFloatingTitle: Bool {
         !linkToInterviewArc
@@ -461,8 +461,13 @@ final class VoiceBridgeModel: ObservableObject {
         }
         recordingStore = try? RecordingStore()
         if let frontmost = NSWorkspace.shared.frontmostApplication,
-           frontmost.bundleIdentifier != Bundle.main.bundleIdentifier {
+           CaptureTargetApplicationPolicy.canReceiveDictation(
+               bundleIdentifier: frontmost.bundleIdentifier
+           ) {
             lastExternalApplicationPID = frontmost.processIdentifier
+        }
+        recorder.onUnexpectedTermination = { [weak self] in
+            self?.handleUnexpectedRecorderTermination()
         }
 
         // Present visible UI before touching Keychain. A credential prompt or
@@ -491,7 +496,9 @@ final class VoiceBridgeModel: ObservableObject {
             queue: .main
         ) { [weak self] notification in
             guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  application.bundleIdentifier != Bundle.main.bundleIdentifier else {
+                  CaptureTargetApplicationPolicy.canReceiveDictation(
+                      bundleIdentifier: application.bundleIdentifier
+                  ) else {
                 return
             }
             Task { @MainActor in
@@ -522,6 +529,7 @@ final class VoiceBridgeModel: ObservableObject {
                 activityPickerExpanded = false
             }
         }
+        synchronizeFloatingPanelSize()
     }
 
     func toggleActivityPicker() {
@@ -532,6 +540,7 @@ final class VoiceBridgeModel: ObservableObject {
                 cancelFinishDrawer()
             }
         }
+        synchronizeFloatingPanelSize()
     }
 
     func openFinishDrawer(for activity: VoiceTimerActivity) {
@@ -543,6 +552,7 @@ final class VoiceBridgeModel: ObservableObject {
             activityPickerExpanded = false
             timerMutationMessage = nil
         }
+        synchronizeFloatingPanelSize()
     }
 
     func cancelFinishDrawer() {
@@ -551,6 +561,7 @@ final class VoiceBridgeModel: ObservableObject {
             finishOutcome = nil
             finishStarred = false
         }
+        synchronizeFloatingPanelSize()
     }
 
     func performTimerAction(
@@ -1555,7 +1566,7 @@ final class VoiceBridgeModel: ObservableObject {
         }
     }
 
-    private func stopAndProcess() {
+    private func stopAndProcess(unexpectedTermination: Bool = false) {
         guard let captureDestination else {
             restoreDisclosureAfterRecording()
             reportFailure(
@@ -1587,6 +1598,22 @@ final class VoiceBridgeModel: ObservableObject {
             }
             self.captureDestination = nil
             lastRetryDestination = captureDestination
+            if unexpectedTermination {
+                rememberLastAudio(recording, activityTitle: memoActivityTitle)
+                canRetryLastTranscription = true
+                reportFailure(
+                    kind: .recording,
+                    title: "Recording stopped unexpectedly",
+                    message: "Your audio is preserved · choose Retry, Play, or Save",
+                    detail: "The active microphone stream ended without a Stop command. Voice preserved the finalized audio and did not silently submit a partial answer.",
+                    actions: [.retryTranscription, .recordAgain, .playRecording, .saveRecording]
+                )
+                Task { [weak self] in
+                    await Task.yield()
+                    self?.failureDetailsPresented = true
+                }
+                return
+            }
             let evidence = try RecordingFileInspector.inspect(recording)
             let recovery = RecordingRecoveryPolicy.action(for: evidence)
             voiceBridgeLogger.info(
@@ -1956,7 +1983,9 @@ final class VoiceBridgeModel: ObservableObject {
 
     private func currentInsertionTargetPID() -> pid_t? {
         if let frontmost = NSWorkspace.shared.frontmostApplication,
-           frontmost.bundleIdentifier != Bundle.main.bundleIdentifier {
+           CaptureTargetApplicationPolicy.canReceiveDictation(
+               bundleIdentifier: frontmost.bundleIdentifier
+           ) {
             lastExternalApplicationPID = frontmost.processIdentifier
             return frontmost.processIdentifier
         }
@@ -1972,8 +2001,43 @@ final class VoiceBridgeModel: ObservableObject {
         let previousPhase = phase
         _ = await pipeline.retryPending()
         await updateRetryCount()
-        if phase == previousPhase || phase == .idle {
+        if VoiceBackgroundPresentationPolicy.decision(
+            foreground: foregroundPresentation(for: previousPhase),
+            stateUnchangedDuringReconciliation: phase == previousPhase
+        ) == .publishBackgroundStatus {
             phase = pendingRetryCount == 0 ? .idle : .queued
+        }
+    }
+
+    private func foregroundPresentation(
+        for phase: Phase
+    ) -> VoiceForegroundPresentation {
+        switch phase {
+        case .idle, .delivered, .queued:
+            return .idle
+        case .recording:
+            return .recording
+        case .failed:
+            return .failure
+        case .setup, .refreshing, .transcribing, .sending, .inserting:
+            return .processing
+        }
+    }
+
+    private func handleUnexpectedRecorderTermination() {
+        guard captureDestination != nil else { return }
+        stopAndProcess(unexpectedTermination: true)
+    }
+
+    private func synchronizeFloatingPanelSize() {
+        Task { [weak self] in
+            await Task.yield()
+            guard let self else { return }
+            FloatingPanelController.shared.setSize(
+                width: self.floatingWidth,
+                height: self.floatingHeight,
+                reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            )
         }
     }
 

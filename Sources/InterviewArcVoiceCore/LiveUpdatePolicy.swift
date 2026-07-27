@@ -1,5 +1,29 @@
 import Foundation
 
+public enum VoiceForegroundPresentation: Equatable, Sendable {
+    case idle
+    case recording
+    case processing
+    case failure
+}
+
+public enum VoiceBackgroundPresentationDecision: Equatable, Sendable {
+    case publishBackgroundStatus
+    case preserveForeground
+}
+
+public enum VoiceBackgroundPresentationPolicy {
+    public static func decision(
+        foreground: VoiceForegroundPresentation,
+        stateUnchangedDuringReconciliation: Bool
+    ) -> VoiceBackgroundPresentationDecision {
+        guard foreground == .idle, stateUnchangedDuringReconciliation else {
+            return .preserveForeground
+        }
+        return .publishBackgroundStatus
+    }
+}
+
 public struct PendingCaptureRegistrationPolicy: Sendable {
     public init() {}
 

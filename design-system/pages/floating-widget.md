@@ -85,7 +85,9 @@ Timer values must never change width as they count.
 ## Information hierarchy
 
 The compact state prioritizes the link state, activity/general-dictation
-identity, previous-capture actions, and microphone. When an open D1 timer
+identity, previous-capture actions, and microphone. Previous-capture actions
+are Insert, Play, context-aware Copy, and Save; they appear only when their
+underlying transcript or audio exists. When an open D1 timer
 instrument exists, the activity title includes a quiet disclosure chevron.
 Linked recording and playback may widen to reveal timing or transport
 controls. Long activity names scroll on one line when motion is allowed.
@@ -170,7 +172,12 @@ least 58 points for the activity title.
   or recording-width frame.
 - Processing: show a compact progress mark only after meaningful elapsed
   processing time. Do not keep the widget busy after insertion succeeds.
-- No previous capture: Play, Copy, and Save controls are absent, not disabled.
+- A native recorder termination never disappears into an idle surface. Preserve
+  its finalized audio, present a high-visibility recovery state, and offer
+  Retry transcription, Record again, Play, and Save without submitting a
+  partial linked answer automatically.
+- No previous capture: Insert, Play, Copy, and Save controls are absent, not
+  disabled.
 - Failure: show the concise cause in the capsule and an anchored recovery
   popover narrower than the 250-point widget.
 
@@ -193,6 +200,9 @@ least 58 points for the activity title.
 - Width changes: 200–260 ms ease-in-out, anchored to the widget’s right edge.
 - Timer expansion changes both width and height over the same 200–260 ms
   interval, anchored to the widget’s bottom-right corner.
+- Timer disclosure explicitly synchronizes the native `NSPanel` size after the
+  model transaction. A disclosure label and the visible timer surface must
+  never disagree because a SwiftUI observation was missed.
 - The activity picker and finish-result drawer use the same 300 ms
   ease-in-out transaction in both directions. Their content fades with a
   restrained bottom-anchored scale while AppKit owns the corresponding window
@@ -225,6 +235,9 @@ least 58 points for the activity title.
   routes.
 - Silent input does not produce a guessed transcript.
 - Previous-capture controls appear only when corresponding content exists.
+- Insert is available beside the other previous-capture controls and targets
+  the last eligible external editor; transient menu-bar and system UI processes
+  are never remembered as insertion destinations.
 - Timer rows expose no result or star controls until Finish opens its drawer.
 - The next-activity picker exposes no result or star controls.
 - Pausing a session freezes both clocks and preserves the last-focused

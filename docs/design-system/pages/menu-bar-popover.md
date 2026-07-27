@@ -29,6 +29,9 @@ The floating capsule remains a simple recording and timer instrument.
 - **Insert Again** reconstructs the complete Voice v2 envelope from the
   protected local record and always terminates with success or a recoverable
   error.
+- Insertion retains the last eligible external editor while the menu-bar
+  surface is open. Voice, Control Center, SystemUIServer, Dock, Notification
+  Center, WindowManager, and loginwindow are never valid insertion targets.
 - One context-aware **Copy** action copies the transcript plus its exact Voice
   v2 envelope when capture metadata exists. General dictation without metadata
   remains plain text; there is no separate “Copy for Codex” action.
@@ -39,8 +42,9 @@ The floating capsule remains a simple recording and timer instrument.
 ## Floating timer integration
 
 When the timer drawer is expanded and a previous recording exists, the recorder
-row replaces its redundant compact clocks with Play, context-aware Copy, Save,
-and the timer-disclosure control so the expanded surface can still collapse.
+row replaces its redundant compact clocks with Play, Insert, context-aware
+Copy, Save, and the timer-disclosure control so the expanded surface can still
+collapse.
 The activity title keeps the remaining flexible width. The authoritative
 session/activity clocks remain in the drawer above.
 

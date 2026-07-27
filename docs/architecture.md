@@ -54,6 +54,19 @@ This safety path recovers a decision whose best-effort live invalidation was
 missed without re-registering known captures. Permanent identity conflicts are
 quarantined.
 
+Background reconciliation never owns the foreground recording, transcription,
+insertion, playback, or failure presentation. Its completion may publish a
+queued/idle status only when the foreground was idle and remained unchanged
+throughout the request. The recorder's active stream is the authoritative
+recording signal, so a background status update cannot make a live microphone
+capture disappear from the widget.
+
+If the native recorder terminates without an explicit Stop command, Voice
+finalizes and retains the available M4A, restores the prior timer disclosure,
+and presents an explicit recoverable failure. It never silently returns to idle
+or automatically submits a possibly truncated linked answer. The user may
+retry transcription, record again, play, or save the preserved audio.
+
 The normal transcription path performs one provider request. Existing response
 metadata is checked without another network call. A concrete failure,
 incomplete provider result, implausible duration, known prompt leakage, or
@@ -80,8 +93,8 @@ animation delay—releases playback and Record again, so they never resize the
 anchor during popover teardown.
 
 When the linked timer drawer is expanded and a previous capture exists, the
-recorder row replaces its duplicate timer cluster with Play, context-aware
-Copy, Save, and the timer-disclosure control. The expanded timer surface above
+recorder row replaces its duplicate timer cluster with Play, Insert,
+context-aware Copy, Save, and the timer-disclosure control. The expanded timer surface above
 remains authoritative. Voice stays
 an `LSUIElement` accessory app: it does not occupy the Dock or Command-Tab, and
 Settings explicitly raises its existing window.
@@ -195,6 +208,8 @@ to a Chromium parent PID does not guarantee delivery to its renderer process.
 The production path therefore:
 
 1. remembers the last non-Voice foreground application PID;
+   transient system surfaces such as Control Center and SystemUIServer are
+   excluded from that memory;
 2. captures that target at recording start;
 3. reactivates the same application before insertion;
 4. posts a real paste event at `.cghidEventTap`;
@@ -203,6 +218,10 @@ The production path therefore:
 6. restores the previous pasteboard only when `NSPasteboard.changeCount`
    confirms that no other owner has changed it; and
 7. uses direct AX replacement only as a verified fallback.
+
+Accessibility messaging to an eligible fallback target has a finite timeout;
+manual Insert never remains in a permanent loading state because a system
+process captured focus while the menu-bar popover was open.
 
 See
 [`postmortems/2026-07-23-universal-dictation-insertion.md`](postmortems/2026-07-23-universal-dictation-insertion.md)

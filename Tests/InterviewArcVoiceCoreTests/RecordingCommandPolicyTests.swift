@@ -54,3 +54,36 @@ import Testing
         ) == .stop
     )
 }
+
+@Test func recorderActivityRemainsAuthoritativeWhenPresentationStateDrifts() {
+    #expect(
+        RecordingCommandPolicy.action(
+            isRecording: true,
+            isStarting: false,
+            isBusy: true
+        ) == .stop
+    )
+}
+
+@Test func onlyAnUncommandedNativeRecorderCompletionSurfacesAsAFailure() {
+    #expect(RecordingTerminationPolicy.shouldSurfaceUnexpectedTermination(
+        isCaptureActive: true,
+        completionWasExpected: false,
+        alreadyReported: false
+    ))
+    #expect(!RecordingTerminationPolicy.shouldSurfaceUnexpectedTermination(
+        isCaptureActive: true,
+        completionWasExpected: true,
+        alreadyReported: false
+    ))
+    #expect(!RecordingTerminationPolicy.shouldSurfaceUnexpectedTermination(
+        isCaptureActive: false,
+        completionWasExpected: false,
+        alreadyReported: false
+    ))
+    #expect(!RecordingTerminationPolicy.shouldSurfaceUnexpectedTermination(
+        isCaptureActive: true,
+        completionWasExpected: false,
+        alreadyReported: true
+    ))
+}

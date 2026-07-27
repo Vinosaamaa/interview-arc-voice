@@ -96,6 +96,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
     @Published public private(set) var inputDeviceName = "Default microphone"
     @Published public private(set) var automaticRecoveryCount = 0
     @Published public private(set) var isRecoveringSignal = false
+    public var onUnexpectedTermination: (@MainActor () -> Void)?
 
     private var recorder: AVAudioRecorder?
     private var audioEngine: AVAudioEngine?
@@ -109,6 +110,8 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
     private let signalPolicy = MicrophoneSignalPolicy()
     private let streamRecoveryPolicy = MicrophoneStreamRecoveryPolicy()
     private var recorderErrorDescription: String?
+    private var expectedRecorderCompletion: AVAudioRecorder?
+    private var unexpectedTerminationReported = false
 
     public override init() {}
 
@@ -142,6 +145,8 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         signalHealth = .warmingUp
         automaticRecoveryCount = 0
         isRecoveringSignal = false
+        expectedRecorderCompletion = nil
+        unexpectedTerminationReported = false
         isRecording = true
         ticker?.invalidate()
         ticker = Timer.scheduledTimer(withTimeInterval: 0.10, repeats: true) { [weak self] _ in
@@ -177,6 +182,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         let fallbackFrames: Int64 = 0
         if let recorder {
             let recorderDuration = recorder.currentTime
+            expectedRecorderCompletion = recorder
             recorder.stop()
             elapsedSeconds = max(duration, recorderDuration)
             self.recorder = nil
@@ -220,6 +226,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
             // stalled AVAudioRecorder. Reopening the same recorder immediately
             // can reacquire the same silent Bluetooth/default-input stream.
             try startEngineRecoveryCapture(at: recoveredURL)
+            expectedRecorderCompletion = recorder
             recorder?.stop()
             recorder = nil
             try? FileManager.default.removeItem(at: url)
@@ -344,12 +351,26 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         _ recorder: AVAudioRecorder,
         successfully flag: Bool
     ) {
-        guard !flag else { return }
         Task { @MainActor [weak self] in
-            if self?.recorderErrorDescription == nil {
-                self?.recorderErrorDescription =
-                    "The system audio recorder did not finalize successfully."
+            guard let self else { return }
+            let completionWasExpected = self.expectedRecorderCompletion === recorder
+            if completionWasExpected {
+                self.expectedRecorderCompletion = nil
             }
+            guard RecordingTerminationPolicy.shouldSurfaceUnexpectedTermination(
+                isCaptureActive: self.isRecording,
+                completionWasExpected: completionWasExpected,
+                alreadyReported: self.unexpectedTerminationReported
+            ) else {
+                return
+            }
+            self.unexpectedTerminationReported = true
+            if self.recorderErrorDescription == nil {
+                self.recorderErrorDescription = flag
+                    ? "The system audio recorder ended the active capture unexpectedly."
+                    : "The system audio recorder did not finalize successfully."
+            }
+            self.onUnexpectedTermination?()
         }
     }
 
