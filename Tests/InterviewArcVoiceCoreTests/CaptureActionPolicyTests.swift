@@ -12,7 +12,7 @@ import Testing
     #expect(payload.hasPrefix("I would use dynamic programming.\n\n"))
     #expect(payload.contains("<!-- interview-arc-voice:v2"))
     #expect(payload.contains("captureId: capture-123"))
-    #expect(payload.contains("activityId: activity%2D456"))
+    #expect(payload.contains("activityId: activity-456"))
     #expect(payload.contains("turnId: voice-789"))
 }
 
