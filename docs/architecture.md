@@ -71,8 +71,9 @@ animation delay—releases playback and Record again, so they never resize the
 anchor during popover teardown.
 
 When the linked timer drawer is expanded and a previous capture exists, the
-recorder row replaces its duplicate timer cluster with Play, Copy transcript,
-and Save. The expanded timer surface above remains authoritative. Voice stays
+recorder row replaces its duplicate timer cluster with Play, context-aware
+Copy, Save, and the timer-disclosure control. The expanded timer surface above
+remains authoritative. Voice stays
 an `LSUIElement` accessory app: it does not occupy the Dock or Command-Tab, and
 Settings explicitly raises its existing window.
 
@@ -153,8 +154,8 @@ finalization pause while an intent is unresolved. See `protocol-v2.md`.
 Detailed capture recovery belongs to the 260-point menu-bar popover, not the
 floating widget. Recent Captures shows waiting, decision, excluded, delivering,
 retry, and conflict states; it reconstructs the exact v2 envelope from the
-protected local record for Insert Again or Copy for Codex. The top refresh
-button refreshes focused activity only.
+protected local record for Insert Again or the single context-aware Copy
+action. The top refresh button refreshes focused activity only.
 
 The client must negotiate an explicit protocol version before mutating server
 state. Unknown versions fail closed with a user-visible update prompt.

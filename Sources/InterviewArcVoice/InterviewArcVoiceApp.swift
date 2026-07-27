@@ -512,34 +512,42 @@ final class VoiceBridgeModel: ObservableObject {
 
     func toggleTimerPanel() {
         guard hasTimerInstrument, !isRecording else { return }
-        timerPanelExpanded.toggle()
-        if !timerPanelExpanded {
-            cancelFinishDrawer()
-            activityPickerExpanded = false
+        withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
+            timerPanelExpanded.toggle()
+            if !timerPanelExpanded {
+                cancelFinishDrawer()
+                activityPickerExpanded = false
+            }
         }
     }
 
     func toggleActivityPicker() {
         guard !timerMutationInFlight else { return }
-        activityPickerExpanded.toggle()
-        if activityPickerExpanded {
-            cancelFinishDrawer()
+        withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
+            activityPickerExpanded.toggle()
+            if activityPickerExpanded {
+                cancelFinishDrawer()
+            }
         }
     }
 
     func openFinishDrawer(for activity: VoiceTimerActivity) {
         guard activity.timer?.startedAt != nil, !timerMutationInFlight else { return }
-        finishingActivityID = activity.id
-        finishOutcome = nil
-        finishStarred = activity.starred
-        activityPickerExpanded = false
-        timerMutationMessage = nil
+        withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
+            finishingActivityID = activity.id
+            finishOutcome = nil
+            finishStarred = activity.starred
+            activityPickerExpanded = false
+            timerMutationMessage = nil
+        }
     }
 
     func cancelFinishDrawer() {
-        finishingActivityID = nil
-        finishOutcome = nil
-        finishStarred = false
+        withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
+            finishingActivityID = nil
+            finishOutcome = nil
+            finishStarred = false
+        }
     }
 
     func performTimerAction(
@@ -626,27 +634,25 @@ final class VoiceBridgeModel: ObservableObject {
         guard !lastTranscript.isEmpty else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(lastTranscript, forType: .string)
-        contextMessage = "Transcript copied."
+        pasteboard.setString(
+            lastInsertionText.isEmpty ? lastTranscript : lastInsertionText,
+            forType: .string
+        )
+        contextMessage = lastInsertionText == lastTranscript || lastInsertionText.isEmpty
+            ? "Transcript copied."
+            : "Transcript and Voice v2 envelope copied."
     }
 
-    func copyPendingTranscript(_ capture: PendingVoiceCapture) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(capture.transcript, forType: .string)
-        contextMessage = "Capture transcript copied."
-    }
-
-    func copyPendingForCodex(_ capture: PendingVoiceCapture) {
-        let envelope = VoiceCaptureEnvelope(
+    func copyPendingCapture(_ capture: PendingVoiceCapture) {
+        let payload = CaptureActionPolicy.copyPayload(
+            transcript: capture.transcript,
             captureID: capture.id,
             activityID: capture.activity.activityId,
-            turnID: capture.turnID,
-            transcript: capture.transcript
+            turnID: capture.turnID
         )
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(envelope.editorText, forType: .string)
+        pasteboard.setString(payload, forType: .string)
         contextMessage = "Capture and Voice v2 envelope copied."
     }
 
@@ -664,9 +670,15 @@ final class VoiceBridgeModel: ObservableObject {
                 editorText: envelope.editorText,
                 showDeliveryStep: true
             )
-            contextMessage = inserted
-                ? "Capture and Voice v2 envelope inserted again."
-                : "No editable cursor was available."
+            switch CaptureActionPolicy.insertionCompletion(inserted: inserted) {
+            case .delivered:
+                clearFailureAfterSuccess()
+                phase = .delivered
+                contextMessage = "Capture and Voice v2 envelope inserted again."
+            case .needsAttention:
+                phase = hasGroqCredential ? .idle : .setup
+                contextMessage = "No editable cursor was available."
+            }
         }
     }
 
@@ -2696,11 +2708,8 @@ private struct VoiceBridgeMenu: View {
                 captureAction("Insert Again", symbol: "text.cursor") {
                     model.insertPendingAgain(capture)
                 }
-                captureAction("Copy transcript", symbol: "doc.on.doc") {
-                    model.copyPendingTranscript(capture)
-                }
-                captureAction("Copy for Codex", symbol: "chevron.left.forwardslash.chevron.right") {
-                    model.copyPendingForCodex(capture)
+                captureAction("Copy", symbol: "doc.on.doc") {
+                    model.copyPendingCapture(capture)
                 }
                 Spacer()
                 if capture.localState == .needsDecision {

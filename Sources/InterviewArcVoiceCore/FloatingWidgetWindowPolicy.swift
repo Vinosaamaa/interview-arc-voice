@@ -94,7 +94,7 @@ public enum FloatingWidgetWindowPolicy {
 }
 
 public enum FloatingWidgetMotionPolicy {
-    public static let durationSeconds: TimeInterval = 0.24
+    public static let durationSeconds: TimeInterval = 0.30
 }
 
 public enum FloatingWidgetCompactTimerLayoutPolicy {
