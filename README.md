@@ -47,8 +47,11 @@ the recording itself is never discarded.
 
 When linking is off—or when no usable Interview Arc activity is focused—Voice
 works as **general dictation**. It records to a temporary file, transcribes with
-Groq, inserts into the app that was active when recording began, and deletes the
-temporary audio. Voice uses a guarded transient pasteboard operation internally
+Groq using a small terms-only global vocabulary prompt, inserts into the app
+that was active when recording began, and deletes the temporary audio. The
+global prompt contains stable interview vocabulary such as “LeetCode”; it is
+not a personal dictionary, does not learn replacements, and contains no prose
+instructions. Voice uses a guarded transient pasteboard operation internally
 for editors that require a real paste event; it restores the prior contents and
 never leaves the transcript as the user's clipboard value. Direct insertion
 requires macOS Accessibility access; without it, Voice keeps the transcript
@@ -172,6 +175,10 @@ Priority order:
 
 The final Groq prompt uses a conservative token estimate and stays below the
 provider's 224-token prompt limit.
+
+General Dictation uses only the highest-priority terms from the bundled base
+packs, capped at 32 unique terms. It does not apply activity matching, personal
+replacement rules, or a second formatting pass.
 
 ## Development
 

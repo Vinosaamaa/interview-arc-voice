@@ -59,6 +59,17 @@ public struct VoiceTimerActivity: Codable, Equatable, Sendable, Identifiable {
     public let allocatedSeconds: Int
     public let timer: VoiceTimerState?
     public let starred: Bool
+    public var activityClass: String? = nil
+    public var requiresOutcome: Bool? = nil
+    public var outcome: VoicePracticeOutcome? = nil
+
+    public var isFocusBlock: Bool {
+        activityClass == "focus_block" || type == "focus_block"
+    }
+
+    public var needsOutcome: Bool {
+        (requiresOutcome ?? !isFocusBlock) && outcome == nil
+    }
 }
 
 public struct VoiceTimerInstrument: Codable, Equatable, Sendable {
@@ -66,6 +77,16 @@ public struct VoiceTimerInstrument: Codable, Equatable, Sendable {
     public let session: VoiceTimerSession?
     public let activity: VoiceTimerActivity?
     public let activities: [VoiceTimerActivity]
+
+    public var sessionFinishBlockers: [VoiceTimerActivity] {
+        activities.filter {
+            $0.timer?.startedAt != nil && $0.needsOutcome
+        }
+    }
+}
+
+public enum VoiceLiveConnectionPolicy {
+    public static let heartbeatIntervalSeconds = 20
 }
 
 public enum VoicePracticeOutcome: String, Codable, CaseIterable, Equatable, Sendable {

@@ -170,7 +170,8 @@ import Testing
     try Data("temporary audio".utf8).write(to: recording)
     let pipeline = GeneralDictationPipeline(
         transcriber: StubTranscriber(),
-        temporaryDirectory: root
+        temporaryDirectory: root,
+        vocabularyPrompt: "LeetCode, Big O"
     )
 
     let result = try await pipeline.process(recordingURL: recording, durationSeconds: 1)
@@ -179,9 +180,17 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: recording.path))
 }
 
+@Test func generalDictationVocabularyIncludesUniversalInterviewTerms() throws {
+    let prompt = try VocabularyCatalog.bundled().generalDictationPrompt()
+
+    #expect(prompt.contains("LeetCode"))
+    #expect(!prompt.contains("Please"))
+    #expect(prompt.split(separator: ",").count <= 32)
+}
+
 private actor StubTranscriber: SpeechTranscribing {
     func transcribe(fileURL: URL, prompt: String, temporaryDirectory: URL) async throws -> TranscriptionResult {
-        #expect(prompt.isEmpty)
+        #expect(prompt == "LeetCode, Big O")
         return TranscriptionResult(
             text: "verbatim test transcript",
             words: [],

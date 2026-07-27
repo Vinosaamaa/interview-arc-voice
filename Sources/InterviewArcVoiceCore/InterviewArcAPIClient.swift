@@ -37,9 +37,24 @@ public actor InterviewArcAPIClient {
         let socket = session.webSocketTask(with: request)
         let liveDecoder = VoiceLiveFrameDecoder()
         return AsyncThrowingStream { continuation in
+            let heartbeat = Task {
+                do {
+                    while !Task.isCancelled {
+                        try await Task.sleep(
+                            for: .seconds(VoiceLiveConnectionPolicy.heartbeatIntervalSeconds)
+                        )
+                        guard !Task.isCancelled else { return }
+                        try await socket.sendPing()
+                    }
+                } catch {
+                    socket.cancel(with: .goingAway, reason: nil)
+                    continuation.finish(throwing: error)
+                }
+            }
             let reader = Task {
                 var latestRevision = initialRevision
                 socket.resume()
+                defer { heartbeat.cancel() }
                 do {
                     while !Task.isCancelled {
                         let message = try await socket.receive()
@@ -61,6 +76,7 @@ public actor InterviewArcAPIClient {
                 }
             }
             continuation.onTermination = { _ in
+                heartbeat.cancel()
                 reader.cancel()
                 socket.cancel(with: .normalClosure, reason: nil)
             }

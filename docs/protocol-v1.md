@@ -21,6 +21,16 @@ activities, timer revisions, and the server clock needed by the floating
 instrument. D1 records state transitions only. The app advances visible clocks
 locally between snapshots instead of writing once per second.
 
+The instrument distinguishes ordinary practice from Career Focus:
+
+- practice activities have `activityClass: "practice"` and
+  `requiresOutcome: true`;
+- Job applications have `activityClass: "focus_block"` and
+  `requiresOutcome: false`.
+
+Career Focus may be standalone or share a session countdown, but it is never
+shown in the LeetCode Companion.
+
 ## Control the timer instrument
 
 `POST /voice/timers`
@@ -35,7 +45,11 @@ widget opens an inline drawer; the client then sends one `finish-activity`
 mutation containing the explicit result and current star choice. The server
 stores that choice, finishes the timer, and schedules or clears review state.
 The normal timer rows and next-activity picker never expose result or star
-controls.
+controls. A Career Focus activity is the exception: it uses the generic finish
+mutation and requires no result. If finishing a session finds started practice
+activities without results, Voice directs the user to one resolver in the
+menu-bar popover; the floating capsule does not grow into a multi-activity
+form.
 
 ## Persist a captured answer
 

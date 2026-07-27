@@ -1414,11 +1414,7 @@ private struct FloatingTimerInstrumentPanel: View {
                                 )
                             },
                             finish: {
-                                model.performTimerAction(
-                                    subjectID: session.id,
-                                    kind: "session",
-                                    action: "finish"
-                                )
+                                model.requestFinishSession(session)
                             }
                         )
                     }
@@ -1428,7 +1424,7 @@ private struct FloatingTimerInstrumentPanel: View {
                     }
                     if let activity = instrument.activity {
                         timerRow(
-                            eyebrow: "ACTIVITY",
+                            eyebrow: activity.isFocusBlock ? "CAREER FOCUS" : "ACTIVITY",
                             title: activity.title,
                             time: activityTime(activity, at: timeline.date),
                             isRunning: activity.timer?.isRunning == true,
@@ -1463,7 +1459,13 @@ private struct FloatingTimerInstrumentPanel: View {
             }
 
             Group {
-                if let activity = model.finishingActivity {
+                if model.sessionFinishResolutionRequested {
+                    VStack(spacing: 0) {
+                        Divider().overlay(palette.divider.opacity(0.65))
+                        sessionFinishAttention
+                    }
+                    .transition(drawerTransition)
+                } else if let activity = model.finishingActivity {
                     VStack(spacing: 0) {
                         Divider().overlay(palette.divider.opacity(0.65))
                         finishDrawer(activity)
@@ -1505,6 +1507,7 @@ private struct FloatingTimerInstrumentPanel: View {
             }
             .animation(drawerAnimation, value: model.finishingActivityID)
             .animation(drawerAnimation, value: model.activityPickerExpanded)
+            .animation(drawerAnimation, value: model.sessionFinishResolutionRequested)
         }
         .background {
             RoundedRectangle(cornerRadius: 17, style: .continuous)
@@ -1641,6 +1644,59 @@ private struct FloatingTimerInstrumentPanel: View {
         .disabled(!enabled)
         .help(label)
         .accessibilityLabel(label)
+    }
+
+    private var sessionFinishAttention: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "flag.fill")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(palette.warning)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(
+                    "\(model.sessionFinishBlockers.count) "
+                        + (model.sessionFinishBlockers.count == 1 ? "activity needs" : "activities need")
+                        + " a result"
+                )
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(palette.ink)
+                Text("Review the result choices in the menu-bar popover.")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(palette.secondaryInk)
+            }
+            Spacer(minLength: 8)
+            Button("Review") {
+                model.requestSessionFinishReview()
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(palette.tealDark)
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(palette.teal.opacity(palette.isDark ? 0.22 : 0.12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(palette.teal.opacity(0.42), lineWidth: 0.8)
+                    )
+            )
+            .help("Open the Interview Arc Voice menu-bar popover to review results")
+            Button(action: model.cancelSessionFinishResolution) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .voiceHoverFeedback(cornerRadius: 9)
+            .help("Cancel finishing session")
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 70)
+        .background(palette.warning.opacity(0.07))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            "\(model.sessionFinishBlockers.count) activities need results before the session can finish"
+        )
     }
 
     private func finishDrawer(_ activity: VoiceTimerActivity) -> some View {
