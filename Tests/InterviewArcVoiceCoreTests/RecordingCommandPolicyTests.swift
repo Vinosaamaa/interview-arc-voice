@@ -11,14 +11,75 @@ import Testing
     )
 }
 
-@Test func repeatedRecordCommandDuringMicrophoneStartupIsIgnored() {
+@Test func repeatedRecordCommandDuringMicrophoneStartupCancelsPreparation() {
     #expect(
         RecordingCommandPolicy.action(
             isRecording: false,
             isStarting: true,
             isBusy: false
-        ) == .ignore
+        ) == .cancelStart
     )
+}
+
+@Test func microphoneStartupRemainsPreparingUntilUsableInputArrives() {
+    let policy = MicrophoneStartupReadinessPolicy(
+        primaryTimeoutSeconds: 1.25,
+        fallbackTimeoutSeconds: 1.25
+    )
+
+    #expect(policy.decision(
+        elapsedSeconds: 0.8,
+        hasUsableInput: false,
+        isUsingFallback: false
+    ) == .wait)
+    #expect(policy.decision(
+        elapsedSeconds: 0.8,
+        hasUsableInput: true,
+        isUsingFallback: false
+    ) == .ready)
+}
+
+@Test func microphoneStartupUsesOneBoundedFallbackBeforeFailing() {
+    let policy = MicrophoneStartupReadinessPolicy(
+        primaryTimeoutSeconds: 1.25,
+        fallbackTimeoutSeconds: 1.25
+    )
+
+    #expect(policy.decision(
+        elapsedSeconds: 1.25,
+        hasUsableInput: false,
+        isUsingFallback: false
+    ) == .startFallback)
+    #expect(policy.decision(
+        elapsedSeconds: 1.25,
+        hasUsableInput: false,
+        isUsingFallback: true
+    ) == .fail)
+}
+
+@Test func bluetoothMicrophoneWaitsForTheChangedRouteToRemainStable() {
+    let policy = BluetoothMicrophoneRouteReadinessPolicy(
+        minimumStableSeconds: 0.6
+    )
+
+    #expect(!policy.isReady(
+        baselineIsBluetooth: true,
+        currentRouteIsAvailable: true,
+        currentRouteMatchesBaseline: true,
+        changedRouteStableSeconds: 0
+    ))
+    #expect(!policy.isReady(
+        baselineIsBluetooth: true,
+        currentRouteIsAvailable: true,
+        currentRouteMatchesBaseline: false,
+        changedRouteStableSeconds: 0.59
+    ))
+    #expect(policy.isReady(
+        baselineIsBluetooth: true,
+        currentRouteIsAvailable: true,
+        currentRouteMatchesBaseline: false,
+        changedRouteStableSeconds: 0.6
+    ))
 }
 
 @Test func microphonePreparationRemainsAllowedAfterStartupIsClaimed() {

@@ -142,9 +142,12 @@ identity instead of requiring permission again after every build.
 7. For interview practice, focus an activity on Today. Keep **Link to Interview Arc** on.
    The activity title appears in the floating recorder.
 8. Select the microphone or press `Control-Option-Space`. Voice uses the
-   continuously refreshed focused activity and starts capture immediately, so
-   switching problem timers never requires a manual refresh. Speak, then select stop or press the
-   shortcut again. The transcript appears at the cursor; press Send yourself.
+   continuously refreshed focused activity and immediately begins microphone
+   preparation without a network wait. With Bluetooth, wait for **Preparing
+   microphone** to become the red Recording state before speaking; that state
+   means the hands-free route and input stream are ready. Select stop or press
+   the shortcut again when finished. The transcript appears at the cursor;
+   press Send yourself.
 9. For ordinary dictation, turn **Link to Interview Arc** off. The resulting
    text is inserted into the active app and the temporary recording is deleted.
 

@@ -15,10 +15,15 @@
    failure retains the last verified display context.
 2. Resolve a deterministic vocabulary prompt from explicit terms, stored pack
    IDs, metadata triggers, and the specialty base pack.
-3. Open the microphone immediately from the fresh cached routing snapshot and record
-   one user answer as a continuous local M4A file. The system recorder owns
-   file finalization; a capture is not eligible for transcription until the
-   finalized file reopens with decoded frames.
+3. Begin microphone preparation immediately from the fresh cached routing
+   snapshot and write into one continuous local M4A file. Preparation is a
+   visible state, not a live-recording claim. A Bluetooth capture becomes live
+   only after the output profile has left its pre-recording route, remained
+   stable, and the recorder reports usable input. A bounded timeout crosses
+   once to the independent audio-engine backend; a second timeout fails
+   visibly. The system recorder owns file finalization, and a capture is not
+   eligible for transcription until the finalized file reopens with decoded
+   frames.
    If the cached snapshot was briefly behind, the active refresh may late-bind
    the capture only when the server proves that activity's stopwatch began
    before recording started. An already linked recording never changes

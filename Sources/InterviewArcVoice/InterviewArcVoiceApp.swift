@@ -60,7 +60,11 @@ struct InterviewArcVoiceApp: App {
             VoiceBridgeMenu(model: model)
         } label: {
             Image(systemName: model.menuBarSymbol)
-                .accessibilityLabel(model.isRecording ? "Interview Arc Voice recording" : "Interview Arc Voice")
+                .accessibilityLabel(
+                    model.isStartingRecording
+                        ? "Interview Arc Voice preparing microphone"
+                        : (model.isRecording ? "Interview Arc Voice recording" : "Interview Arc Voice")
+                )
         }
         .menuBarExtraStyle(.window)
 
@@ -86,6 +90,7 @@ final class VoiceBridgeModel: ObservableObject {
         case setup
         case refreshing
         case idle
+        case preparingMicrophone
         case recording
         case transcribing
         case sending
@@ -99,6 +104,7 @@ final class VoiceBridgeModel: ObservableObject {
             case .setup: "Add your Groq key"
             case .refreshing: "Checking current activity"
             case .idle: "Ready"
+            case .preparingMicrophone: "Preparing microphone"
             case .recording: "Recording"
             case .transcribing: "Transcribing with Groq"
             case .sending: "Saving interview answer"
@@ -112,6 +118,7 @@ final class VoiceBridgeModel: ObservableObject {
         var symbol: String {
             switch self {
             case .recording: "waveform.circle.fill"
+            case .preparingMicrophone: "mic.badge.plus"
             case .transcribing, .sending, .refreshing, .inserting: "arrow.triangle.2.circlepath"
             case .delivered: "checkmark.circle.fill"
             case .queued: "clock.arrow.circlepath"
@@ -235,10 +242,13 @@ final class VoiceBridgeModel: ObservableObject {
     private var processingTimer: Timer?
     private var processingIndicatorTask: Task<Void, Never>?
     private var disclosureStateBeforeRecording: FloatingWidgetDisclosureState?
+    private var recordingStartupTask: Task<Void, Never>?
     @Published private(set) var isStartingRecording = false
 
     var isRecording: Bool { recorder.isRecording }
-    var isBusy: Bool { [.refreshing, .transcribing, .sending, .inserting].contains(phase) }
+    var isBusy: Bool {
+        [.refreshing, .preparingMicrophone, .transcribing, .sending, .inserting].contains(phase)
+    }
     var shouldCenterFloatingTitle: Bool {
         !linkToInterviewArc
             && !hasTimerInstrument
@@ -256,6 +266,7 @@ final class VoiceBridgeModel: ObservableObject {
     }
     var menuBarSymbol: String {
         switch phase {
+        case .preparingMicrophone: "mic.badge.plus"
         case .recording: "waveform.circle.fill"
         case .transcribing, .sending, .inserting: "arrow.triangle.2.circlepath.circle.fill"
         case .queued: "clock.badge.exclamationmark.fill"
@@ -703,11 +714,17 @@ final class VoiceBridgeModel: ObservableObject {
         ) {
         case .stop:
             stopAndProcess()
+        case .cancelStart:
+            recordingStartupTask?.cancel()
         case .start:
             isStartingRecording = true
-            Task {
-                await prepareAndStartRecording()
-                isStartingRecording = false
+            recordingStartupTask = Task { [weak self] in
+                guard let self else { return }
+                defer {
+                    self.isStartingRecording = false
+                    self.recordingStartupTask = nil
+                }
+                await self.prepareAndStartRecording()
             }
         case .ignore:
             break
@@ -1608,8 +1625,27 @@ final class VoiceBridgeModel: ObservableObject {
                 mode: backgroundAudioMode,
                 relativeLevel: backgroundAudioRelativeLevel
             )
-            try await recorder.start(at: destination)
-            outputVolumeController.recordingDidStart()
+            phase = .preparingMicrophone
+            contextMessage = "Preparing the microphone route…"
+            try await recorder.start(
+                at: destination,
+                routeIsReady: { [weak self] in
+                    self?.outputVolumeController.microphoneRouteIsReadyForRecording() ?? false
+                },
+                captureBackendDidStart: { [weak self] in
+                    self?.outputVolumeController.recordingDidStart()
+                }
+            )
+            try Task.checkCancellation()
+            let readyAt = Date()
+            switch captureDestination {
+            case .linked(let activity, _):
+                captureDestination = .linked(activity, startedAt: readyAt)
+            case .general:
+                captureDestination = .general(startedAt: readyAt)
+            case nil:
+                throw VoiceBridgeError.recordingUnavailable
+            }
             if dynamicRecordingInterfaceEnabled {
                 let currentDisclosure = FloatingWidgetDisclosureState(
                     timerPanelExpanded: timerPanelExpanded,
@@ -1633,6 +1669,13 @@ final class VoiceBridgeModel: ObservableObject {
             if linkToInterviewArc {
                 Task { await refreshContext(showProgress: false) }
             }
+        } catch is CancellationError {
+            restoreDisclosureAfterRecording()
+            outputVolumeController.restoreAfterRouteSettles()
+            captureDestination = nil
+            canRetryLastTranscription = false
+            phase = .idle
+            contextMessage = "Microphone preparation canceled."
         } catch {
             restoreDisclosureAfterRecording()
             outputVolumeController.restoreAfterRouteSettles()
@@ -2096,7 +2139,7 @@ final class VoiceBridgeModel: ObservableObject {
             return .recording
         case .failed:
             return .failure
-        case .setup, .refreshing, .transcribing, .sending, .inserting:
+        case .setup, .refreshing, .preparingMicrophone, .transcribing, .sending, .inserting:
             return .processing
         }
     }
@@ -2744,11 +2787,11 @@ private struct VoiceBridgeMenu: View {
         .controlSize(.large)
         .tint(model.isRecording ? .red : Color(red: 0.08, green: 0.34, blue: 0.22))
         .voiceHoverFeedback(
-            enabled: model.isRecording || model.canRecord,
+            enabled: model.isStartingRecording || model.isRecording || model.canRecord,
             cornerRadius: 10,
             tint: model.isRecording ? .red : .teal
         )
-        .disabled(!model.isRecording && !model.canRecord)
+        .disabled(!model.isStartingRecording && !model.isRecording && !model.canRecord)
     }
 
     private var deliveryProgress: some View {

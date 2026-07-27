@@ -21,6 +21,10 @@ final class SystemOutputVolumeController {
     private var recordingMode: BackgroundAudioRecordingMode = .unchanged
     private var recordingRelativeLevel = BackgroundAudioPolicy.defaultRelativeLevel
     private var baselineUsesBluetooth = false
+    private var microphoneBaselineRoute: ActiveRoute?
+    private var microphoneRouteChangedAt: Date?
+    private let microphoneRouteReadinessPolicy =
+        BluetoothMicrophoneRouteReadinessPolicy()
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -45,6 +49,8 @@ final class SystemOutputVolumeController {
         recordingRelativeLevel = relativeLevel
         baselineUsesBluetooth = false
         let route = activeRoute()
+        microphoneBaselineRoute = route
+        microphoneRouteChangedAt = nil
 
         if let existing = loadSnapshot() {
             // A prior recording may still be waiting for the original stereo
@@ -103,6 +109,40 @@ final class SystemOutputVolumeController {
             }
             routeSyncTasks.append(task)
         }
+    }
+
+    /// Bluetooth output normally changes from its stereo profile to a
+    /// hands-free profile when the microphone becomes usable. Require that
+    /// changed route to remain stable briefly before the UI announces a live
+    /// recording; `AVAudioRecorder.record()` alone is not a readiness signal.
+    func microphoneRouteIsReadyForRecording(now: Date = Date()) -> Bool {
+        guard let baseline = microphoneBaselineRoute else { return true }
+        guard let current = activeRoute() else {
+            microphoneRouteChangedAt = nil
+            return microphoneRouteReadinessPolicy.isReady(
+                baselineIsBluetooth: baseline.isBluetooth,
+                currentRouteIsAvailable: false,
+                currentRouteMatchesBaseline: false,
+                changedRouteStableSeconds: 0
+            )
+        }
+        let isBaselineRoute =
+            current.deviceUID == baseline.deviceUID
+            && abs(current.nominalSampleRate - baseline.nominalSampleRate) < 0.5
+            && current.outputChannelCount == baseline.outputChannelCount
+        if baseline.isBluetooth, isBaselineRoute {
+            microphoneRouteChangedAt = nil
+        } else if baseline.isBluetooth, microphoneRouteChangedAt == nil {
+            microphoneRouteChangedAt = now
+        }
+        return microphoneRouteReadinessPolicy.isReady(
+            baselineIsBluetooth: baseline.isBluetooth,
+            currentRouteIsAvailable: true,
+            currentRouteMatchesBaseline: isBaselineRoute,
+            changedRouteStableSeconds: microphoneRouteChangedAt.map {
+                now.timeIntervalSince($0)
+            } ?? 0
+        )
     }
 
     func restoreAfterRouteSettles() {

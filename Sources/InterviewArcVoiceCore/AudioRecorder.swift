@@ -112,6 +112,8 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
     private var recorderErrorDescription: String?
     private var expectedRecorderCompletion: AVAudioRecorder?
     private var unexpectedTerminationReported = false
+    private let startupReadinessPolicy = MicrophoneStartupReadinessPolicy()
+    private static let startupSignalThresholdDecibels: Float = -155
 
     public override init() {}
 
@@ -125,19 +127,16 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         }
     }
 
-    public func start(at url: URL) async throws {
+    public func start(
+        at url: URL,
+        routeIsReady: @escaping @MainActor () -> Bool = { true },
+        captureBackendDidStart: @escaping @MainActor () -> Void = {}
+    ) async throws {
         guard await requestPermission() else { throw VoiceBridgeError.microphoneDenied }
         destinationURL = url
         inputDeviceName = AVCaptureDevice.default(for: .audio)?.localizedName
             ?? "Default microphone"
         recorderErrorDescription = nil
-        // AVAudioRecorder owns file finalization and has proven reliable across
-        // signed app replacements. The prior voice-processing tap could start
-        // successfully while never delivering writable frames, leaving a
-        // header-only M4A that looked like a provider failure.
-        try startRecorderFallback(at: url)
-        startedAt = Date()
-        signalAttemptStartedAt = startedAt
         elapsedSeconds = 0
         averagePower = -60
         powerHistory = []
@@ -147,6 +146,22 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         isRecoveringSignal = false
         expectedRecorderCompletion = nil
         unexpectedTerminationReported = false
+        do {
+            // Begin writing into the final capture before advertising a live
+            // recording. Bluetooth may still be negotiating its hands-free
+            // input route even though AVAudioRecorder.record() returned true.
+            try startRecorderFallback(at: url)
+            captureBackendDidStart()
+            try await awaitOperationalInput(
+                isUsingFallback: false,
+                routeIsReady: routeIsReady
+            )
+        } catch {
+            cancelPreparedCapture()
+            throw error
+        }
+        startedAt = Date()
+        signalAttemptStartedAt = startedAt
         isRecording = true
         ticker?.invalidate()
         ticker = Timer.scheduledTimer(withTimeInterval: 0.10, repeats: true) { [weak self] _ in
@@ -170,6 +185,50 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
                    ) {
                     self.restartSilentInputStream()
                 }
+            }
+        }
+    }
+
+    private func awaitOperationalInput(
+        isUsingFallback: Bool,
+        routeIsReady: @escaping @MainActor () -> Bool
+    ) async throws {
+        let attemptStartedAt = Date()
+        while true {
+            let hasUsableInput: Bool
+            if isUsingFallback {
+                hasUsableInput =
+                    routeIsReady()
+                    && (audioWriteState?.snapshot().frames ?? 0) > 0
+            } else if let recorder {
+                recorder.updateMeters()
+                hasUsableInput =
+                    routeIsReady()
+                    &&
+                    recorder.currentTime > 0.03
+                    && recorder.averagePower(forChannel: 0) > Self.startupSignalThresholdDecibels
+            } else {
+                hasUsableInput = false
+            }
+
+            switch startupReadinessPolicy.decision(
+                elapsedSeconds: Date().timeIntervalSince(attemptStartedAt),
+                hasUsableInput: hasUsableInput,
+                isUsingFallback: isUsingFallback
+            ) {
+            case .wait:
+                try await Task.sleep(for: .milliseconds(50))
+            case .ready:
+                return
+            case .startFallback:
+                try switchToEngineRecoveryCapture()
+                try await awaitOperationalInput(
+                    isUsingFallback: true,
+                    routeIsReady: routeIsReady
+                )
+                return
+            case .fail:
+                throw VoiceBridgeError.recordingUnavailable
             }
         }
     }
@@ -213,7 +272,24 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
     }
 
     private func restartSilentInputStream() {
-        guard let url = destinationURL else { return }
+        do {
+            try switchToEngineRecoveryCapture()
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(800))
+                self?.isRecoveringSignal = false
+            }
+        } catch {
+            recorderErrorDescription =
+                "The microphone stream stayed silent and the independent capture fallback could not start: \(error.localizedDescription)"
+            signalHealth = .absent
+            isRecoveringSignal = false
+        }
+    }
+
+    private func switchToEngineRecoveryCapture() throws {
+        guard let url = destinationURL else {
+            throw VoiceBridgeError.recordingUnavailable
+        }
         automaticRecoveryCount += 1
         isRecoveringSignal = true
         let recoveredURL = url.deletingLastPathComponent().appending(
@@ -236,16 +312,9 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
             powerHistory = []
             peakPower = -160
             signalHealth = .warmingUp
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(800))
-                self?.isRecoveringSignal = false
-            }
         } catch {
             try? FileManager.default.removeItem(at: recoveredURL)
-            recorderErrorDescription =
-                "The microphone stream stayed silent and the independent capture fallback could not start: \(error.localizedDescription)"
-            signalHealth = .absent
-            isRecoveringSignal = false
+            throw error
         }
     }
 
@@ -325,6 +394,24 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         }
         audioFile = nil
         audioEngine = nil
+    }
+
+    private func cancelPreparedCapture() {
+        if let recorder {
+            expectedRecorderCompletion = recorder
+            recorder.stop()
+            self.recorder = nil
+        }
+        stopVoiceProcessedCapture()
+        if let destinationURL {
+            try? FileManager.default.removeItem(at: destinationURL)
+        }
+        audioWriteState = nil
+        audioFile = nil
+        destinationURL = nil
+        startedAt = nil
+        signalAttemptStartedAt = nil
+        isRecoveringSignal = false
     }
 
     private func recordPower(_ power: Float) {
