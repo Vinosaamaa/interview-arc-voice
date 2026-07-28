@@ -34,6 +34,10 @@ public struct VoicePipelineResult: Equatable, Sendable {
     public let deliveryCoachQueued: Bool
     public let transcriptionChunkCount: Int
     public let omittedUnsupportedSegmentCount: Int
+    public let omittedUnsupportedWordCount: Int
+    public let wordAlignmentComplete: Bool
+    public let evaluatedSegmentCount: Int
+    public let wordTimestampCount: Int
     public let segmentValidationSeconds: Double
     public let transcriptionTiming: TranscriptionTiming?
 
@@ -144,6 +148,10 @@ public actor VoicePipeline {
             deliveryCoachQueued: false,
             transcriptionChunkCount: transcription.chunkCount,
             omittedUnsupportedSegmentCount: reliable.omittedUnsupportedSegmentCount,
+            omittedUnsupportedWordCount: reliable.omittedUnsupportedWordCount,
+            wordAlignmentComplete: reliable.wordAlignmentComplete,
+            evaluatedSegmentCount: reliable.evaluatedSegmentCount,
+            wordTimestampCount: reliable.wordTimestampCount,
             segmentValidationSeconds: reliable.segmentValidationSeconds,
             transcriptionTiming: transcription.timing
         )

@@ -100,6 +100,199 @@ private let protectionSampleRate = 16_000.0
     #expect(protected.omittedUnsupportedSegmentCount == 0)
 }
 
+@Test func enhancedProtectionOmitsSilentWordsInsideMixedProviderSegment() {
+    let evidence = LocalSpeechEvidenceAnalyzer.analyze(
+        samples:
+            protectionSpeech(duration: 1)
+            + Array(repeating: Float.zero, count: Int(protectionSampleRate))
+            + protectionSpeech(duration: 1),
+        sampleRate: protectionSampleRate
+    )
+    let transcription = TranscriptionResult(
+        text: "Opening answer. Thank you. Closing question.",
+        words: [
+            TranscriptWord(word: "Opening", start: 0.1, end: 0.4),
+            TranscriptWord(word: "answer.", start: 0.45, end: 0.9),
+            TranscriptWord(word: "Thank", start: 1.25, end: 1.55),
+            TranscriptWord(word: "you.", start: 1.58, end: 1.85),
+            TranscriptWord(word: "Closing", start: 2.1, end: 2.4),
+            TranscriptWord(word: "question.", start: 2.45, end: 2.9),
+        ],
+        segments: [
+            TranscriptSegment(
+                start: 0.1,
+                end: 1.85,
+                text: "Opening answer. Thank you.",
+                averageLogProbability: -0.1,
+                noSpeechProbability: 0.01
+            ),
+            TranscriptSegment(
+                start: 2.1,
+                end: 2.9,
+                text: " Closing question.",
+                averageLogProbability: -0.1,
+                noSpeechProbability: 0.01
+            ),
+        ],
+        durationSeconds: 3,
+        chunkCount: 1
+    )
+
+    let protected = SegmentLocalTranscriptValidator.apply(
+        transcription,
+        speechEvidence: evidence,
+        mode: .enhanced
+    )
+
+    #expect(protected.transcription.text == "Opening answer. Closing question.")
+    #expect(protected.transcription.words.map(\.word) == [
+        "Opening", "answer.", "Closing", "question.",
+    ])
+    #expect(protected.omittedUnsupportedSegmentCount == 0)
+    #expect(protected.omittedUnsupportedWordCount == 2)
+    #expect(protected.wordAlignmentComplete)
+}
+
+@Test func enhancedProtectionPreservesMixedSegmentWordsWithLocalSpeech() {
+    let evidence = LocalSpeechEvidenceAnalyzer.analyze(
+        samples: protectionSpeech(duration: 3),
+        sampleRate: protectionSampleRate
+    )
+    let transcription = TranscriptionResult(
+        text: "Opening answer. Thank you. Closing question.",
+        words: [
+            TranscriptWord(word: "Opening", start: 0.1, end: 0.4),
+            TranscriptWord(word: "answer.", start: 0.45, end: 0.9),
+            TranscriptWord(word: "Thank", start: 1.25, end: 1.55),
+            TranscriptWord(word: "you.", start: 1.58, end: 1.85),
+            TranscriptWord(word: "Closing", start: 2.1, end: 2.4),
+            TranscriptWord(word: "question.", start: 2.45, end: 2.9),
+        ],
+        segments: [
+            TranscriptSegment(
+                start: 0.1,
+                end: 1.85,
+                text: "Opening answer. Thank you.",
+                averageLogProbability: -0.1,
+                noSpeechProbability: 0.01
+            ),
+            TranscriptSegment(
+                start: 2.1,
+                end: 2.9,
+                text: " Closing question.",
+                averageLogProbability: -0.1,
+                noSpeechProbability: 0.01
+            ),
+        ],
+        durationSeconds: 3,
+        chunkCount: 1
+    )
+
+    let protected = SegmentLocalTranscriptValidator.apply(
+        transcription,
+        speechEvidence: evidence,
+        mode: .enhanced
+    )
+
+    #expect(protected.transcription == transcription)
+    #expect(protected.omittedUnsupportedWordCount == 0)
+    #expect(protected.wordAlignmentComplete)
+}
+
+@Test func enhancedProtectionPreservesTextWhenWordCoverageIsIncomplete() {
+    let evidence = LocalSpeechEvidenceAnalyzer.analyze(
+        samples:
+            protectionSpeech(duration: 1)
+            + Array(repeating: Float.zero, count: Int(protectionSampleRate)),
+        sampleRate: protectionSampleRate
+    )
+    let transcription = TranscriptionResult(
+        text: "Opening answer. Thank you. Missing final phrase.",
+        words: [
+            TranscriptWord(word: "Opening", start: 0.1, end: 0.4),
+            TranscriptWord(word: "answer.", start: 0.45, end: 0.9),
+            TranscriptWord(word: "Thank", start: 1.25, end: 1.55),
+            TranscriptWord(word: "you.", start: 1.58, end: 1.85),
+        ],
+        segments: [
+            TranscriptSegment(
+                start: 0.1,
+                end: 1.85,
+                text: "Opening answer. Thank you. Missing final phrase.",
+                averageLogProbability: -0.1,
+                noSpeechProbability: 0.01
+            ),
+        ],
+        durationSeconds: 2,
+        chunkCount: 1
+    )
+
+    let protected = SegmentLocalTranscriptValidator.apply(
+        transcription,
+        speechEvidence: evidence,
+        mode: .enhanced
+    )
+
+    #expect(protected.transcription == transcription)
+    #expect(protected.omittedUnsupportedWordCount == 0)
+    #expect(!protected.wordAlignmentComplete)
+}
+
+@Test func enhancedWordLocalProtectionStillUsesOneProviderCall() async throws {
+    let evidence = LocalSpeechEvidenceAnalyzer.analyze(
+        samples:
+            protectionSpeech(duration: 1)
+            + Array(repeating: Float.zero, count: Int(protectionSampleRate))
+            + protectionSpeech(duration: 1),
+        sampleRate: protectionSampleRate
+    )
+    let provider = SpeechProtectionCountingTranscriber(
+        result: TranscriptionResult(
+            text: "Opening answer. Thank you. Closing question.",
+            words: [
+                TranscriptWord(word: "Opening", start: 0.1, end: 0.4),
+                TranscriptWord(word: "answer.", start: 0.45, end: 0.9),
+                TranscriptWord(word: "Thank", start: 1.25, end: 1.55),
+                TranscriptWord(word: "you.", start: 1.58, end: 1.85),
+                TranscriptWord(word: "Closing", start: 2.1, end: 2.4),
+                TranscriptWord(word: "question.", start: 2.45, end: 2.9),
+            ],
+            segments: [
+                TranscriptSegment(
+                    start: 0.1,
+                    end: 1.85,
+                    text: "Opening answer. Thank you.",
+                    averageLogProbability: -0.1,
+                    noSpeechProbability: 0.01
+                ),
+                TranscriptSegment(
+                    start: 2.1,
+                    end: 2.9,
+                    text: " Closing question.",
+                    averageLogProbability: -0.1,
+                    noSpeechProbability: 0.01
+                ),
+            ],
+            durationSeconds: 3,
+            chunkCount: 1
+        )
+    )
+    let reliable = ReliableSpeechTranscriber(base: provider)
+
+    let result = try await reliable.transcribe(
+        fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+        prompt: "",
+        temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+        audioDurationSeconds: 3,
+        speechEvidence: evidence,
+        protectionMode: .enhanced
+    )
+
+    #expect(result.transcription.text == "Opening answer. Closing question.")
+    #expect(result.omittedUnsupportedWordCount == 2)
+    #expect(await provider.callCount == 1)
+}
+
 @Test func enhancedProtectionPreservesProviderConfidentTextAcrossLocalSilence() {
     let evidence = LocalSpeechEvidenceAnalyzer.analyze(
         samples:

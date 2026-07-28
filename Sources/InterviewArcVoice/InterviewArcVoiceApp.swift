@@ -1056,6 +1056,10 @@ final class VoiceBridgeModel: ObservableObject {
         segmentValidationSeconds: Double,
         insertionSeconds: Double,
         omittedUnsupportedSegmentCount: Int,
+        omittedUnsupportedWordCount: Int? = nil,
+        wordAlignmentComplete: Bool? = nil,
+        evaluatedSegmentCount: Int? = nil,
+        wordTimestampCount: Int? = nil,
         outcome: VoiceDiagnosticOutcome
     ) async {
         let record = VoiceDiagnosticRecord(
@@ -1074,6 +1078,10 @@ final class VoiceBridgeModel: ObservableObject {
             totalSeconds: Date().timeIntervalSince(seed.startedAt),
             protectionMode: seed.protectionMode,
             omittedUnsupportedSegmentCount: omittedUnsupportedSegmentCount,
+            omittedUnsupportedWordCount: omittedUnsupportedWordCount,
+            wordAlignmentComplete: wordAlignmentComplete,
+            evaluatedSegmentCount: evaluatedSegmentCount,
+            wordTimestampCount: wordTimestampCount,
             outcome: outcome
         )
         try? await diagnosticsStore?.append(record)
@@ -2034,6 +2042,11 @@ final class VoiceBridgeModel: ObservableObject {
                     insertionSeconds: currentInsertionDurationSeconds,
                     omittedUnsupportedSegmentCount:
                         result.omittedUnsupportedSegmentCount,
+                    omittedUnsupportedWordCount:
+                        result.omittedUnsupportedWordCount,
+                    wordAlignmentComplete: result.wordAlignmentComplete,
+                    evaluatedSegmentCount: result.evaluatedSegmentCount,
+                    wordTimestampCount: result.wordTimestampCount,
                     outcome: inserted ? .delivered : .failed
                 )
             }
@@ -2118,6 +2131,11 @@ final class VoiceBridgeModel: ObservableObject {
                     insertionSeconds: currentInsertionDurationSeconds,
                     omittedUnsupportedSegmentCount:
                         result.omittedUnsupportedSegmentCount,
+                    omittedUnsupportedWordCount:
+                        result.omittedUnsupportedWordCount,
+                    wordAlignmentComplete: result.wordAlignmentComplete,
+                    evaluatedSegmentCount: result.evaluatedSegmentCount,
+                    wordTimestampCount: result.wordTimestampCount,
                     outcome: lastInsertionSucceeded ? .delivered : .failed
                 )
             }
@@ -2746,6 +2764,30 @@ private struct VoiceSettingsWindow: View {
                                 "Unsupported segments omitted",
                                 value: "\(record.omittedUnsupportedSegmentCount)"
                             )
+                            if let count = record.omittedUnsupportedWordCount {
+                                LabeledContent(
+                                    "Unsupported words omitted",
+                                    value: "\(count)"
+                                )
+                            }
+                            if let complete = record.wordAlignmentComplete {
+                                LabeledContent(
+                                    "Word alignment complete",
+                                    value: complete ? "Yes" : "No"
+                                )
+                            }
+                            if let count = record.evaluatedSegmentCount {
+                                LabeledContent(
+                                    "Segments evaluated",
+                                    value: "\(count)"
+                                )
+                            }
+                            if let count = record.wordTimestampCount {
+                                LabeledContent(
+                                    "Word timestamps",
+                                    value: "\(count)"
+                                )
+                            }
                             Button("Copy diagnostic report") {
                                 model.copyDiagnostic(record)
                             }
@@ -2801,7 +2843,9 @@ private struct VoiceSettingsWindow: View {
         if seconds >= 1 {
             return String(format: "%.2f s", seconds)
         }
-        return String(format: "%.0f ms", seconds * 1_000)
+        let milliseconds = seconds * 1_000
+        if milliseconds > 0, milliseconds < 1 { return "<1 ms" }
+        return String(format: "%.0f ms", milliseconds)
     }
 }
 

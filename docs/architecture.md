@@ -36,12 +36,15 @@
    bounded vocabulary prompt to Groq Large v3.
 6. Apply the selected silence-protection policy. Basic uses the existing
    whole-recording speech gate. Enhanced retains that same 20 ms local evidence
-   timeline and Groq's verbose segment metadata, then omits a segment only when
-   both sources identify its padded timestamp interval as unsupported
-   non-speech. Missing metadata, an incomplete segment representation, genuine
-   local speech, or provider confidence preserves the returned text. Validation
-   does not segment, re-encode, re-upload, retranscribe, or alter the canonical
-   M4A.
+   timeline and Groq's verbose segment and word timestamps. It omits a complete
+   segment only when both sources identify its padded timestamp interval as
+   unsupported non-speech. For a mixed segment, it may remove individual
+   timestamped words whose padded intervals are strongly unsupported locally,
+   but only when the segment tokens and word tokens each provide an exact,
+   complete alignment to the canonical provider transcript. Missing metadata,
+   incomplete or ambiguous alignment, genuine local speech, or provider
+   disagreement preserves the returned text. Validation does not segment,
+   re-encode, re-upload, retranscribe, or alter the canonical M4A.
 7. Insert the plain transcript plus a Markdown comment envelope containing its
    activity and turn IDs into the captured editor. Voice activates the captured
    application, snapshots the macOS pasteboard, posts a real Command-V through
@@ -103,21 +106,27 @@ Silence protection has three persistent modes:
 
 Enhanced removal requires a complete segment representation of the canonical
 provider text, high provider no-speech probability, low provider log
-probability, and no sustained speech in the matching local interval. This
-fail-open-for-speech rule preserves legitimate “Thank you,” quiet speech,
-hesitations, breathing, short pauses, and any result on which the two evidence
-sources disagree. Filtered text is removed before cursor insertion and before a
-pending linked capture can be created, so it cannot reach D1, accepted private
-R2 metadata, or Delivery Coach. The original M4A remains the sole playback and
-upload object.
+probability, and no sustained speech in the matching local interval. Mixed
+segments use the same provider response's word timestamps instead: normalized
+word tokens must cover the complete canonical transcript exactly, and the
+candidate word's padded local interval must contain frames but no sustained
+speech and no more than one percent speech-like frames. The validator removes
+exact source-text ranges; it never reconstructs punctuation or capitalization.
+This fail-open-for-speech rule preserves legitimate “Thank you,” quiet speech,
+hesitations, breathing, short pauses, and every result with incomplete or
+ambiguous alignment. Filtered text is removed before cursor insertion and
+before a pending linked capture can be created, so it cannot reach D1, accepted
+private R2 metadata, or Delivery Coach. The original M4A remains the sole
+playback and upload object.
 
 Every completed attempt appends one bounded, permission-0600 diagnostic record
 containing only numeric stage timings, the selected protection mode, omission
-count, and outcome. The Settings diagnostics surface can copy, reveal, and
-clear that file. It never records transcript text, audio, credentials, tokens,
-private URLs, or activity descriptions. Segment-validation time is recorded
-separately from decoding, upload/provider wait, and response assembly so the
-experimental comparison's incremental cost remains observable.
+counts, exact-alignment status, timestamp coverage counts, and outcome. The
+Settings diagnostics surface can copy, reveal, and clear that file. It never
+records transcript text, audio, credentials, tokens, private URLs, or activity
+descriptions. Validation time is recorded separately from decoding,
+upload/provider wait, and response assembly so the experimental comparison's
+incremental cost remains observable, including sub-millisecond work.
 
 The compact recorder uses a layered material surface. Playback widens it,
 exposes a seekable timeline, elapsed/duration text, explicit Stop, and timer

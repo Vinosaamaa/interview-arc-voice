@@ -3,8 +3,8 @@
 - Incident issues:
   [#33](https://github.com/Vinosaamaa/interview-arc-voice/issues/33),
   [#81](https://github.com/Vinosaamaa/interview-arc-voice/issues/81)
-- Status: whole-recording failure remediated; segment-local recurrence repaired
-  pending merged-main installation verification
+- Status: whole-recording failure remediated; mixed-segment recurrence repair
+  in verification
 - Affected surface: general dictation and Interview Arc-linked recording
 - Severity: data-integrity risk
 
@@ -22,13 +22,17 @@ audio before any transcription request. Captures without sustained
 speech-shaped frames are rejected with “No speech detected.” They are not sent
 to Groq and cannot reach insertion, D1, R2, or delivery coaching.
 
-A later recurrence exposed a different failure shape: a valid long recording
-contained real speech before and after a sustained thinking pause. The
-whole-recording gate correctly accepted the capture, but the provider returned
-invented text such as “Thank you” inside the silent interval. The follow-up
-repair retains the existing local frame timeline and Groq segment metadata,
-then suppresses a segment only when both sources independently identify its
-timestamp interval as non-speech.
+A later recurrence exposed two increasingly specific failure shapes. A valid
+long recording contained real speech before and after a sustained thinking
+pause. The whole-recording gate correctly accepted the capture, but the
+provider returned invented text such as “Thank you” inside the silent interval.
+The first follow-up retained the existing local frame timeline and Groq segment
+metadata, then suppressed a segment only when both sources independently
+identified its timestamp interval as non-speech. Production diagnostics later
+showed that this repair ran but omitted zero segments: the provider can place
+real speech and a silent-interval hallucination in the same segment or report
+the mixed segment with high confidence. Segment-granularity deletion therefore
+could not safely remove the false phrase.
 
 ## Impact
 
@@ -52,6 +56,13 @@ an approximately 17-second no-speech interval. Another long answer contained a
 returned phrase inside an approximately 33-second no-speech interval.
 Deterministic synthetic fixtures now reproduce those shapes.
 
+The mixed-segment recurrence was detected through the installed app's bounded
+privacy-safe diagnostics. Of the latest 100 attempts inspected, 96 used
+Enhanced, all 96 executed the local scan, 94 reached provider delivery, and all
+94 executed transcript validation. None omitted a segment. Most validation
+durations appeared as `0 ms` because the prior UI rounded sub-millisecond work
+to an integer, not because validation was skipped.
+
 ## Root cause
 
 The pre-transcription gate measured file integrity and broad signal presence,
@@ -74,6 +85,14 @@ not ask whether the audio at a specific provider timestamp contained speech.
 The Groq decoder similarly discarded `no_speech_prob`, `avg_logprob`, and the
 assembled segment timeline. This made segment-local corroboration impossible.
 
+The first segment-local repair then made a second coarse-granularity
+assumption: one provider segment would correspond to one locally supported or
+unsupported acoustic interval. Provider segmentation does not guarantee that.
+A segment may contain both genuine speech and a hallucinated phrase timestamped
+over a pause. Deleting that segment would lose real speech, while preserving it
+kept the hallucination. Its provider-level confidence can also remain high
+because confidence is aggregated across the mixed segment.
+
 ## Resolution
 
 `LocalSpeechEvidenceAnalyzer` decodes the finalized file locally and evaluates
@@ -89,10 +108,10 @@ Only audio with positive local speech evidence continues to transcription.
 This adds no network request and uses a small linear pass over decoded mono
 samples. On a 30-minute answer, the work remains O(n) with bounded frame state.
 
-For Enhanced protection, that same scan now retains each 20 ms frame's
-speech-like decision and level. The existing verbose Groq response retains
-timestamped segments plus `no_speech_prob` and `avg_logprob`. A segment is
-omitted only when all safeguards agree:
+For Enhanced protection, that same scan retains each 20 ms frame's speech-like
+decision and level. The existing verbose Groq response retains timestamped
+segments and words plus segment `no_speech_prob` and `avg_logprob`. A complete
+segment is omitted only when all safeguards agree:
 
 - the provider no-speech probability is at least `0.60`;
 - the provider average log probability is at most `-1.0`;
@@ -101,10 +120,24 @@ omitted only when all safeguards agree:
 - speech-like frames occupy no more than one percent of that interval; and
 - the provider segments completely represent the canonical transcript.
 
-Any missing metadata, incomplete segment coverage, local speech evidence, or
-provider confidence preserves the text. The comparison happens before cursor
-insertion and before linked pending-capture creation. The original M4A is never
-edited and remains the object used for playback and private upload.
+When real and unsupported text share a segment, Enhanced performs one narrower
+local comparison:
+
+- normalized segment tokens must exactly cover the canonical transcript;
+- normalized word-timestamp tokens must independently cover that complete
+  canonical transcript;
+- each candidate word interval is padded by 150 ms and expanded to at least
+  450 ms of evidence;
+- that interval must contain analyzed frames, no sustained speech-shaped run,
+  and no more than one percent speech-like frames; and
+- only the exact canonical source-text range for verified words is removed.
+
+Any missing timestamp, incomplete or ambiguous token alignment, or local speech
+evidence preserves the text. Punctuation and capitalization are preserved
+because the filter deletes source ranges rather than reconstructing the
+transcript. The comparison happens before cursor insertion and before linked
+pending-capture creation. The original M4A is never edited and remains the
+object used for playback and private upload.
 
 The repair deliberately rejected heavier alternatives:
 
@@ -113,6 +146,8 @@ The repair deliberately rejected heavier alternatives:
 - no re-encoding;
 - no second AI classifier;
 - no automatic second provider request on the normal path;
+- no second Groq call for word timestamps (they are requested in the existing
+  verbose response);
 - no punctuation or wording rewrite.
 
 ## Verification
@@ -126,6 +161,9 @@ Deterministic regression fixtures cover:
 - speech before and after one or multiple sustained pauses;
 - a genuinely spoken “Thank you”;
 - suspicious “Thank you” and prompt-derived vocabulary over silence;
+- real speech and silent-interval hallucination inside the same provider
+  segment;
+- exact full word coverage and preserve-on-incomplete-alignment behavior;
 - local/provider disagreement, which must preserve text;
 - steady background sound and isolated impulses;
 - incomplete provider segment metadata;
@@ -133,12 +171,15 @@ Deterministic regression fixtures cover:
 - bounded permission-0600 diagnostics with no private content.
 
 The optimized frame comparison remains linear and uses the already decoded
-timeline. Representative measurements put the synthetic 10-minute frame
-analysis at approximately 14 ms and a warm decode of an 11.4-minute AAC file at
-approximately 110–200 ms; upload and provider wait remain dominant. Local
+timeline. Word alignment and source-range filtering are also linear in the
+returned transcript size. Representative measurements put the synthetic
+10-minute frame analysis at approximately 14 ms and a warm decode of an
+11.4-minute AAC file at approximately 110–200 ms; upload and provider wait
+remain dominant. There is no extra decode, upload, or provider request. Local
 diagnostics now separate finalization, integrity inspection, speech scan,
-provider wait, response processing, segment validation, insertion, and total
-elapsed time.
+provider wait, response processing, transcript validation, insertion, and
+total elapsed time; sub-millisecond values display as `<1 ms` instead of
+rounding to zero.
 
 The release checklist also requires a signed-app manual matrix with silence,
 room tone, a click, “Thank you,” a soft short answer, general dictation, and
@@ -157,6 +198,11 @@ job.
 - Treat whole-recording speech evidence and segment-local transcript support as
   separate integrity questions.
 - Keep segment filtering before all insertion, D1, R2, and coaching boundaries.
+- Treat provider segments as presentation groupings, not guaranteed acoustic
+  truth boundaries; use exact word alignment when a mixed segment must be
+  narrowed.
+- Preserve provider text whenever exact complete token coverage cannot be
+  proven.
 - Preserve older pending records when optional provider metadata is introduced.
 
 ## Rollback

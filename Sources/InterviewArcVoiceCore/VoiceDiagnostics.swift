@@ -20,6 +20,10 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
     public let totalSeconds: Double
     public let protectionMode: SpeechProtectionMode
     public let omittedUnsupportedSegmentCount: Int
+    public let omittedUnsupportedWordCount: Int?
+    public let wordAlignmentComplete: Bool?
+    public let evaluatedSegmentCount: Int?
+    public let wordTimestampCount: Int?
     public let outcome: VoiceDiagnosticOutcome
 
     public init(
@@ -36,6 +40,10 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         totalSeconds: Double,
         protectionMode: SpeechProtectionMode,
         omittedUnsupportedSegmentCount: Int,
+        omittedUnsupportedWordCount: Int? = nil,
+        wordAlignmentComplete: Bool? = nil,
+        evaluatedSegmentCount: Int? = nil,
+        wordTimestampCount: Int? = nil,
         outcome: VoiceDiagnosticOutcome
     ) {
         self.id = id
@@ -51,6 +59,10 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         self.totalSeconds = totalSeconds
         self.protectionMode = protectionMode
         self.omittedUnsupportedSegmentCount = omittedUnsupportedSegmentCount
+        self.omittedUnsupportedWordCount = omittedUnsupportedWordCount
+        self.wordAlignmentComplete = wordAlignmentComplete
+        self.evaluatedSegmentCount = evaluatedSegmentCount
+        self.wordTimestampCount = wordTimestampCount
         self.outcome = outcome
     }
 
@@ -68,12 +80,18 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
             "Total: \(milliseconds(totalSeconds))",
             "Protection: \(protectionMode.displayName)",
             "Unsupported segments omitted: \(omittedUnsupportedSegmentCount)",
+            "Unsupported words omitted: \(omittedUnsupportedWordCount.map { String($0) } ?? "Unavailable")",
+            "Word alignment complete: \(wordAlignmentComplete.map { String($0) } ?? "Unavailable")",
+            "Segments evaluated: \(evaluatedSegmentCount.map { String($0) } ?? "Unavailable")",
+            "Word timestamps: \(wordTimestampCount.map { String($0) } ?? "Unavailable")",
             "Outcome: \(outcome.rawValue)",
         ].joined(separator: "\n")
     }
 
     private func milliseconds(_ seconds: Double) -> String {
-        String(format: "%.0f ms", max(0, seconds) * 1_000)
+        let value = max(0, seconds) * 1_000
+        if value > 0, value < 1 { return "<1 ms" }
+        return String(format: "%.0f ms", value)
     }
 }
 
