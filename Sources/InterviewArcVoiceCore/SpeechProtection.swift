@@ -157,49 +157,53 @@ public enum SegmentLocalTranscriptValidator {
 
         let retainedSegments: [TranscriptSegment] =
             segments.indices.compactMap { index -> TranscriptSegment? in
-            guard !rejectedSegmentIndices.contains(index) else { return nil }
-            let segment = segments[index]
-            let interval = segmentTokenIntervals[index]
-            let localRejected = mergedRejectedTokenIntervals.compactMap {
-                intersection($0, interval).map {
-                    TokenInterval(
-                        lowerBound: $0.lowerBound - interval.lowerBound,
-                        upperBound: $0.upperBound - interval.lowerBound
-                    )
+                guard !rejectedSegmentIndices.contains(index) else {
+                    return nil
                 }
+                let segment = segments[index]
+                let interval = segmentTokenIntervals[index]
+                let localRejected = mergedRejectedTokenIntervals.compactMap {
+                    intersection($0, interval).map {
+                        TokenInterval(
+                            lowerBound: $0.lowerBound - interval.lowerBound,
+                            upperBound: $0.upperBound - interval.lowerBound
+                        )
+                    }
+                }
+                guard !localRejected.isEmpty else { return segment }
+                let sanitized = removing(
+                    localRejected,
+                    from: segment.text,
+                    tokens: segmentTokens[index]
+                )
+                guard !sanitized.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                ).isEmpty else {
+                    return nil
+                }
+                return TranscriptSegment(
+                    start: segment.start,
+                    end: segment.end,
+                    text: sanitized,
+                    averageLogProbability: segment.averageLogProbability,
+                    compressionRatio: segment.compressionRatio,
+                    noSpeechProbability: segment.noSpeechProbability
+                )
             }
-            guard !localRejected.isEmpty else { return segment }
-            let sanitized = removing(
-                localRejected,
-                from: segment.text,
-                tokens: segmentTokens[index]
-            )
-            guard !sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
-                    .isEmpty else {
-                return nil
-            }
-            return TranscriptSegment(
-                start: segment.start,
-                end: segment.end,
-                text: sanitized,
-                averageLogProbability: segment.averageLogProbability,
-                compressionRatio: segment.compressionRatio,
-                noSpeechProbability: segment.noSpeechProbability
-            )
-        }
         let retainedWords: [TranscriptWord] =
-            transcription.words.indices.compactMap { index -> TranscriptWord? in
-            let word = transcription.words[index]
-            guard !rejectedWordIndices.contains(index),
-                  !overlapsRejectedSegment(
-                      word,
-                      segments: segments,
-                      rejectedSegmentIndices: rejectedSegmentIndices
-                  ) else {
-                return nil
+            transcription.words.indices.compactMap {
+                index -> TranscriptWord? in
+                let word = transcription.words[index]
+                guard !rejectedWordIndices.contains(index),
+                      !overlapsRejectedSegment(
+                          word,
+                          segments: segments,
+                          rejectedSegmentIndices: rejectedSegmentIndices
+                      ) else {
+                    return nil
+                }
+                return word
             }
-            return word
-        }
         let retainedText = removing(
             mergedRejectedTokenIntervals,
             from: transcription.text,
