@@ -33,6 +33,26 @@ public enum SpeechProtectionMode: String, CaseIterable, Codable, Identifiable, S
 public struct SpeechProtectedTranscription: Equatable, Sendable {
     public let transcription: TranscriptionResult
     public let omittedUnsupportedSegmentCount: Int
+    public let omittedUnsupportedWordCount: Int
+    public let wordAlignmentComplete: Bool
+    public let evaluatedSegmentCount: Int
+    public let wordTimestampCount: Int
+
+    public init(
+        transcription: TranscriptionResult,
+        omittedUnsupportedSegmentCount: Int,
+        omittedUnsupportedWordCount: Int = 0,
+        wordAlignmentComplete: Bool = false,
+        evaluatedSegmentCount: Int = 0,
+        wordTimestampCount: Int = 0
+    ) {
+        self.transcription = transcription
+        self.omittedUnsupportedSegmentCount = omittedUnsupportedSegmentCount
+        self.omittedUnsupportedWordCount = omittedUnsupportedWordCount
+        self.wordAlignmentComplete = wordAlignmentComplete
+        self.evaluatedSegmentCount = evaluatedSegmentCount
+        self.wordTimestampCount = wordTimestampCount
+    }
 }
 
 public enum SegmentLocalTranscriptValidator {
@@ -40,6 +60,22 @@ public enum SegmentLocalTranscriptValidator {
     private static let maximumLocalSpeechFraction = 0.01
     private static let providerNoSpeechThreshold = 0.60
     private static let providerLogProbabilityThreshold = -1.0
+    private static let minimumWordEvidenceSeconds = 0.45
+
+    private struct TextToken {
+        let normalized: String
+        let range: Range<String.Index>
+    }
+
+    private struct TokenInterval: Equatable {
+        let lowerBound: Int
+        let upperBound: Int
+    }
+
+    private struct WordTokenAlignment {
+        let intervals: [TokenInterval]
+        let isComplete: Bool
+    }
 
     public static func apply(
         _ transcription: TranscriptionResult,
@@ -55,33 +91,118 @@ public enum SegmentLocalTranscriptValidator {
               ) else {
             return SpeechProtectedTranscription(
                 transcription: transcription,
-                omittedUnsupportedSegmentCount: 0
+                omittedUnsupportedSegmentCount: 0,
+                evaluatedSegmentCount: transcription.segments?.count ?? 0,
+                wordTimestampCount: transcription.words.count
             )
         }
 
-        let rejected = segments.filter { segment in
-            isUnsupported(segment, speechEvidence: speechEvidence)
-        }
-        guard !rejected.isEmpty else {
+        let canonicalTokens = tokens(in: transcription.text)
+        let segmentTokens = segments.map { tokens(in: $0.text) }
+        let segmentTokenIntervals = tokenIntervals(for: segmentTokens)
+        guard segmentTokens.flatMap({ $0 }).map(\.normalized)
+                == canonicalTokens.map(\.normalized) else {
             return SpeechProtectedTranscription(
                 transcription: transcription,
-                omittedUnsupportedSegmentCount: 0
+                omittedUnsupportedSegmentCount: 0,
+                evaluatedSegmentCount: segments.count,
+                wordTimestampCount: transcription.words.count
             )
         }
 
-        let retainedSegments = segments.filter { candidate in
-            !rejected.contains(candidate)
-        }
-        let retainedWords = transcription.words.filter { word in
-            !rejected.contains { segment in
-                word.end > segment.start && word.start < segment.end
+        let rejectedSegmentIndices = Set(
+            segments.indices.filter { index in
+                isUnsupported(
+                    segments[index],
+                    speechEvidence: speechEvidence
+                )
             }
+        )
+        let wordAlignment = alignWords(
+            transcription.words,
+            canonicalTokens: canonicalTokens
+        )
+        let rejectedWordIndices: Set<Int>
+        if wordAlignment.isComplete {
+            rejectedWordIndices = Set(
+                transcription.words.indices.filter { index in
+                    !overlapsRejectedSegment(
+                        transcription.words[index],
+                        segments: segments,
+                        rejectedSegmentIndices: rejectedSegmentIndices
+                    )
+                    && isStronglyUnsupported(
+                        transcription.words[index],
+                        speechEvidence: speechEvidence
+                    )
+                }
+            )
+        } else {
+            rejectedWordIndices = []
         }
-        let retainedText = retainedSegments
-            .map(\.text)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+
+        let rejectedTokenIntervals =
+            rejectedSegmentIndices.map { segmentTokenIntervals[$0] }
+            + rejectedWordIndices.map { wordAlignment.intervals[$0] }
+        let mergedRejectedTokenIntervals = merge(rejectedTokenIntervals)
+        guard !mergedRejectedTokenIntervals.isEmpty else {
+            return SpeechProtectedTranscription(
+                transcription: transcription,
+                omittedUnsupportedSegmentCount: 0,
+                wordAlignmentComplete: wordAlignment.isComplete,
+                evaluatedSegmentCount: segments.count,
+                wordTimestampCount: transcription.words.count
+            )
+        }
+
+        let retainedSegments = segments.indices.compactMap { index in
+            guard !rejectedSegmentIndices.contains(index) else { return nil }
+            let segment = segments[index]
+            let interval = segmentTokenIntervals[index]
+            let localRejected = mergedRejectedTokenIntervals.compactMap {
+                intersection($0, interval).map {
+                    TokenInterval(
+                        lowerBound: $0.lowerBound - interval.lowerBound,
+                        upperBound: $0.upperBound - interval.lowerBound
+                    )
+                }
+            }
+            guard !localRejected.isEmpty else { return segment }
+            let sanitized = removing(
+                localRejected,
+                from: segment.text,
+                tokens: segmentTokens[index]
+            )
+            guard !sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .isEmpty else {
+                return nil
+            }
+            return TranscriptSegment(
+                start: segment.start,
+                end: segment.end,
+                text: sanitized,
+                averageLogProbability: segment.averageLogProbability,
+                compressionRatio: segment.compressionRatio,
+                noSpeechProbability: segment.noSpeechProbability
+            )
+        }
+        let retainedWords = transcription.words.indices.compactMap { index in
+            let word = transcription.words[index]
+            guard !rejectedWordIndices.contains(index),
+                  !overlapsRejectedSegment(
+                      word,
+                      segments: segments,
+                      rejectedSegmentIndices: rejectedSegmentIndices
+                  ) else {
+                return nil
+            }
+            return word
+        }
+        let retainedText = removing(
+            mergedRejectedTokenIntervals,
+            from: transcription.text,
+            tokens: canonicalTokens
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
 
         return SpeechProtectedTranscription(
             transcription: TranscriptionResult(
@@ -92,7 +213,11 @@ public enum SegmentLocalTranscriptValidator {
                 chunkCount: transcription.chunkCount,
                 timing: transcription.timing
             ),
-            omittedUnsupportedSegmentCount: rejected.count
+            omittedUnsupportedSegmentCount: rejectedSegmentIndices.count,
+            omittedUnsupportedWordCount: rejectedWordIndices.count,
+            wordAlignmentComplete: wordAlignment.isComplete,
+            evaluatedSegmentCount: segments.count,
+            wordTimestampCount: transcription.words.count
         )
     }
 
@@ -113,6 +238,169 @@ public enum SegmentLocalTranscriptValidator {
         )
         return !local.hasSustainedSpeech
             && local.speechLikeFraction <= maximumLocalSpeechFraction
+    }
+
+    private static func isStronglyUnsupported(
+        _ word: TranscriptWord,
+        speechEvidence: SpeechEvidenceResult
+    ) -> Bool {
+        guard word.end > word.start else { return false }
+        let start = max(0, word.start - segmentPaddingSeconds)
+        let end = word.end + segmentPaddingSeconds
+        guard end - start >= minimumWordEvidenceSeconds else { return false }
+        let local = speechEvidence.evidence(from: start, to: end)
+        return local.frameCount > 0
+            && !local.hasSustainedSpeech
+            && local.speechLikeFraction <= maximumLocalSpeechFraction
+    }
+
+    private static func overlapsRejectedSegment(
+        _ word: TranscriptWord,
+        segments: [TranscriptSegment],
+        rejectedSegmentIndices: Set<Int>
+    ) -> Bool {
+        rejectedSegmentIndices.contains { index in
+            word.end > segments[index].start
+                && word.start < segments[index].end
+        }
+    }
+
+    private static func alignWords(
+        _ words: [TranscriptWord],
+        canonicalTokens: [TextToken]
+    ) -> WordTokenAlignment {
+        var intervals: [TokenInterval] = []
+        var normalizedWords: [String] = []
+        var offset = 0
+        for word in words {
+            let wordTokens = tokens(in: word.word)
+            let values = wordTokens.map(\.normalized)
+            intervals.append(
+                TokenInterval(
+                    lowerBound: offset,
+                    upperBound: offset + values.count
+                )
+            )
+            normalizedWords.append(contentsOf: values)
+            offset += values.count
+        }
+        return WordTokenAlignment(
+            intervals: intervals,
+            isComplete:
+                !words.isEmpty
+                && normalizedWords == canonicalTokens.map(\.normalized)
+        )
+    }
+
+    private static func tokenIntervals(
+        for tokenGroups: [[TextToken]]
+    ) -> [TokenInterval] {
+        var offset = 0
+        return tokenGroups.map { group in
+            defer { offset += group.count }
+            return TokenInterval(
+                lowerBound: offset,
+                upperBound: offset + group.count
+            )
+        }
+    }
+
+    private static func merge(
+        _ intervals: [TokenInterval]
+    ) -> [TokenInterval] {
+        let sorted = intervals
+            .filter { $0.upperBound > $0.lowerBound }
+            .sorted {
+                $0.lowerBound == $1.lowerBound
+                    ? $0.upperBound < $1.upperBound
+                    : $0.lowerBound < $1.lowerBound
+            }
+        guard var current = sorted.first else { return [] }
+        var result: [TokenInterval] = []
+        for interval in sorted.dropFirst() {
+            if interval.lowerBound <= current.upperBound {
+                current = TokenInterval(
+                    lowerBound: current.lowerBound,
+                    upperBound: max(current.upperBound, interval.upperBound)
+                )
+            } else {
+                result.append(current)
+                current = interval
+            }
+        }
+        result.append(current)
+        return result
+    }
+
+    private static func intersection(
+        _ left: TokenInterval,
+        _ right: TokenInterval
+    ) -> TokenInterval? {
+        let lower = max(left.lowerBound, right.lowerBound)
+        let upper = min(left.upperBound, right.upperBound)
+        guard upper > lower else { return nil }
+        return TokenInterval(lowerBound: lower, upperBound: upper)
+    }
+
+    private static func removing(
+        _ intervals: [TokenInterval],
+        from text: String,
+        tokens: [TextToken]
+    ) -> String {
+        guard !intervals.isEmpty, !tokens.isEmpty else { return text }
+        var result = text
+        let characterRanges = intervals.compactMap { interval -> Range<String.Index>? in
+            guard interval.lowerBound >= 0,
+                  interval.upperBound > interval.lowerBound,
+                  interval.lowerBound < tokens.count else {
+                return nil
+            }
+            let upper = min(interval.upperBound, tokens.count)
+            let start = tokens[interval.lowerBound].range.lowerBound
+            let end = upper < tokens.count
+                ? tokens[upper].range.lowerBound
+                : text.endIndex
+            return start..<end
+        }
+        let sortedRanges = characterRanges.sorted {
+            $0.lowerBound < $1.lowerBound
+        }
+        guard !sortedRanges.isEmpty else { return text }
+        result = ""
+        var cursor = text.startIndex
+        for range in sortedRanges {
+            guard range.lowerBound >= cursor else { continue }
+            result.append(contentsOf: text[cursor..<range.lowerBound])
+            cursor = range.upperBound
+        }
+        result.append(contentsOf: text[cursor..<text.endIndex])
+        return result
+    }
+
+    private static func tokens(in value: String) -> [TextToken] {
+        var result: [TextToken] = []
+        var index = value.startIndex
+        while index < value.endIndex {
+            while index < value.endIndex,
+                  !value[index].isLetter,
+                  !value[index].isNumber {
+                index = value.index(after: index)
+            }
+            guard index < value.endIndex else { break }
+            let start = index
+            while index < value.endIndex,
+                  value[index].isLetter || value[index].isNumber {
+                index = value.index(after: index)
+            }
+            let range = start..<index
+            result.append(
+                TextToken(
+                    normalized: String(value[range]).lowercased(),
+                    range: range
+                )
+            )
+        }
+        return result
     }
 
     private static func segmentsRepresentCompleteTranscript(

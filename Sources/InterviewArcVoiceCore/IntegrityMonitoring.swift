@@ -234,17 +234,29 @@ public struct ReliableTranscription: Equatable, Sendable {
     public let transcription: TranscriptionResult
     public let wasRetried: Bool
     public let omittedUnsupportedSegmentCount: Int
+    public let omittedUnsupportedWordCount: Int
+    public let wordAlignmentComplete: Bool
+    public let evaluatedSegmentCount: Int
+    public let wordTimestampCount: Int
     public let segmentValidationSeconds: Double
 
     public init(
         transcription: TranscriptionResult,
         wasRetried: Bool,
         omittedUnsupportedSegmentCount: Int = 0,
+        omittedUnsupportedWordCount: Int = 0,
+        wordAlignmentComplete: Bool = false,
+        evaluatedSegmentCount: Int = 0,
+        wordTimestampCount: Int = 0,
         segmentValidationSeconds: Double = 0
     ) {
         self.transcription = transcription
         self.wasRetried = wasRetried
         self.omittedUnsupportedSegmentCount = omittedUnsupportedSegmentCount
+        self.omittedUnsupportedWordCount = omittedUnsupportedWordCount
+        self.wordAlignmentComplete = wordAlignmentComplete
+        self.evaluatedSegmentCount = evaluatedSegmentCount
+        self.wordTimestampCount = wordTimestampCount
         self.segmentValidationSeconds = segmentValidationSeconds
     }
 }
@@ -359,6 +371,10 @@ public actor ReliableSpeechTranscriber {
             transcription: protected.transcription,
             wasRetried: wasRetried,
             omittedUnsupportedSegmentCount: protected.omittedUnsupportedSegmentCount,
+            omittedUnsupportedWordCount: protected.omittedUnsupportedWordCount,
+            wordAlignmentComplete: protected.wordAlignmentComplete,
+            evaluatedSegmentCount: protected.evaluatedSegmentCount,
+            wordTimestampCount: protected.wordTimestampCount,
             segmentValidationSeconds: validationSeconds
         )
     }

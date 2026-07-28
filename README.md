@@ -121,12 +121,19 @@ Save, and Retry instead of being discarded.
   `Enhanced — Experimental`. Basic rejects an entire recording with no
   sustained speech. Enhanced reuses the same local scan and Groq request, then
   omits a returned segment only when its local timestamped audio and Groq's
-  confidence metadata both identify it as unsupported non-speech. It never
-  cuts, rewrites, or replaces the original M4A.
+  confidence metadata both identify it as unsupported non-speech. When a
+  provider segment mixes genuine speech with a hallucinated phrase over
+  silence, Enhanced can instead remove the unsupported timestamped words—but
+  only when Groq's word list accounts for the complete canonical transcript
+  and the existing local 20 ms evidence strongly verifies their intervals as
+  silent. Missing or ambiguous alignment preserves the text. This uses no
+  second Groq request or audio decode and never cuts, rewrites, or replaces the
+  original M4A.
 - Settings → Diagnostics records a bounded local timing breakdown for capture,
-  validation, Groq, segment corroboration, response handling, and insertion.
-  The report can be copied, revealed, or cleared and never contains transcript
-  text, audio, credentials, tokens, or private URLs.
+  validation, Groq, transcript corroboration, response handling, and insertion,
+  plus privacy-safe segment/word coverage and omission counts. The report can
+  be copied, revealed, or cleared and never contains transcript text, audio,
+  credentials, tokens, or private URLs.
 
 ## First-time setup
 

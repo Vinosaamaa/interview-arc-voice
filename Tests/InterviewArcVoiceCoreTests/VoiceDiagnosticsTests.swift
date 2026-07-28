@@ -29,6 +29,10 @@ import Testing
                 totalSeconds: 2.58,
                 protectionMode: .enhanced,
                 omittedUnsupportedSegmentCount: index,
+                omittedUnsupportedWordCount: index + 1,
+                wordAlignmentComplete: true,
+                evaluatedSegmentCount: 3,
+                wordTimestampCount: 12,
                 outcome: .delivered
             )
         )
@@ -42,11 +46,72 @@ import Testing
     let permissions = attributes[.posixPermissions] as? NSNumber
 
     #expect(records.map(\.omittedUnsupportedSegmentCount) == [2, 1])
+    #expect(records.map(\.omittedUnsupportedWordCount) == [3, 2])
     #expect(permissions?.intValue == 0o600)
     #expect(!rawFile.localizedCaseInsensitiveContains("transcript"))
     #expect(!rawFile.localizedCaseInsensitiveContains("apiKey"))
     #expect(!rawFile.localizedCaseInsensitiveContains("token"))
     #expect(!rawFile.localizedCaseInsensitiveContains(".m4a"))
+}
+
+@Test func diagnosticReportMakesSubmillisecondValidationObservable() {
+    let record = VoiceDiagnosticRecord(
+        id: UUID(),
+        createdAt: Date(timeIntervalSince1970: 0),
+        recordingDurationSeconds: 5,
+        fileFinalizationSeconds: 0.01,
+        integrityInspectionSeconds: 0.01,
+        localSpeechScanSeconds: 0.01,
+        providerWaitSeconds: 0.5,
+        responseProcessingSeconds: 0.000_04,
+        segmentValidationSeconds: 0.000_08,
+        insertionSeconds: 0.01,
+        totalSeconds: 0.55,
+        protectionMode: .enhanced,
+        omittedUnsupportedSegmentCount: 0,
+        omittedUnsupportedWordCount: 2,
+        wordAlignmentComplete: true,
+        evaluatedSegmentCount: 2,
+        wordTimestampCount: 8,
+        outcome: .delivered
+    )
+
+    #expect(record.report.contains("Response processing: <1 ms"))
+    #expect(record.report.contains("Segment validation: <1 ms"))
+    #expect(record.report.contains("Unsupported words omitted: 2"))
+    #expect(record.report.contains("Word alignment complete: true"))
+}
+
+@Test func diagnosticsDecodeRecordsWrittenBeforeWordLevelMetrics() throws {
+    let json = """
+    [{
+      "id":"52D02F85-E51C-4FA4-A6ED-753D4379AEAE",
+      "createdAt":0,
+      "recordingDurationSeconds":5,
+      "fileFinalizationSeconds":0.01,
+      "integrityInspectionSeconds":0.01,
+      "localSpeechScanSeconds":0.01,
+      "providerWaitSeconds":0.5,
+      "responseProcessingSeconds":0.01,
+      "segmentValidationSeconds":0.001,
+      "insertionSeconds":0.01,
+      "totalSeconds":0.55,
+      "protectionMode":"enhanced",
+      "omittedUnsupportedSegmentCount":0,
+      "outcome":"delivered"
+    }]
+    """
+
+    let records = try JSONDecoder().decode(
+        [VoiceDiagnosticRecord].self,
+        from: Data(json.utf8)
+    )
+
+    #expect(records.count == 1)
+    #expect(records[0].omittedUnsupportedWordCount == nil)
+    #expect(records[0].wordAlignmentComplete == nil)
+    #expect(records[0].evaluatedSegmentCount == nil)
+    #expect(records[0].wordTimestampCount == nil)
 }
 
 @Test func diagnosticsStoreCanBeCleared() async throws {
