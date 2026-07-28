@@ -155,7 +155,8 @@ public enum SegmentLocalTranscriptValidator {
             )
         }
 
-        let retainedSegments = segments.indices.compactMap { index in
+        let retainedSegments: [TranscriptSegment] =
+            segments.indices.compactMap { index -> TranscriptSegment? in
             guard !rejectedSegmentIndices.contains(index) else { return nil }
             let segment = segments[index]
             let interval = segmentTokenIntervals[index]
@@ -186,7 +187,8 @@ public enum SegmentLocalTranscriptValidator {
                 noSpeechProbability: segment.noSpeechProbability
             )
         }
-        let retainedWords = transcription.words.indices.compactMap { index in
+        let retainedWords: [TranscriptWord] =
+            transcription.words.indices.compactMap { index -> TranscriptWord? in
             let word = transcription.words[index]
             guard !rejectedWordIndices.contains(index),
                   !overlapsRejectedSegment(
