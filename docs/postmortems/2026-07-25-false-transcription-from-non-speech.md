@@ -224,3 +224,21 @@ Resolution of #81 requires:
 5. an installed-app long-pause capture confirming that spoken regions remain,
    unsupported silent-interval text is absent, and the original recording
    remains playable.
+
+PR #83 merged as `bc462f4b9be970b007da6822c2baf6afb2ac4f7c`.
+Merged-main workflow `30394045237` passed the complete Swift test and package
+job. The downloaded application passed strict code-signature and package
+resource verification. Its executable SHA-256 was:
+
+`3743de08ff2e07319469d32a3daa78ef8027869c39eb3b96a5d9706c5f4591ed`
+
+That exact artifact was launched from a temporary staging directory, where it
+loaded the normal linked/general-dictation context without a credential prompt.
+It was then installed at `~/Applications/Interview Arc Voice.app`; the installed
+executable matched the staged hash exactly and loaded the same normal user
+context.
+
+The deterministic mixed-segment matrix, exact package checks, staged launch,
+and installed launch are complete. The next naturally occurring long-pause
+capture remains required before closing #81 so the release record does not
+substitute synthetic evidence for the reported acoustic environment.
