@@ -7,6 +7,7 @@ public struct RecordingStore: Sendable {
     public let pendingCapturesDirectory: URL
     public let diagnosticsDirectory: URL
     public let transcriptHistoryDirectory: URL
+    public let recoveryDirectory: URL
 
     public init(fileManager: FileManager = .default) throws {
         let support = try fileManager.url(
@@ -34,6 +35,10 @@ public struct RecordingStore: Sendable {
             path: "TranscriptHistory",
             directoryHint: .isDirectory
         )
+        recoveryDirectory = root.appending(
+            path: "Recovery",
+            directoryHint: .isDirectory
+        )
         for directory in [
             recordingsDirectory,
             temporaryDirectory,
@@ -41,6 +46,7 @@ public struct RecordingStore: Sendable {
             pendingCapturesDirectory,
             diagnosticsDirectory,
             transcriptHistoryDirectory,
+            recoveryDirectory,
         ] {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
             try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)

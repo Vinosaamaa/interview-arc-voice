@@ -28,6 +28,27 @@ import Testing
     ))
 }
 
+@Test func audioRecoveryActionsAppearOnlyAfterAudioHydration() {
+    let actions: [VoiceFailureAction] = [
+        .openSettings,
+        .playRecording,
+        .saveRecording,
+    ]
+
+    #expect(
+        RecoveryActionAvailabilityPolicy.availableActions(
+            from: actions,
+            hasRecoverableAudio: false
+        ) == [.openSettings]
+    )
+    #expect(
+        RecoveryActionAvailabilityPolicy.availableActions(
+            from: actions,
+            hasRecoverableAudio: true
+        ) == actions
+    )
+}
+
 @Test func menuInsertionUsesTheRememberedExternalEditor() {
     let policy = ManualInsertionTargetPolicy()
 
@@ -98,4 +119,90 @@ import Testing
         atPath: store.fileURL.path
     )
     #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+}
+
+@Test func recoverableRecordingReferenceSurvivesRelaunchAndRejectsUnsafePaths() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let recordings = root.appending(path: "Recordings", directoryHint: .isDirectory)
+    let recovery = root.appending(path: "Recovery", directoryHint: .isDirectory)
+    let outside = FileManager.default.temporaryDirectory
+        .appending(path: "\(UUID().uuidString).m4a")
+    defer {
+        try? FileManager.default.removeItem(at: root)
+        try? FileManager.default.removeItem(at: outside)
+    }
+
+    try FileManager.default.createDirectory(
+        at: recordings,
+        withIntermediateDirectories: true
+    )
+    let audio = recordings.appending(path: "preserved.m4a")
+    try Data([0, 1, 2, 3]).write(to: audio)
+    try Data([9, 8, 7]).write(to: outside)
+
+    let store = try LocalRecoverableRecordingStore(directory: recovery)
+    let reference = LocalRecoverableRecordingReference(
+        audioURL: audio,
+        durationSeconds: 42,
+        createdAt: Date(timeIntervalSince1970: 100),
+        activityTitle: "Course Schedule"
+    )
+    try store.save(reference)
+
+    #expect(
+        try store.load(allowedDirectories: [recordings]) == reference
+    )
+    let attributes = try FileManager.default.attributesOfItem(
+        atPath: store.fileURL.path
+    )
+    #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+
+    let unsafe = LocalRecoverableRecordingReference(
+        audioURL: outside,
+        durationSeconds: 10
+    )
+    try store.save(unsafe)
+    #expect(try store.load(allowedDirectories: [recordings]) == nil)
+}
+
+@Test func recoverableRecordingMigrationUsesTheNewestNonemptyAudioFile() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let recordings = root.appending(path: "Recordings", directoryHint: .isDirectory)
+    let transcription = root.appending(path: "Transcription", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    try FileManager.default.createDirectory(
+        at: recordings,
+        withIntermediateDirectories: true
+    )
+    try FileManager.default.createDirectory(
+        at: transcription,
+        withIntermediateDirectories: true
+    )
+    let older = recordings.appending(path: "older.m4a")
+    let newest = transcription.appending(path: "newest.m4a")
+    let empty = transcription.appending(path: "empty.m4a")
+    try Data([1]).write(to: older)
+    try Data([2]).write(to: newest)
+    try Data().write(to: empty)
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date(timeIntervalSince1970: 100)],
+        ofItemAtPath: older.path
+    )
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date(timeIntervalSince1970: 200)],
+        ofItemAtPath: newest.path
+    )
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date(timeIntervalSince1970: 300)],
+        ofItemAtPath: empty.path
+    )
+
+    #expect(
+        LocalRecoverableRecordingStore.discoverNewestAudio(
+            in: [recordings, transcription]
+        ) == newest
+    )
 }

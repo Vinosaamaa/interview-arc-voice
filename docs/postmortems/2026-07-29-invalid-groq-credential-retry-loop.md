@@ -19,6 +19,9 @@ Issues: [#87](https://github.com/Vinosaamaa/interview-arc-voice/issues/87) and
 - The failure UI encouraged retries that could not succeed with the same key.
 - Menu-bar transcript reinsertion was independently unreliable, making manual
   recovery harder than the floating-widget path.
+- The first repair persisted the failure notice but not its recoverable-audio
+  reference. After relaunch, the notice still advertised Settings, Play, and
+  Save even though those menu actions had no live target.
 
 No credential, transcript text, or raw audio is included in this document.
 
@@ -35,6 +38,12 @@ The protected local failure notice identified Groq HTTP 401 `Invalid API Key`.
 This proves the active incident occurred before provider transcription rather
 than during recording, cursor insertion, or Interview Arc delivery.
 
+Follow-up installed-app testing showed that the protected M4A still existed in
+Application Support while the relaunched process had `hasLastAudio = false`.
+Source inspection also showed that the menu recovery card's Open Settings
+button changed an unused disclosure Boolean instead of invoking the native
+Settings presenter.
+
 ## Timeline
 
 - Earlier July 29 captures completed normally.
@@ -42,6 +51,9 @@ than during recording, cursor insertion, or Interview Arc delivery.
 - At approximately 1:40 PM Pacific, the installed app retained the explicit
   Groq 401 failure.
 - Investigation classified the issue as Reliability and opened #87 and #88.
+- After the first merged artifact was installed, recovery-action testing found
+  that Settings, Play, and Save were nonfunctional after relaunch. Issue #87
+  remained open and received the follow-up evidence rather than being closed.
 
 ## Root cause
 
@@ -56,6 +68,12 @@ frontmost application. That is unsafe after opening a status-item window,
 because the editor that owned the cursor may no longer be the frontmost
 eligible application. The non-activating floating widget did not have this
 focus transition, explaining why its insertion path worked.
+
+The recovery notice was persisted independently from its in-memory audio
+payload and URL. Relaunch therefore reconstructed the action list but not the
+state those actions required. In addition, menu recovery reused the model-only
+Open Settings action intended for a disclosure path that no longer owned a
+visible Settings surface.
 
 ## Contributing factors
 
@@ -76,6 +94,11 @@ focus transition, explaining why its insertion path worked.
   external editor; floating insertion prefers the current eligible editor.
 - Retain five transcript-only recovery records for 24 hours in a permission
   `0600` file with bounded navigation in the existing popover.
+- Persist and validate one recoverable-recording reference, rehydrate it before
+  exposing Play/Save after relaunch, and migrate the currently preserved audio
+  once when no reference exists.
+- Route menu recovery Settings through the native foreground presenter and
+  explicitly foreground the native Save panel.
 
 ## Regression prevention
 
@@ -83,6 +106,8 @@ focus transition, explaining why its insertion path worked.
 - Target-selection tests distinguish menu and floating surfaces.
 - Store tests cover ordering, five-record bounds, 24-hour expiry, and file
   permissions.
+- Recovery-store tests cover relaunch hydration, `0600` metadata permissions,
+  missing/unsafe-path rejection, and bounded newest-audio migration.
 - The release must repeat recording/transcription and menu insertion with the
   exact installed artifact produced from merged `main`.
 

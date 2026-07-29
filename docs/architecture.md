@@ -90,6 +90,14 @@ finalizes and retains the available M4A, restores the prior timer disclosure,
 and presents an explicit recoverable failure. It never silently returns to idle
 or automatically submits a possibly truncated linked answer. The user may
 retry transcription, record again, play, or save the preserved audio.
+Voice persists a permission-`0600` reference to the current recoverable M4A
+inside Application Support. On relaunch it accepts that reference only when the
+resolved nonempty regular file remains inside Voice's private Recordings or
+Transcription directory, then rehydrates playback/export state before exposing
+Play or Save. A one-time bounded migration may select the newest nonempty M4A
+only when a persisted failure explicitly advertises audio recovery and no
+reference exists. Missing or unsafe references are discarded rather than
+rendered as dead controls.
 
 The normal transcription path performs one provider request. Existing response
 metadata is checked without another network call. A concrete failure,
