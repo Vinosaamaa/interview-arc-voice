@@ -199,7 +199,7 @@ private let protectionSampleRate = 16_000.0
     #expect(protected.wordAlignmentComplete)
 }
 
-@Test func enhancedProtectionPreservesTextWhenWordCoverageIsIncomplete() {
+@Test func enhancedProtectionOmitsUniqueSilentWordsWhenTrailingCoverageIsIncomplete() {
     let evidence = LocalSpeechEvidenceAnalyzer.analyze(
         samples:
             protectionSpeech(duration: 1)
@@ -224,6 +224,100 @@ private let protectionSampleRate = 16_000.0
             ),
         ],
         durationSeconds: 2,
+        chunkCount: 1
+    )
+
+    let protected = SegmentLocalTranscriptValidator.apply(
+        transcription,
+        speechEvidence: evidence,
+        mode: .enhanced
+    )
+
+    #expect(protected.transcription.text == "Opening answer. Missing final phrase.")
+    #expect(protected.transcription.words.map(\.word) == [
+        "Opening", "answer.",
+    ])
+    #expect(protected.omittedUnsupportedWordCount == 2)
+    #expect(!protected.wordAlignmentComplete)
+}
+
+@Test func enhancedProtectionOmitsUniquelyAlignedSilentRunWhenOtherWordTimestampsAreMissing() {
+    let evidence = LocalSpeechEvidenceAnalyzer.analyze(
+        samples:
+            protectionSpeech(duration: 1)
+            + Array(repeating: Float.zero, count: Int(protectionSampleRate))
+            + protectionSpeech(duration: 1),
+        sampleRate: protectionSampleRate
+    )
+    let transcription = TranscriptionResult(
+        text: "Opening answer. Timestamp omitted. Yes yes no not me. Closing question.",
+        words: [
+            TranscriptWord(word: "Opening", start: 0.1, end: 0.4),
+            TranscriptWord(word: "answer.", start: 0.45, end: 0.9),
+            TranscriptWord(word: "Yes", start: 1.20, end: 1.30),
+            TranscriptWord(word: "yes", start: 1.32, end: 1.42),
+            TranscriptWord(word: "no", start: 1.44, end: 1.54),
+            TranscriptWord(word: "not", start: 1.56, end: 1.66),
+            TranscriptWord(word: "me.", start: 1.68, end: 1.80),
+            TranscriptWord(word: "Closing", start: 2.1, end: 2.4),
+            TranscriptWord(word: "question.", start: 2.45, end: 2.9),
+        ],
+        segments: [
+            TranscriptSegment(
+                start: 0.1,
+                end: 2.9,
+                text: "Opening answer. Timestamp omitted. Yes yes no not me. Closing question.",
+                averageLogProbability: -0.1,
+                noSpeechProbability: 0.01
+            ),
+        ],
+        durationSeconds: 3,
+        chunkCount: 1
+    )
+
+    let protected = SegmentLocalTranscriptValidator.apply(
+        transcription,
+        speechEvidence: evidence,
+        mode: .enhanced
+    )
+
+    #expect(
+        protected.transcription.text
+            == "Opening answer. Timestamp omitted. Closing question."
+    )
+    #expect(protected.transcription.words.map(\.word) == [
+        "Opening", "answer.", "Closing", "question.",
+    ])
+    #expect(protected.omittedUnsupportedWordCount == 5)
+    #expect(!protected.wordAlignmentComplete)
+}
+
+@Test func enhancedProtectionPreservesIncompleteSilentRunWhenItsTextIsAmbiguous() {
+    let evidence = LocalSpeechEvidenceAnalyzer.analyze(
+        samples:
+            protectionSpeech(duration: 1)
+            + Array(repeating: Float.zero, count: Int(protectionSampleRate))
+            + protectionSpeech(duration: 1),
+        sampleRate: protectionSampleRate
+    )
+    let transcription = TranscriptionResult(
+        text: "Opening. Thank you. Timestamp omitted. Thank you. Closing.",
+        words: [
+            TranscriptWord(word: "Opening.", start: 0.1, end: 0.8),
+            TranscriptWord(word: "Thank", start: 1.2, end: 1.45),
+            TranscriptWord(word: "you.", start: 1.5, end: 1.8),
+            TranscriptWord(word: "Closing.", start: 2.1, end: 2.8),
+        ],
+        segments: [
+            TranscriptSegment(
+                start: 0.1,
+                end: 2.8,
+                text: "Opening. Thank you. Timestamp omitted. Thank you. Closing.",
+                averageLogProbability: -0.1,
+                noSpeechProbability: 0.01
+            ),
+        ],
+        durationSeconds: 3,
         chunkCount: 1
     )
 

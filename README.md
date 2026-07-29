@@ -124,11 +124,13 @@ Save, and Retry instead of being discarded.
   confidence metadata both identify it as unsupported non-speech. When a
   provider segment mixes genuine speech with a hallucinated phrase over
   silence, Enhanced can instead remove the unsupported timestamped words—but
-  only when Groq's word list accounts for the complete canonical transcript
-  and the existing local 20 ms evidence strongly verifies their intervals as
-  silent. Missing or ambiguous alignment preserves the text. This uses no
-  second Groq request or audio decode and never cuts, rewrites, or replaces the
-  original M4A.
+  only when the existing local 20 ms evidence strongly verifies their
+  intervals as silent. Complete Groq word coverage maps every timestamp
+  directly. When timestamps are incomplete elsewhere, one consecutive silent
+  word run may still be removed if its normalized text maps to exactly one
+  source range in the canonical provider transcript. Missing or ambiguous
+  candidate alignment preserves the text. This uses no second Groq request or
+  audio decode and never cuts, rewrites, or replaces the original M4A.
 - Settings → Diagnostics records a bounded local timing breakdown for capture,
   validation, Groq, transcript corroboration, response handling, and insertion,
   plus privacy-safe segment/word coverage and omission counts. The report can
