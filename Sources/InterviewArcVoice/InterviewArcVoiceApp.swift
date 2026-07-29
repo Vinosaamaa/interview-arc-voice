@@ -1470,7 +1470,6 @@ final class VoiceBridgeModel: ObservableObject {
                         )
                     }
                 }
-            failureDetailsPresented = false
             pendingFailurePopoverActionTask = Task { [weak self] in
                 try? await Task.sleep(
                     for: .milliseconds(
@@ -1483,6 +1482,11 @@ final class VoiceBridgeModel: ObservableObject {
                     trigger: .fallbackTimer
                 )
             }
+            // Arm the fallback before requesting dismissal. SwiftUI/AppKit may
+            // deliver didClose synchronously; if dismissal happened first, the
+            // close handler would run the action and a newly armed fallback
+            // would run it a second time (Play immediately became Pause).
+            failureDetailsPresented = false
         }
     }
 

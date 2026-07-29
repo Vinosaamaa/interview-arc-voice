@@ -58,6 +58,11 @@ Settings presenter.
   and Save, then caught Play still failing specifically through the anchored
   popover. Direct playback worked, isolating a self-cancelling fallback task in
   the popover-dismissal handoff before that artifact was installed.
+- A second staged test showed the deeper ordering race: AppKit could deliver
+  `didClose` synchronously before the fallback was assigned. The close handler
+  started playback, then the newly assigned fallback toggled it off 900 ms
+  later. The fallback must be armed before dismissal so the close handler can
+  cancel it.
 
 ## Root cause
 
