@@ -25,6 +25,11 @@ public enum FloatingWidgetRecoveryActionTiming: Equatable, Sendable {
     case afterPopoverDismissal
 }
 
+public enum FloatingWidgetRecoveryCompletionTrigger: Equatable, Sendable {
+    case popoverDidClose
+    case fallbackTimer
+}
+
 public enum FloatingWidgetRecoveryPolicy {
     /// Safety fallback only. Normal recovery continues from AppKit's
     /// NSPopover.didCloseNotification, not from this delay.
@@ -39,6 +44,12 @@ public enum FloatingWidgetRecoveryPolicy {
         default:
             return .immediate
         }
+    }
+
+    public static func shouldCancelFallback(
+        for trigger: FloatingWidgetRecoveryCompletionTrigger
+    ) -> Bool {
+        trigger == .popoverDidClose
     }
 }
 

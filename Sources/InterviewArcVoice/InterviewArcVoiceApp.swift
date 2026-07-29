@@ -1464,7 +1464,10 @@ final class VoiceBridgeModel: ObservableObject {
                     queue: .main
                 ) { [weak self] _ in
                     Task { @MainActor in
-                        self?.completeFailurePopoverActionAfterClose(action)
+                        self?.completeFailurePopoverActionAfterClose(
+                            action,
+                            trigger: .popoverDidClose
+                        )
                     }
                 }
             failureDetailsPresented = false
@@ -1475,15 +1478,21 @@ final class VoiceBridgeModel: ObservableObject {
                     )
                 )
                 guard !Task.isCancelled else { return }
-                self?.completeFailurePopoverActionAfterClose(action)
+                self?.completeFailurePopoverActionAfterClose(
+                    action,
+                    trigger: .fallbackTimer
+                )
             }
         }
     }
 
     private func completeFailurePopoverActionAfterClose(
-        _ action: VoiceFailureAction
+        _ action: VoiceFailureAction,
+        trigger: FloatingWidgetRecoveryCompletionTrigger
     ) {
-        pendingFailurePopoverActionTask?.cancel()
+        if FloatingWidgetRecoveryPolicy.shouldCancelFallback(for: trigger) {
+            pendingFailurePopoverActionTask?.cancel()
+        }
         pendingFailurePopoverActionTask = nil
         if let pendingFailurePopoverCloseObserver {
             NotificationCenter.default.removeObserver(

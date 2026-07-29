@@ -54,6 +54,10 @@ Settings presenter.
 - After the first merged artifact was installed, recovery-action testing found
   that Settings, Play, and Save were nonfunctional after relaunch. Issue #87
   remained open and received the follow-up evidence rather than being closed.
+- Staged verification of the first recovery-action follow-up proved Settings
+  and Save, then caught Play still failing specifically through the anchored
+  popover. Direct playback worked, isolating a self-cancelling fallback task in
+  the popover-dismissal handoff before that artifact was installed.
 
 ## Root cause
 
@@ -99,6 +103,9 @@ visible Settings surface.
   once when no reference exists.
 - Route menu recovery Settings through the native foreground presenter and
   explicitly foreground the native Save panel.
+- Keep the popover-close notification as the preferred playback handoff, but
+  ensure the bounded fallback never cancels its own task before executing the
+  queued recovery action.
 
 ## Regression prevention
 

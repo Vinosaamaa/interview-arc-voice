@@ -25,6 +25,19 @@ import Foundation
     #expect(resized.size == CGSize(width: 430, height: 300))
 }
 
+@Test func recoveryFallbackDoesNotCancelItselfBeforeExecutingItsAction() {
+    #expect(
+        FloatingWidgetRecoveryPolicy.shouldCancelFallback(
+            for: .popoverDidClose
+        )
+    )
+    #expect(
+        !FloatingWidgetRecoveryPolicy.shouldCancelFallback(
+            for: .fallbackTimer
+        )
+    )
+}
+
 @Test func compactTimerClusterReservesReadableTitleSpace() {
     #expect(FloatingWidgetCompactTimerLayoutPolicy.activityClockWidth == 36)
     #expect(FloatingWidgetCompactTimerLayoutPolicy.sessionClockWidth == 42)
