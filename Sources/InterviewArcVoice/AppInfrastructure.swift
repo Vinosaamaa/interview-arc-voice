@@ -454,7 +454,7 @@ final class DictationTextInjector {
 
         // Retain direct Accessibility insertion as a fallback for an unusual
         // editor that cannot receive the system paste shortcut.
-        target.activate(options: [.activateIgnoringOtherApps])
+        target.activate()
         try? await Task.sleep(for: .milliseconds(220))
 
         let application = AXUIElementCreateApplication(targetPID)
@@ -668,7 +668,7 @@ final class DictationTextInjector {
         guard let target = NSRunningApplication(processIdentifier: targetPID) else {
             return false
         }
-        target.activate(options: [.activateIgnoringOtherApps])
+        target.activate()
         for _ in 0..<6 {
             if NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID {
                 return true

@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Carbon
+import CryptoKit
 import os
 import SwiftUI
 import UniformTypeIdentifiers
@@ -168,6 +169,8 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var finishStarred = false
     @Published var contextMessage = "Loading secure settings…"
     @Published var lastTranscript = ""
+    @Published private(set) var transcriptHistory: [LocalTranscriptRecord] = []
+    @Published private(set) var selectedTranscriptIndex = 0
     @Published var connectionTokenDraft = ""
     @Published var groqKeyDraft = ""
     @Published var settingsExpanded = false
@@ -201,6 +204,7 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var processingElapsedSeconds: TimeInterval = 0
     @Published private(set) var showProcessingIndicator = false
     @Published private(set) var failureNotice: VoiceFailureNotice?
+    @Published private(set) var groqCredentialRejected = false
     @Published var failureDetailsPresented = false
     private var pendingFailurePopoverActionTask: Task<Void, Never>?
     private var pendingFailurePopoverCloseObserver: NSObjectProtocol?
@@ -224,6 +228,7 @@ final class VoiceBridgeModel: ObservableObject {
     private let outputVolumeController = SystemOutputVolumeController()
     private var recordingStore: RecordingStore?
     private var diagnosticsStore: VoiceDiagnosticsStore?
+    private var transcriptHistoryStore: LocalTranscriptHistoryStore?
     private var pipeline: VoicePipeline?
     private var captureDestination: CaptureDestination?
     private var captureStartedInCodex = false
@@ -244,6 +249,8 @@ final class VoiceBridgeModel: ObservableObject {
     private var activationObserver: NSObjectProtocol?
     private var terminationObserver: NSObjectProtocol?
     private var lastExternalApplicationPID: pid_t?
+    private var rejectedGroqCredential: String?
+    private var rejectedGroqCredentialFingerprint: String?
     private var lastAudioData: Data?
     private var lastAudioURL: URL?
     private var lastAudioDuration: TimeInterval = 0
@@ -276,7 +283,10 @@ final class VoiceBridgeModel: ObservableObject {
         hasGroqCredential
     }
     var canRecord: Bool {
-        hasGroqCredential && !isBusy && !isStartingRecording
+        hasGroqCredential
+            && !groqCredentialRejected
+            && !isBusy
+            && !isStartingRecording
     }
     var menuBarSymbol: String {
         switch phase {
@@ -311,6 +321,30 @@ final class VoiceBridgeModel: ObservableObject {
     }
     var showsDeliverySteps: Bool { !deliveryStates.isEmpty }
     var hasLastMemo: Bool { hasLastAudio || !lastTranscript.isEmpty }
+    var hasMenuTranscript: Bool { !transcriptHistory.isEmpty }
+    var selectedTranscript: LocalTranscriptRecord? {
+        guard transcriptHistory.indices.contains(selectedTranscriptIndex) else {
+            return nil
+        }
+        return transcriptHistory[selectedTranscriptIndex]
+    }
+    var selectedTranscriptDetails: String {
+        guard let selectedTranscript else { return "0 words · 00:00" }
+        return "\(selectedTranscript.wordCount) words · \(clock(selectedTranscript.durationSeconds))"
+    }
+    var selectedTranscriptPosition: String {
+        guard !transcriptHistory.isEmpty else { return "0 of 0" }
+        return "\(selectedTranscriptIndex + 1) of \(transcriptHistory.count)"
+    }
+    var canSelectNewerTranscript: Bool { selectedTranscriptIndex > 0 }
+    var canSelectOlderTranscript: Bool {
+        selectedTranscriptIndex + 1 < transcriptHistory.count
+    }
+    var selectedTranscriptOwnsAudio: Bool {
+        selectedTranscriptIndex == 0
+            && hasLastAudio
+            && selectedTranscript?.transcript == lastTranscript
+    }
     var lastMemoDetails: String {
         let words = lastTranscript.split(whereSeparator: \.isWhitespace).count
         let duration = clock(lastAudioDuration)
@@ -500,7 +534,16 @@ final class VoiceBridgeModel: ObservableObject {
             diagnosticsStore = try? VoiceDiagnosticsStore(
                 directory: recordingStore.diagnosticsDirectory
             )
+            transcriptHistoryStore = try? LocalTranscriptHistoryStore(
+                directory: recordingStore.transcriptHistoryDirectory
+            )
         }
+        groqCredentialRejected = defaults.bool(
+            forKey: "voice.groqCredentialRejected"
+        )
+        rejectedGroqCredentialFingerprint = defaults.string(
+            forKey: "voice.rejectedGroqCredentialFingerprint"
+        )
         if let frontmost = NSWorkspace.shared.frontmostApplication,
            CaptureTargetApplicationPolicy.canReceiveDictation(
                bundleIdentifier: frontmost.bundleIdentifier
@@ -520,6 +563,7 @@ final class VoiceBridgeModel: ObservableObject {
             registerGlobalShortcuts()
             await loadSecureSettings()
             await refreshDiagnostics()
+            await refreshTranscriptHistory()
             startLiveUpdates()
         }
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -765,6 +809,53 @@ final class VoiceBridgeModel: ObservableObject {
             : "Transcript and Voice v2 envelope copied."
     }
 
+    func copySelectedTranscript() {
+        guard let selectedTranscript else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(selectedTranscript.editorText, forType: .string)
+        contextMessage = selectedTranscript.editorText == selectedTranscript.transcript
+            ? "Transcript copied."
+            : "Transcript and Voice v2 envelope copied."
+    }
+
+    func selectNewerTranscript() {
+        guard canSelectNewerTranscript else { return }
+        selectedTranscriptIndex -= 1
+    }
+
+    func selectOlderTranscript() {
+        guard canSelectOlderTranscript else { return }
+        selectedTranscriptIndex += 1
+    }
+
+    func insertSelectedTranscriptFromMenu() {
+        guard let selectedTranscript else { return }
+        targetApplicationPID = manualInsertionTargetPID(surface: .menuBar)
+        Task {
+            let inserted = await insertTranscript(
+                selectedTranscript.transcript,
+                editorText: selectedTranscript.editorText,
+                showDeliveryStep: selectedTranscript.editorText
+                    != selectedTranscript.transcript
+            )
+            switch CaptureActionPolicy.insertionCompletion(inserted: inserted) {
+            case .delivered:
+                clearFailureAfterSuccess()
+                phase = .delivered
+                contextMessage = "Transcript inserted again."
+            case .needsAttention:
+                reportFailure(
+                    VoiceBridgeError.codexUnavailable(
+                        "Focus an editable text field, then try Insert again."
+                    ),
+                    stage: .insertion,
+                    hasRecoverableAudio: selectedTranscriptOwnsAudio
+                )
+            }
+        }
+    }
+
     func copyPendingCapture(_ capture: PendingVoiceCapture) {
         let payload = CaptureActionPolicy.copyPayload(
             transcript: capture.transcript,
@@ -785,7 +876,7 @@ final class VoiceBridgeModel: ObservableObject {
             turnID: capture.turnID,
             transcript: capture.transcript
         )
-        targetApplicationPID = currentInsertionTargetPID()
+        targetApplicationPID = manualInsertionTargetPID(surface: .menuBar)
         Task {
             let inserted = await insertTranscript(
                 capture.transcript,
@@ -1031,6 +1122,32 @@ final class VoiceBridgeModel: ObservableObject {
         diagnosticRecords = (try? await diagnosticsStore?.records()) ?? []
     }
 
+    func refreshTranscriptHistory() async {
+        transcriptHistory = (try? await transcriptHistoryStore?.records()) ?? []
+        selectedTranscriptIndex = min(
+            selectedTranscriptIndex,
+            max(0, transcriptHistory.count - 1)
+        )
+    }
+
+    private func rememberTranscriptHistory(
+        transcript: String,
+        editorText: String,
+        durationSeconds: Double,
+        activityTitle: String?
+    ) async {
+        guard let transcriptHistoryStore else { return }
+        let record = LocalTranscriptRecord(
+            transcript: transcript,
+            editorText: editorText,
+            durationSeconds: durationSeconds,
+            activityTitle: activityTitle
+        )
+        try? await transcriptHistoryStore.append(record)
+        await refreshTranscriptHistory()
+        selectedTranscriptIndex = 0
+    }
+
     func copyDiagnostic(_ record: VoiceDiagnosticRecord) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -1124,6 +1241,25 @@ final class VoiceBridgeModel: ObservableObject {
             guard !submittedGroqKey.isEmpty else {
                 throw VoiceBridgeError.missingCredential("Groq API key")
             }
+            if groqCredentialRejected {
+                let changedInMemory = RejectedCredentialPolicy().canRetry(
+                    rejectedCredential: rejectedGroqCredential,
+                    submittedCredential: submittedGroqKey
+                )
+                let changedSinceRelaunch = rejectedGroqCredentialFingerprint
+                    .map { $0 != credentialFingerprint(submittedGroqKey) }
+                    ?? changedInMemory
+                guard changedInMemory && changedSinceRelaunch else {
+                    reportFailure(
+                        kind: .configuration,
+                        title: "Replace the rejected Groq key",
+                        message: "The saved key is still rejected",
+                        detail: "Enter a different valid Groq API key before retrying the preserved recording.",
+                        actions: [.openSettings, .playRecording, .saveRecording]
+                    )
+                    return
+                }
+            }
             try keychain.set(submittedToken, for: .interviewArcToken)
             try keychain.set(submittedGroqKey, for: .groqAPIKey)
             let savedToken = try keychain.value(for: .interviewArcToken)
@@ -1144,6 +1280,15 @@ final class VoiceBridgeModel: ObservableObject {
             }
             connectionTokenDraft = savedToken ?? ""
             groqKeyDraft = savedGroqKey ?? ""
+            groqCredentialRejected = false
+            rejectedGroqCredential = nil
+            rejectedGroqCredentialFingerprint = nil
+            UserDefaults.standard.removeObject(
+                forKey: "voice.groqCredentialRejected"
+            )
+            UserDefaults.standard.removeObject(
+                forKey: "voice.rejectedGroqCredentialFingerprint"
+            )
             UserDefaults.standard.set(apiBaseURL, forKey: "voice.apiBaseURL")
             UserDefaults.standard.set(workspacePath, forKey: "voice.workspacePath")
             UserDefaults.standard.set(codexPath, forKey: "voice.codexPath")
@@ -1460,12 +1605,67 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     private func reconcilePersistedCredentialFailure() {
+        guard !groqCredentialRejected else { return }
         let retainedFailure = CredentialFailureRecoveryPolicy().retainedFailure(
             failureNotice,
             configurationIsReady: configurationIsReady
         )
         guard failureNotice != nil, retainedFailure == nil else { return }
         clearFailureAfterSuccess()
+    }
+
+    private func credentialFingerprint(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    private func rejectCurrentGroqCredential() {
+        let value = groqKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        rejectedGroqCredential = value
+        rejectedGroqCredentialFingerprint = credentialFingerprint(value)
+        groqCredentialRejected = true
+        UserDefaults.standard.set(true, forKey: "voice.groqCredentialRejected")
+        UserDefaults.standard.set(
+            rejectedGroqCredentialFingerprint,
+            forKey: "voice.rejectedGroqCredentialFingerprint"
+        )
+    }
+
+    private func reportTranscriptionFailure(
+        _ error: Error,
+        diagnosticSeed: CaptureDiagnosticSeed?
+    ) async {
+        canRetryLastTranscription = false
+        endProcessing()
+        if TranscriptionFailurePolicy.disposition(for: error)
+            == .replaceCredential {
+            rejectCurrentGroqCredential()
+            reportFailure(
+                kind: .configuration,
+                title: "Groq key rejected",
+                message: "Recording preserved · replace the key in Settings",
+                detail: "Groq rejected the saved API key. Voice stopped automatic retries so the protected recording cannot enter a failure loop.",
+                actions: [.openSettings, .playRecording, .saveRecording]
+            )
+        } else {
+            canRetryLastTranscription = hasLastAudio
+            reportFailure(
+                error,
+                stage: .transcription,
+                hasRecoverableAudio: hasLastAudio
+            )
+        }
+        if let diagnosticSeed {
+            await recordDiagnostic(
+                seed: diagnosticSeed,
+                timing: nil,
+                segmentValidationSeconds: 0,
+                insertionSeconds: currentInsertionDurationSeconds,
+                omittedUnsupportedSegmentCount: 0,
+                outcome: .failed
+            )
+        }
     }
 
     private func loadSecureSettings() async {
@@ -1488,6 +1688,20 @@ final class VoiceBridgeModel: ObservableObject {
 
         connectionTokenDraft = snapshot.interviewArcToken
         groqKeyDraft = snapshot.groqAPIKey
+        if let failureNotice,
+           failureNotice.kind == .transcription,
+           failureNotice.detail.localizedCaseInsensitiveContains(
+               "invalid api key"
+           ) || failureNotice.detail.contains("Request failed (401)") {
+            rejectCurrentGroqCredential()
+            reportFailure(
+                kind: .configuration,
+                title: "Groq key rejected",
+                message: "Recording preserved · replace the key in Settings",
+                detail: "Groq rejected the saved API key. Voice stopped automatic retries so the protected recording cannot enter a failure loop.",
+                actions: [.openSettings, .playRecording, .saveRecording]
+            )
+        }
         accessibilityNeeded = !textInjector.accessibilityTrusted
         if let errorDescription = snapshot.errorDescription {
             reportFailure(
@@ -2016,6 +2230,12 @@ final class VoiceBridgeModel: ObservableObject {
                     ?? speechProtectionMode
             )
             let transcript = result.transcription.text
+            await rememberTranscriptHistory(
+                transcript: transcript,
+                editorText: transcript,
+                durationSeconds: recording.duration,
+                activityTitle: nil
+            )
             let inserted = await insertTranscript(
                 transcript,
                 editorText: transcript,
@@ -2051,19 +2271,10 @@ final class VoiceBridgeModel: ObservableObject {
                 )
             }
         } catch {
-            canRetryLastTranscription = hasLastAudio
-            endProcessing()
-            reportFailure(error, stage: .transcription, hasRecoverableAudio: hasLastAudio)
-            if let diagnosticSeed {
-                await recordDiagnostic(
-                    seed: diagnosticSeed,
-                    timing: nil,
-                    segmentValidationSeconds: 0,
-                    insertionSeconds: currentInsertionDurationSeconds,
-                    omittedUnsupportedSegmentCount: 0,
-                    outcome: .failed
-                )
-            }
+            await reportTranscriptionFailure(
+                error,
+                diagnosticSeed: diagnosticSeed
+            )
         }
     }
 
@@ -2098,6 +2309,12 @@ final class VoiceBridgeModel: ObservableObject {
                 protectionMode: diagnosticSeed?.protectionMode
                     ?? speechProtectionMode,
                 transcriptReady: { capture in
+                    await self.rememberTranscriptHistory(
+                        transcript: capture.transcript,
+                        editorText: capture.editorText,
+                        durationSeconds: recording.duration,
+                        activityTitle: activity.title
+                    )
                     _ = await self.insertTranscript(
                         capture.transcript,
                         editorText: capture.editorText,
@@ -2141,19 +2358,10 @@ final class VoiceBridgeModel: ObservableObject {
             }
         } catch {
             guard generation == captureGeneration else { return }
-            canRetryLastTranscription = hasLastAudio
-            endProcessing()
-            reportFailure(error, stage: .transcription, hasRecoverableAudio: hasLastAudio)
-            if let diagnosticSeed {
-                await recordDiagnostic(
-                    seed: diagnosticSeed,
-                    timing: nil,
-                    segmentValidationSeconds: 0,
-                    insertionSeconds: currentInsertionDurationSeconds,
-                    omittedUnsupportedSegmentCount: 0,
-                    outcome: .failed
-                )
-            }
+            await reportTranscriptionFailure(
+                error,
+                diagnosticSeed: diagnosticSeed
+            )
         }
     }
 
@@ -2251,7 +2459,7 @@ final class VoiceBridgeModel: ObservableObject {
 
     func reinsertLastTranscript() {
         guard !lastTranscript.isEmpty else { return }
-        targetApplicationPID = currentInsertionTargetPID()
+        targetApplicationPID = manualInsertionTargetPID(surface: .floatingWidget)
         Task {
             let inserted = await insertTranscript(
                 lastTranscript,
@@ -2330,14 +2538,52 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     private func currentInsertionTargetPID() -> pid_t? {
-        if let frontmost = NSWorkspace.shared.frontmostApplication,
-           CaptureTargetApplicationPolicy.canReceiveDictation(
-               bundleIdentifier: frontmost.bundleIdentifier
-           ) {
+        if let frontmost = eligibleFrontmostApplication {
             lastExternalApplicationPID = frontmost.processIdentifier
             return frontmost.processIdentifier
         }
-        return lastExternalApplicationPID
+        return eligibleRememberedApplication?.processIdentifier
+    }
+
+    private func manualInsertionTargetPID(
+        surface: ManualInsertionSurface
+    ) -> pid_t? {
+        let current = eligibleFrontmostApplication?.processIdentifier
+        let remembered = eligibleRememberedApplication?.processIdentifier
+        let resolved = ManualInsertionTargetPolicy().targetPID(
+            surface: surface,
+            currentEligiblePID: current,
+            rememberedEligiblePID: remembered
+        )
+        if let resolved {
+            lastExternalApplicationPID = resolved
+        }
+        return resolved
+    }
+
+    private var eligibleFrontmostApplication: NSRunningApplication? {
+        guard let frontmost = NSWorkspace.shared.frontmostApplication,
+              !frontmost.isTerminated,
+              CaptureTargetApplicationPolicy.canReceiveDictation(
+                  bundleIdentifier: frontmost.bundleIdentifier
+              ) else {
+            return nil
+        }
+        return frontmost
+    }
+
+    private var eligibleRememberedApplication: NSRunningApplication? {
+        guard let lastExternalApplicationPID,
+              let application = NSRunningApplication(
+                  processIdentifier: lastExternalApplicationPID
+              ),
+              !application.isTerminated,
+              CaptureTargetApplicationPolicy.canReceiveDictation(
+                  bundleIdentifier: application.bundleIdentifier
+              ) else {
+            return nil
+        }
+        return application
     }
 
     private func retryPendingInBackground() async {
@@ -2982,7 +3228,7 @@ private struct VoiceBridgeMenu: View {
                 SessionFinishResolverCard(model: model)
             }
             if model.showsDeliverySteps { deliveryProgress }
-            if model.hasLastMemo { transcriptPreview }
+            if model.hasLastMemo || model.hasMenuTranscript { transcriptPreview }
             if !model.pendingVoiceCaptures.isEmpty { recentCapturesCard }
             if !model.legacyVoiceOrphans.isEmpty { legacyVoiceOrphansCard }
             if model.pendingRetryCount > 0 { retryRow }
@@ -3183,31 +3429,31 @@ private struct VoiceBridgeMenu: View {
                 memoAction(
                     symbol: "doc.on.doc",
                     label: "Copy transcript",
-                    disabled: model.lastTranscript.isEmpty,
-                    action: model.copyLastTranscript
+                    disabled: model.selectedTranscript == nil,
+                    action: model.copySelectedTranscript
                 )
                 memoAction(
                     symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
                     label: model.isPlayingLastAudio ? "Pause recording" : "Play recording",
-                    disabled: !model.hasLastAudio,
+                    disabled: !model.selectedTranscriptOwnsAudio,
                     action: model.toggleLastAudioPlayback
                 )
                 memoAction(
                     symbol: "square.and.arrow.down",
                     label: "Save audio and transcript",
-                    disabled: !model.hasLastMemo,
+                    disabled: !model.selectedTranscriptOwnsAudio,
                     action: model.exportLastMemo
                 )
                 memoAction(
                     symbol: "text.cursor",
                     label: "Insert transcript again",
-                    disabled: model.lastTranscript.isEmpty,
-                    action: model.reinsertLastTranscript
+                    disabled: model.selectedTranscript == nil,
+                    action: model.insertSelectedTranscriptFromMenu
                 )
             }
-            if !model.lastTranscript.isEmpty {
+            if let selectedTranscript = model.selectedTranscript {
                 ScrollView {
-                    Text(model.lastTranscript)
+                    Text(selectedTranscript.transcript)
                         .font(.caption)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -3220,11 +3466,12 @@ private struct VoiceBridgeMenu: View {
                     .foregroundStyle(.secondary)
             }
             HStack {
-                Text(model.lastMemoDetails)
+                Text(model.selectedTranscriptDetails)
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
                 Spacer()
-                if model.canRetryLastTranscription {
+                if model.canRetryLastTranscription,
+                   model.selectedTranscriptOwnsAudio {
                     Button(action: model.retryLastTranscription) {
                         Label("Retry", systemImage: "arrow.clockwise")
                     }
@@ -3233,6 +3480,24 @@ private struct VoiceBridgeMenu: View {
                     .voiceHoverFeedback(enabled: !model.isBusy && !model.isRecording, cornerRadius: 6)
                     .disabled(model.isBusy || model.isRecording)
                 }
+                Text(model.selectedTranscriptPosition)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(
+                        "Transcript \(model.selectedTranscriptPosition)"
+                    )
+                memoAction(
+                    symbol: "chevron.left",
+                    label: "Newer transcript",
+                    disabled: !model.canSelectNewerTranscript,
+                    action: model.selectNewerTranscript
+                )
+                memoAction(
+                    symbol: "chevron.right",
+                    label: "Older transcript",
+                    disabled: !model.canSelectOlderTranscript,
+                    action: model.selectOlderTranscript
+                )
             }
         }
         .padding(9)

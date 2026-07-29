@@ -39,6 +39,33 @@ The floating capsule remains a simple recording and timer instrument.
 - Retry controls appear only for genuine transient work. Waiting is never
   labeled a retry.
 
+## Recent transcripts
+
+- The transcript card retains the five newest local transcript records for at
+  most 24 hours. Its protected JSON file is permission `0600`.
+- The newest transcript opens first. Bottom-right **Newer** and **Older**
+  chevrons move through the bounded history without wrapping or changing the
+  260-point popover width.
+- The footer shows the selected transcript's word count, recording duration,
+  and position such as `2 of 5`.
+- Copy and Insert Again always use the selected record. A linked record keeps
+  its exact Voice v2 envelope; general dictation stays plain text.
+- Successful general-dictation audio retention is not extended for history.
+  Play and Save are available only when the selected newest record still owns
+  the recoverable in-memory audio.
+- Menu-bar Insert Again prefers the last eligible external editor remembered
+  before Voice or a system menu became active. The floating capsule continues
+  to use the live focused editor.
+
+## Rejected provider credentials
+
+- Groq `401` and `403` responses are configuration failures, not retryable
+  transcription failures.
+- Voice preserves the finalized recording, disables Record and Retry for the
+  rejected key, and offers Settings, Play, and Save.
+- The failure clears only after a different key is saved. Transient provider or
+  network failures keep the ordinary Retry path.
+
 ## Floating timer integration
 
 When the timer drawer is expanded and a previous recording exists, the recorder
