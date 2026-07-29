@@ -39,10 +39,11 @@
    timeline and Groq's verbose segment and word timestamps. It omits a complete
    segment only when both sources identify its padded timestamp interval as
    unsupported non-speech. For a mixed segment, it may remove individual
-   timestamped words whose padded intervals are strongly unsupported locally,
-   but only when the segment tokens and word tokens each provide an exact,
-   complete alignment to the canonical provider transcript. Missing metadata,
-   incomplete or ambiguous alignment, genuine local speech, or provider
+   timestamped words whose padded intervals are strongly unsupported locally.
+   Complete word coverage maps every timestamp directly. If timestamps are
+   incomplete elsewhere, a consecutive unsupported word run can still map to
+   an exact canonical source range only when that normalized run occurs once.
+   Missing or ambiguous candidate alignment, genuine local speech, or provider
    disagreement preserves the returned text. Validation does not segment,
    re-encode, re-upload, retranscribe, or alter the canonical M4A.
 7. Insert the plain transcript plus a Markdown comment envelope containing its
@@ -107,17 +108,19 @@ Silence protection has three persistent modes:
 Enhanced removal requires a complete segment representation of the canonical
 provider text, high provider no-speech probability, low provider log
 probability, and no sustained speech in the matching local interval. Mixed
-segments use the same provider response's word timestamps instead: normalized
-word tokens must cover the complete canonical transcript exactly, and the
-candidate word's padded local interval must contain frames but no sustained
-speech and no more than one percent speech-like frames. The validator removes
-exact source-text ranges; it never reconstructs punctuation or capitalization.
-This fail-open-for-speech rule preserves legitimate “Thank you,” quiet speech,
-hesitations, breathing, short pauses, and every result with incomplete or
-ambiguous alignment. Filtered text is removed before cursor insertion and
-before a pending linked capture can be created, so it cannot reach D1, accepted
-private R2 metadata, or Delivery Coach. The original M4A remains the sole
-playback and upload object.
+segments use the same provider response's word timestamps instead. With
+complete word coverage, normalized word tokens map directly to the canonical
+transcript. With incomplete coverage, consecutive words whose local interval
+is strongly unsupported form a candidate run; that run is removable only when
+its normalized tokens occur exactly once in the canonical transcript. The
+candidate's padded interval must contain frames but no sustained speech and no
+more than one percent speech-like frames. Unmatched genuine text is retained,
+and repeated or otherwise ambiguous candidate text fails open. The validator
+removes exact source-text ranges; it never reconstructs punctuation or
+capitalization. Filtered text is removed before cursor insertion and before a
+pending linked capture can be created, so it cannot reach D1, accepted private
+R2 metadata, or Delivery Coach. The original M4A remains the sole playback and
+upload object.
 
 Every completed attempt appends one bounded, permission-0600 diagnostic record
 containing only numeric stage timings, the selected protection mode, omission

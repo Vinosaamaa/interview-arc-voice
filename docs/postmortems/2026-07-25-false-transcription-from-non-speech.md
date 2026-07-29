@@ -3,8 +3,8 @@
 - Incident issues:
   [#33](https://github.com/Vinosaamaa/interview-arc-voice/issues/33),
   [#81](https://github.com/Vinosaamaa/interview-arc-voice/issues/81)
-- Status: whole-recording failure remediated; mixed-segment recurrence repair
-  in verification
+- Status: whole-recording failure remediated; incomplete-alignment recurrence
+  repair in progress
 - Affected surface: general dictation and Interview Arc-linked recording
 - Severity: data-integrity risk
 
@@ -63,6 +63,13 @@ Enhanced, all 96 executed the local scan, 94 reached provider delivery, and all
 durations appeared as `0 ms` because the prior UI rounded sub-millisecond work
 to an integer, not because validation was skipped.
 
+A second installed recurrence occurred after word-level protection shipped. A
+152-second natural capture returned 124 word timestamps for a 135-token
+canonical provider transcript, so complete alignment was false. The validator
+therefore disabled word-level removal globally and inserted one contiguous
+42-token fabricated passage even though its independently timestamped region
+could be checked against local evidence.
+
 ## Root cause
 
 The pre-transcription gate measured file integrity and broad signal presence,
@@ -92,6 +99,13 @@ A segment may contain both genuine speech and a hallucinated phrase timestamped
 over a pause. Deleting that segment would lose real speech, while preserving it
 kept the hallucination. Its provider-level confidence can also remain high
 because confidence is aggregated across the mixed segment.
+
+The first word-level follow-up made another overly broad safety decision:
+incomplete word coverage anywhere in the recording disabled every word-level
+decision. Groq word timestamps may be sparse around a pause or another
+unrelated portion of a long answer. That global fail-open rule preserved
+genuine text, but it also prevented a separate, uniquely identifiable
+timestamped hallucination run from being removed.
 
 ## Resolution
 
@@ -132,12 +146,16 @@ local comparison:
   and no more than one percent speech-like frames; and
 - only the exact canonical source-text range for verified words is removed.
 
-Any missing timestamp, incomplete or ambiguous token alignment, or local speech
-evidence preserves the text. Punctuation and capitalization are preserved
-because the filter deletes source ranges rather than reconstructing the
-transcript. The comparison happens before cursor insertion and before linked
-pending-capture creation. The original M4A is never edited and remains the
-object used for playback and private upload.
+Complete normalized word coverage maps every timestamp directly. When coverage
+is incomplete elsewhere, consecutive timestamped words over strongly verified
+local silence form one candidate run. The run is removed only when its
+normalized tokens occur exactly once in the canonical provider transcript.
+Unmatched canonical text is preserved, and a repeated or otherwise ambiguous
+candidate fails open. Punctuation and capitalization are preserved because the
+filter deletes source ranges rather than reconstructing the transcript. The
+comparison happens before cursor insertion and before linked pending-capture
+creation. The original M4A is never edited and remains the object used for
+playback and private upload.
 
 The repair deliberately rejected heavier alternatives:
 
@@ -163,7 +181,9 @@ Deterministic regression fixtures cover:
 - suspicious “Thank you” and prompt-derived vocabulary over silence;
 - real speech and silent-interval hallucination inside the same provider
   segment;
-- exact full word coverage and preserve-on-incomplete-alignment behavior;
+- exact full word coverage;
+- incomplete word coverage elsewhere with a uniquely aligned silent run;
+- ambiguous partial alignment, which must preserve the transcript;
 - local/provider disagreement, which must preserve text;
 - steady background sound and isolated impulses;
 - incomplete provider segment metadata;
@@ -199,10 +219,10 @@ job.
   separate integrity questions.
 - Keep segment filtering before all insertion, D1, R2, and coaching boundaries.
 - Treat provider segments as presentation groupings, not guaranteed acoustic
-  truth boundaries; use exact word alignment when a mixed segment must be
-  narrowed.
-- Preserve provider text whenever exact complete token coverage cannot be
-  proven.
+  truth boundaries; use exact source-range alignment when a mixed segment must
+  be narrowed.
+- Preserve a partial candidate whenever its canonical source range is not
+  unique.
 - Preserve older pending records when optional provider metadata is introduced.
 
 ## Rollback

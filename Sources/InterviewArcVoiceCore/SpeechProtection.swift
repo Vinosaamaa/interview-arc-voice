@@ -61,6 +61,7 @@ public enum SegmentLocalTranscriptValidator {
     private static let providerNoSpeechThreshold = 0.60
     private static let providerLogProbabilityThreshold = -1.0
     private static let minimumWordEvidenceSeconds = 0.45
+    private static let maximumUnsupportedWordGapSeconds = 0.30
 
     private struct TextToken {
         let normalized: String
@@ -75,6 +76,11 @@ public enum SegmentLocalTranscriptValidator {
     private struct WordTokenAlignment {
         let intervals: [TokenInterval]
         let isComplete: Bool
+    }
+
+    private struct RejectedWordRun {
+        let wordIndices: [Int]
+        let tokenInterval: TokenInterval
     }
 
     public static func apply(
@@ -122,10 +128,10 @@ public enum SegmentLocalTranscriptValidator {
             transcription.words,
             canonicalTokens: canonicalTokens
         )
-        let rejectedWordIndices: Set<Int>
+        let rejectedWordRuns: [RejectedWordRun]
         if wordAlignment.isComplete {
-            rejectedWordIndices = Set(
-                transcription.words.indices.filter { index in
+            rejectedWordRuns = transcription.words.indices.compactMap { index in
+                guard
                     !overlapsRejectedSegment(
                         transcription.words[index],
                         segments: segments,
@@ -135,15 +141,28 @@ public enum SegmentLocalTranscriptValidator {
                         transcription.words[index],
                         speechEvidence: speechEvidence
                     )
+                else {
+                    return nil
                 }
-            )
+                return RejectedWordRun(
+                    wordIndices: [index],
+                    tokenInterval: wordAlignment.intervals[index]
+                )
+            }
         } else {
-            rejectedWordIndices = []
+            rejectedWordRuns = uniquelyAlignedUnsupportedWordRuns(
+                transcription.words,
+                canonicalTokens: canonicalTokens,
+                segments: segments,
+                rejectedSegmentIndices: rejectedSegmentIndices,
+                speechEvidence: speechEvidence
+            )
         }
+        let rejectedWordIndices = Set(rejectedWordRuns.flatMap(\.wordIndices))
 
         let rejectedTokenIntervals =
             rejectedSegmentIndices.map { segmentTokenIntervals[$0] }
-            + rejectedWordIndices.map { wordAlignment.intervals[$0] }
+            + rejectedWordRuns.map(\.tokenInterval)
         let mergedRejectedTokenIntervals = merge(rejectedTokenIntervals)
         guard !mergedRejectedTokenIntervals.isEmpty else {
             return SpeechProtectedTranscription(
@@ -250,14 +269,126 @@ public enum SegmentLocalTranscriptValidator {
         _ word: TranscriptWord,
         speechEvidence: SpeechEvidenceResult
     ) -> Bool {
-        guard word.end > word.start else { return false }
-        let start = max(0, word.start - segmentPaddingSeconds)
-        let end = word.end + segmentPaddingSeconds
+        isStronglyUnsupported(
+            from: word.start,
+            to: word.end,
+            speechEvidence: speechEvidence
+        )
+    }
+
+    private static func isStronglyUnsupported(
+        from wordStart: Double,
+        to wordEnd: Double,
+        speechEvidence: SpeechEvidenceResult
+    ) -> Bool {
+        guard wordEnd > wordStart else { return false }
+        let start = max(0, wordStart - segmentPaddingSeconds)
+        let end = wordEnd + segmentPaddingSeconds
         guard end - start >= minimumWordEvidenceSeconds else { return false }
         let local = speechEvidence.evidence(from: start, to: end)
         return local.frameCount > 0
             && !local.hasSustainedSpeech
             && local.speechLikeFraction <= maximumLocalSpeechFraction
+    }
+
+    private static func isLocallyUnsupported(
+        _ word: TranscriptWord,
+        speechEvidence: SpeechEvidenceResult
+    ) -> Bool {
+        guard word.end > word.start else { return false }
+        let local = speechEvidence.evidence(from: word.start, to: word.end)
+        return local.frameCount > 0
+            && !local.hasSustainedSpeech
+            && local.speechLikeFraction <= maximumLocalSpeechFraction
+    }
+
+    private static func uniquelyAlignedUnsupportedWordRuns(
+        _ words: [TranscriptWord],
+        canonicalTokens: [TextToken],
+        segments: [TranscriptSegment],
+        rejectedSegmentIndices: Set<Int>,
+        speechEvidence: SpeechEvidenceResult
+    ) -> [RejectedWordRun] {
+        var candidateRuns: [[Int]] = []
+        var currentRun: [Int] = []
+
+        func finishCurrentRun() {
+            guard !currentRun.isEmpty else { return }
+            candidateRuns.append(currentRun)
+            currentRun = []
+        }
+
+        for index in words.indices {
+            let word = words[index]
+            guard
+                !overlapsRejectedSegment(
+                    word,
+                    segments: segments,
+                    rejectedSegmentIndices: rejectedSegmentIndices
+                ),
+                isLocallyUnsupported(
+                    word,
+                    speechEvidence: speechEvidence
+                )
+            else {
+                finishCurrentRun()
+                continue
+            }
+
+            if let previousIndex = currentRun.last,
+               word.start - words[previousIndex].end
+                    > maximumUnsupportedWordGapSeconds {
+                finishCurrentRun()
+            }
+            currentRun.append(index)
+        }
+        finishCurrentRun()
+
+        return candidateRuns.compactMap { indices in
+            guard let first = indices.first,
+                  let last = indices.last,
+                  isStronglyUnsupported(
+                      from: words[first].start,
+                      to: words[last].end,
+                      speechEvidence: speechEvidence
+                  ) else {
+                return nil
+            }
+            let candidateTokens = indices.flatMap {
+                tokens(in: words[$0].word).map(\.normalized)
+            }
+            guard let interval = uniqueTokenInterval(
+                matching: candidateTokens,
+                in: canonicalTokens
+            ) else {
+                return nil
+            }
+            return RejectedWordRun(
+                wordIndices: indices,
+                tokenInterval: interval
+            )
+        }
+    }
+
+    private static func uniqueTokenInterval(
+        matching candidateTokens: [String],
+        in canonicalTokens: [TextToken]
+    ) -> TokenInterval? {
+        guard !candidateTokens.isEmpty,
+              candidateTokens.count <= canonicalTokens.count else {
+            return nil
+        }
+        let canonicalValues = canonicalTokens.map(\.normalized)
+        var match: TokenInterval?
+        for start in 0...(canonicalValues.count - candidateTokens.count) {
+            let end = start + candidateTokens.count
+            guard Array(canonicalValues[start..<end]) == candidateTokens else {
+                continue
+            }
+            guard match == nil else { return nil }
+            match = TokenInterval(lowerBound: start, upperBound: end)
+        }
+        return match
     }
 
     private static func overlapsRejectedSegment(
