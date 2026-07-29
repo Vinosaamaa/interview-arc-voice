@@ -125,8 +125,28 @@ visible Settings surface.
 
 ## Release verification
 
-Pending PR, merge, packaged-artifact installation, and valid-key production
-verification.
+- The repair shipped through PRs
+  [#90](https://github.com/Vinosaamaa/interview-arc-voice/pull/90),
+  [#91](https://github.com/Vinosaamaa/interview-arc-voice/pull/91), and
+  [#92](https://github.com/Vinosaamaa/interview-arc-voice/pull/92).
+- Merged `main` commit
+  `561905b104b5864d796d38bc8d195275060b6083` passed the canonical
+  `Validate Interview Arc Voice` workflow in run
+  [30497996457](https://github.com/Vinosaamaa/interview-arc-voice/actions/runs/30497996457).
+- The exact packaged artifact from that run was verified with
+  `codesign --verify --deep --strict`. Its executable SHA-256 is
+  `71e89030c05c75bad68607dc53ddecbb0a9a390c99d9bc93af0cafee99eca60e`.
+- Native staged-artifact testing reproduced the rejected-key recovery state
+  after relaunch and verified that **Play** entered active playback, **Save**
+  opened the foreground `Save Voice Memo` panel, and **Settings** opened the
+  native settings window.
+- The exact artifact was installed at
+  `/Users/wenkxu/Applications/Interview Arc Voice.app`; its executable hash
+  matched the staged artifact. The same three recovery actions passed again
+  from the installed app.
+- The synthetic failure flags and recovery reference used for verification
+  were removed afterward. The underlying preserved recording was not changed,
+  and the installed app relaunched in its normal general-dictation state.
 
 ## Known limitation
 
