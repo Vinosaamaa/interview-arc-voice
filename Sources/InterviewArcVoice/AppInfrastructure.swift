@@ -1313,7 +1313,7 @@ struct FloatingRecorderView: View {
             .popover(isPresented: $model.failureDetailsPresented, arrowEdge: .bottom) {
                 FailureRecoveryPopover(model: model)
             }
-            ForEach(Array((model.failureNotice?.actions ?? []).prefix(2)), id: \.self) { action in
+            ForEach(Array(model.availableFailureActions.prefix(2)), id: \.self) { action in
                 if action == .openSettings {
                     ForegroundSettingsLink {
                         Image(systemName: failureSymbol(action))
@@ -2117,16 +2117,16 @@ private struct FailureRecoveryPopover: View {
                 }
 
                 VStack(spacing: 6) {
-                    ForEach(failure.actions, id: \.self) { action in
+                    ForEach(model.availableFailureActions, id: \.self) { action in
                         if action == .openSettings {
-                            if action == failure.actions.first {
+                            if action == model.availableFailureActions.first {
                                 settingsActionLink(action)
                                     .buttonStyle(.borderedProminent)
                             } else {
                                 settingsActionLink(action)
                                     .buttonStyle(.bordered)
                             }
-                        } else if action == failure.actions.first {
+                        } else if action == model.availableFailureActions.first {
                             failureActionButton(action)
                                 .buttonStyle(.borderedProminent)
                         } else {

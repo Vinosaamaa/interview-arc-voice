@@ -229,6 +229,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var recordingStore: RecordingStore?
     private var diagnosticsStore: VoiceDiagnosticsStore?
     private var transcriptHistoryStore: LocalTranscriptHistoryStore?
+    private var recoverableRecordingStore: LocalRecoverableRecordingStore?
     private var pipeline: VoicePipeline?
     private var captureDestination: CaptureDestination?
     private var captureStartedInCodex = false
@@ -321,6 +322,12 @@ final class VoiceBridgeModel: ObservableObject {
     }
     var showsDeliverySteps: Bool { !deliveryStates.isEmpty }
     var hasLastMemo: Bool { hasLastAudio || !lastTranscript.isEmpty }
+    var availableFailureActions: [VoiceFailureAction] {
+        RecoveryActionAvailabilityPolicy.availableActions(
+            from: failureNotice?.actions ?? [],
+            hasRecoverableAudio: hasLastAudio
+        )
+    }
     var hasMenuTranscript: Bool { !transcriptHistory.isEmpty }
     var selectedTranscript: LocalTranscriptRecord? {
         guard transcriptHistory.indices.contains(selectedTranscriptIndex) else {
@@ -537,6 +544,9 @@ final class VoiceBridgeModel: ObservableObject {
             transcriptHistoryStore = try? LocalTranscriptHistoryStore(
                 directory: recordingStore.transcriptHistoryDirectory
             )
+            recoverableRecordingStore = try? LocalRecoverableRecordingStore(
+                directory: recordingStore.recoveryDirectory
+            )
         }
         groqCredentialRejected = defaults.bool(
             forKey: "voice.groqCredentialRejected"
@@ -561,6 +571,7 @@ final class VoiceBridgeModel: ObservableObject {
             FloatingPanelController.shared.show(model: self)
             outputVolumeController.recoverInterruptedSessionIfNeeded()
             registerGlobalShortcuts()
+            restoreRecoverableRecordingIfNeeded()
             await loadSecureSettings()
             await refreshDiagnostics()
             await refreshTranscriptHistory()
@@ -968,6 +979,7 @@ final class VoiceBridgeModel: ObservableObject {
 
     func exportLastMemo() {
         guard hasLastMemo else { return }
+        NSApp.activate(ignoringOtherApps: true)
         let plan = VoiceMemoExportPlan(
             activityTitle: lastMemoActivityTitle,
             createdAt: lastMemoCreatedAt
@@ -978,6 +990,7 @@ final class VoiceBridgeModel: ObservableObject {
             ?? "General dictation · not linked to Interview Arc"
         panel.prompt = "Save"
         panel.canCreateDirectories = true
+        panel.level = .floating
         panel.allowedContentTypes = [.mpeg4Audio]
         panel.nameFieldStringValue = plan.suggestedAudioFilename
         let transcriptCheckbox = NSButton(
@@ -2055,7 +2068,10 @@ final class VoiceBridgeModel: ObservableObject {
             self.captureDestination = nil
             lastRetryDestination = captureDestination
             if unexpectedTermination {
-                rememberLastAudio(recording, activityTitle: memoActivityTitle)
+                rememberLastAudio(
+                    recording,
+                    activityTitle: memoActivityTitle
+                )
                 canRetryLastTranscription = true
                 reportFailure(
                     kind: .recording,
@@ -2126,9 +2142,15 @@ final class VoiceBridgeModel: ObservableObject {
                         return
                     }
                 }
-                rememberLastAudio(recording, activityTitle: memoActivityTitle)
+                rememberLastAudio(
+                    recording,
+                    activityTitle: memoActivityTitle
+                )
             case .preserveWithoutRetry:
-                rememberLastAudio(recording, activityTitle: memoActivityTitle)
+                rememberLastAudio(
+                    recording,
+                    activityTitle: memoActivityTitle
+                )
                 canRetryLastTranscription = false
                 reportFailure(
                     kind: .recording,
@@ -2139,7 +2161,10 @@ final class VoiceBridgeModel: ObservableObject {
                 )
                 return
             case .recordAgain:
-                rememberLastAudio(recording, activityTitle: memoActivityTitle)
+                rememberLastAudio(
+                    recording,
+                    activityTitle: memoActivityTitle
+                )
                 canRetryLastTranscription = false
                 reportFailure(
                     kind: .microphone,
@@ -2685,6 +2710,70 @@ final class VoiceBridgeModel: ObservableObject {
         lastMemoActivityTitle = activityTitle
         lastTranscript = ""
         lastInsertionText = ""
+        if hasLastAudio {
+            try? recoverableRecordingStore?.save(
+                LocalRecoverableRecordingReference(
+                    audioURL: recording.url,
+                    durationSeconds: recording.duration,
+                    createdAt: lastMemoCreatedAt,
+                    activityTitle: activityTitle
+                )
+            )
+        }
+    }
+
+    private func restoreRecoverableRecordingIfNeeded() {
+        guard let failureNotice,
+              failureNotice.actions.contains(.playRecording)
+                || failureNotice.actions.contains(.saveRecording),
+              let recordingStore,
+              let recoverableRecordingStore else {
+            return
+        }
+        let allowedDirectories = [
+            recordingStore.recordingsDirectory,
+            recordingStore.temporaryDirectory,
+        ]
+        var reference = try? recoverableRecordingStore.load(
+            allowedDirectories: allowedDirectories
+        )
+        if reference == nil,
+           let migratedURL = LocalRecoverableRecordingStore
+            .discoverNewestAudio(in: allowedDirectories) {
+            let values = try? migratedURL.resourceValues(
+                forKeys: [.contentModificationDateKey]
+            )
+            reference = LocalRecoverableRecordingReference(
+                audioURL: migratedURL,
+                durationSeconds: 0,
+                createdAt: values?.contentModificationDate ?? Date()
+            )
+            if let reference {
+                try? recoverableRecordingStore.save(reference)
+            }
+        }
+        guard let reference,
+              let data = try? Data(
+                  contentsOf: reference.audioURL,
+                  options: .mappedIfSafe
+              ),
+              !data.isEmpty else {
+            return
+        }
+        lastAudioData = data
+        lastAudioURL = reference.audioURL
+        hasLastAudio = true
+        lastMemoCreatedAt = reference.createdAt
+        lastMemoActivityTitle = reference.activityTitle
+        if let player = try? AVAudioPlayer(data: data) {
+            lastAudioDuration = reference.durationSeconds > 0
+                ? reference.durationSeconds
+                : player.duration
+            playbackDuration = lastAudioDuration
+        } else {
+            lastAudioDuration = reference.durationSeconds
+            playbackDuration = reference.durationSeconds
+        }
     }
 
     private func clearLastMemo() {
@@ -3336,15 +3425,38 @@ private struct VoiceBridgeMenu: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
-                    ForEach(failure.actions, id: \.self) { action in
-                        Button {
-                            model.performFailureAction(action)
-                        } label: {
-                            Label(failureActionLabel(action), systemImage: failureActionSymbol(action))
+                    ForEach(model.availableFailureActions, id: \.self) { action in
+                        if action == .openSettings {
+                            ForegroundSettingsLink {
+                                Label(
+                                    failureActionLabel(action),
+                                    systemImage: failureActionSymbol(action)
+                                )
                                 .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(
+                                action == model.availableFailureActions.first
+                                    ? MenuFailureButtonStyle.primary
+                                    : .secondary
+                            )
+                            .voiceHoverFeedback(cornerRadius: 8, tint: .teal)
+                        } else {
+                            Button {
+                                model.performFailureAction(action)
+                            } label: {
+                                Label(
+                                    failureActionLabel(action),
+                                    systemImage: failureActionSymbol(action)
+                                )
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(
+                                action == model.availableFailureActions.first
+                                    ? MenuFailureButtonStyle.primary
+                                    : .secondary
+                            )
+                            .voiceHoverFeedback(cornerRadius: 8, tint: .teal)
                         }
-                        .buttonStyle(action == failure.actions.first ? MenuFailureButtonStyle.primary : .secondary)
-                        .voiceHoverFeedback(cornerRadius: 8, tint: .teal)
                     }
                 }
                 .padding(10)

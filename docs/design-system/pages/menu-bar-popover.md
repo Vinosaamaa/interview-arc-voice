@@ -63,6 +63,13 @@ The floating capsule remains a simple recording and timer instrument.
   transcription failures.
 - Voice preserves the finalized recording, disables Record and Retry for the
   rejected key, and offers Settings, Play, and Save.
+- The recoverable recording reference is stored locally with permission
+  `0600` and rehydrated before recovery actions appear after relaunch. Play and
+  Save are absent when the referenced file is missing, empty, or outside
+  Voice's private recording directories.
+- Open Settings activates Voice and raises the native Settings window. Save
+  activates Voice and places the native save panel above the menu-bar surface;
+  neither action may rely on an internal disclosure flag.
 - The failure clears only after a different key is saved. Transient provider or
   network failures keep the ordinary Retry path.
 
