@@ -4,7 +4,7 @@
   [#33](https://github.com/Vinosaamaa/interview-arc-voice/issues/33),
   [#81](https://github.com/Vinosaamaa/interview-arc-voice/issues/81)
 - Status: whole-recording failure remediated; incomplete-alignment recurrence
-  repair in progress
+  repair implemented and awaiting merged-artifact verification
 - Affected surface: general dictation and Interview Arc-linked recording
 - Severity: data-integrity risk
 
