@@ -196,6 +196,9 @@ public actor GroqTranscriber: SpeechTranscribing {
         let (data, response) = try await session.upload(for: request, from: body)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status == 401 || status == 403 {
+                throw VoiceBridgeError.invalidProviderCredential
+            }
             throw VoiceBridgeError.invalidResponse(status, String(data: data, encoding: .utf8) ?? "Groq transcription failed")
         }
         return try JSONDecoder().decode(GroqTranscription.self, from: data)

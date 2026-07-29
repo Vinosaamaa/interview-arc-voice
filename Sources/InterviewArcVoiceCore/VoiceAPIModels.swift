@@ -288,6 +288,7 @@ public enum VoiceBridgeError: LocalizedError, Sendable {
     case missingCredential(String)
     case noFocusedActivity(String)
     case noSpecialist(String)
+    case invalidProviderCredential
     case invalidResponse(Int, String)
     case protocolMismatch(Int)
     case microphoneDenied
@@ -302,6 +303,8 @@ public enum VoiceBridgeError: LocalizedError, Sendable {
         case .missingCredential(let name): return "Add your \(name) in Interview Arc Voice settings."
         case .noFocusedActivity(let message): return message
         case .noSpecialist(let message): return message
+        case .invalidProviderCredential:
+            return "Groq rejected the saved API key. Replace it in Voice settings."
         case .invalidResponse(let status, let body): return "Request failed (\(status)): \(body)"
         case .protocolMismatch(let version): return "Interview Arc Voice protocol \(version) is not supported by this app."
         case .microphoneDenied: return "Microphone access is required to record an answer."

@@ -280,6 +280,29 @@ Accessibility messaging to an eligible fallback target has a finite timeout;
 manual Insert never remains in a permanent loading state because a system
 process captured focus while the menu-bar popover was open.
 
+Manual insertion is surface-aware. The non-activating floating widget prefers
+the current eligible editor. The menu-bar popover prefers the last eligible
+external editor remembered before Voice or system UI took focus, preventing a
+menu invocation from redirecting recovery text into Finder or another
+transient surface.
+
+## Local transcript recovery
+
+The menu-bar popover keeps a separate transcript-only recovery history in
+`Application Support/InterviewArcVoice/TranscriptHistory`. The JSON file is
+permission `0600`, newest-first, limited to five records, and pruned after 24
+hours on load and append. Records retain the exact insertion payload so linked
+Voice v2 envelopes remain idempotent. This history does not extend successful
+general-dictation audio retention.
+
+## Provider credential rejection
+
+Groq authentication rejection is a non-retryable configuration state. Voice
+preserves the finalized recording but disables additional recording and retry
+attempts with the same rejected key. A different Keychain value must be saved
+before the user can explicitly retry. Network and provider availability errors
+remain retryable.
+
 See
 [`postmortems/2026-07-23-universal-dictation-insertion.md`](postmortems/2026-07-23-universal-dictation-insertion.md)
 for the evidence, failed approaches, diagrams, and regression plan.
