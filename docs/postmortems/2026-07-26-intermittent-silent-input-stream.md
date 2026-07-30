@@ -234,3 +234,46 @@ silent or invalid stream without delaying every healthy recording.
   a recorder that starts successfully but reports no signal.
 - Track recovery count in diagnostic export without storing transcript or audio
   content.
+
+## Fourth recurrence: the independent fallback also stayed silent
+
+On 2026-07-29 the installed application again reported **No microphone
+signal** / **Recording ended early** while the system still identified the
+AirPods Max as the default 24 kHz input. The first bounded repair was active,
+but it could not recover this instance.
+
+The remaining state-machine gap was deterministic. Voice allowed one automatic
+restart:
+
+1. the primary `AVAudioRecorder` stream stayed silent;
+2. Voice switched to an independent `AVAudioEngine` input tap; and
+3. if that engine bound before the Bluetooth route became viable,
+   `maximumAutomaticRestarts == 1` prohibited any later rebind.
+
+The UI could therefore remain attached to the dead fallback until Stop. The
+same route-transition interval also contributed to the whole-capture
+hallucination recurrence tracked by reopened issue #33.
+
+The repair permits exactly one final bounded rebind. When the first engine
+fallback also remains silent for the normal 2.5-second signal window, Voice
+stops and releases that engine and tap before constructing a fresh input node
+and destination. It never runs two input engines concurrently, never loops
+beyond two recovery transitions, preserves the capture identity and routing
+destination, and retains the last finalized local evidence if the final rebind
+cannot start.
+
+Review of the first draft exposed a second state-machine defect before release:
+the periodic recovery decision was guarded by the presence of the original
+system recorder. That recorder is intentionally removed after the first
+fallback, so the final rebind would have been unreachable. The recovery policy
+now receives an explicit active-backend state, and the timer evaluates both the
+system recorder and audio-engine fallback.
+
+Privacy-safe diagnostics now include the microphone recovery-attempt count.
+They continue to exclude device names, transcript text, audio, credentials,
+tokens, and private URLs. Regression coverage requires restart decisions
+`true, true, false` for completed recovery counts `0, 1, 2`.
+
+Issue #58 remains the canonical microphone incident. Final merged-main package,
+AirPods verification, executable hash, and rollback location are recorded in
+its resolution history after release.

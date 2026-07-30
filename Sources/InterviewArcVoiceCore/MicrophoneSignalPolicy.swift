@@ -37,14 +37,17 @@ public struct MicrophoneSignalPolicy: Equatable, Sendable {
 public struct MicrophoneStreamRecoveryPolicy: Equatable, Sendable {
     public let maximumAutomaticRestarts: Int
 
-    public init(maximumAutomaticRestarts: Int = 1) {
+    public init(maximumAutomaticRestarts: Int = 2) {
         self.maximumAutomaticRestarts = maximumAutomaticRestarts
     }
 
     public func shouldRestart(
         health: MicrophoneSignalHealth,
-        completedRestarts: Int
+        completedRestarts: Int,
+        captureBackendIsActive: Bool
     ) -> Bool {
-        health == .absent && completedRestarts < maximumAutomaticRestarts
+        captureBackendIsActive
+            && health == .absent
+            && completedRestarts < maximumAutomaticRestarts
     }
 }

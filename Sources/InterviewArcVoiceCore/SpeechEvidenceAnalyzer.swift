@@ -184,8 +184,10 @@ public enum LocalSpeechEvidenceAnalyzer {
         var longestRun = 0
         var activeLevels: [Float] = []
         var speechLikeFrames: [Bool] = []
+        var firstSpeechFrameIndex: Int?
+        var lastSpeechFrameIndex: Int?
         speechLikeFrames.reserveCapacity(frames.count)
-        for frame in frames {
+        for (index, frame) in frames.enumerated() {
             let isSpeechLike =
                 frame.decibels >= activeThreshold
                 && frame.zeroCrossingRate >= 0.006
@@ -197,6 +199,10 @@ public enum LocalSpeechEvidenceAnalyzer {
                 currentRun += 1
                 longestRun = max(longestRun, currentRun)
                 activeLevels.append(frame.decibels)
+                if firstSpeechFrameIndex == nil {
+                    firstSpeechFrameIndex = index
+                }
+                lastSpeechFrameIndex = index
             } else {
                 currentRun = 0
             }
@@ -210,10 +216,19 @@ public enum LocalSpeechEvidenceAnalyzer {
         }
         let peak = levels.last ?? -160
         let duration = Double(samples.count) / sampleRate
-        let minimumSpeechFrames = duration < 0.75 ? 5 : 7
+        let minimumSpeechFrames = duration < 0.75 ? 12 : 14
+        let speechSpanSeconds: Double
+        if let firstSpeechFrameIndex, let lastSpeechFrameIndex {
+            speechSpanSeconds =
+                Double(lastSpeechFrameIndex - firstSpeechFrameIndex + 1)
+                * Double(frameSize) / sampleRate
+        } else {
+            speechSpanSeconds = 0
+        }
         let containsSpeech =
-            longestRun >= 4
+            longestRun >= 6
             && speechLikeCount >= minimumSpeechFrames
+            && speechSpanSeconds >= 0.26
             && activeRange >= 2.5
             && peak >= -52
 

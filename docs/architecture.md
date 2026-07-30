@@ -24,6 +24,11 @@
    a second timeout fails visibly. The system recorder owns file finalization,
    and a capture is not eligible for transcription until the finalized file
    reopens with decoded frames.
+   After the live state begins, sustained absent signal may perform two bounded
+   recovery transitions: first from the system recorder to an independent
+   audio-engine input tap, then one clean engine rebind after releasing the
+   first tap if the Bluetooth route was still dead. A third restart is never
+   allowed. The visible capture identity and routing destination remain stable.
    If the cached snapshot was briefly behind, the active refresh may late-bind
    the capture only when the server proves that activity's stopwatch began
    before recording started. An already linked recording never changes
@@ -35,7 +40,9 @@
 5. Produce a speech-optimized transcription derivative and send it with the
    bounded vocabulary prompt to Groq Large v3.
 6. Apply the selected silence-protection policy. Basic uses the existing
-   whole-recording speech gate. Enhanced retains that same 20 ms local evidence
+   whole-recording speech gate. That gate requires speech-like evidence across
+   a meaningful time span—not merely a short profile-transition burst—before
+   any provider request. Enhanced retains that same 20 ms local evidence
    timeline and Groq's verbose segment and word timestamps. It omits a complete
    segment only when both sources identify its padded timestamp interval as
    unsupported non-speech. For a mixed segment, it may remove individual
@@ -132,7 +139,8 @@ upload object.
 
 Every completed attempt appends one bounded, permission-0600 diagnostic record
 containing only numeric stage timings, the selected protection mode, omission
-counts, exact-alignment status, timestamp coverage counts, and outcome. The
+counts, exact-alignment status, timestamp coverage counts, microphone recovery
+count, and outcome. The
 Settings diagnostics surface can copy, reveal, and clear that file. It never
 records transcript text, audio, credentials, tokens, private URLs, or activity
 descriptions. Validation time is recorded separately from decoding,

@@ -172,11 +172,12 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
                     elapsedSeconds: Date().timeIntervalSince(signalAttemptStartedAt),
                     peakPowerDecibels: self.peakPower
                 )
-                if self.recorder != nil,
-                   self.streamRecoveryPolicy.shouldRestart(
-                       health: self.signalHealth,
-                       completedRestarts: self.automaticRecoveryCount
-                   ) {
+                if self.streamRecoveryPolicy.shouldRestart(
+                    health: self.signalHealth,
+                    completedRestarts: self.automaticRecoveryCount,
+                    captureBackendIsActive:
+                        self.recorder != nil || self.audioEngine != nil
+                ) {
                     self.restartSilentInputStream()
                 }
             }
@@ -286,6 +287,14 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         do {
             inputDeviceName = AVCaptureDevice.default(for: .audio)?.localizedName
                 ?? "Default microphone"
+            // The first recovery moves off AVAudioRecorder. If that engine
+            // also bound while the Bluetooth input route was still dead, the
+            // second and final recovery must release it before constructing a
+            // fresh input node. Merely starting another engine while the old
+            // tap is alive can reacquire the same stalled stream.
+            if audioEngine != nil {
+                stopVoiceProcessedCapture()
+            }
             // Start an independent capture backend before releasing the
             // stalled AVAudioRecorder. Reopening the same recorder immediately
             // can reacquire the same silent Bluetooth/default-input stream.

@@ -45,6 +45,26 @@ private let testSampleRate = 16_000.0
     #expect(result.longestSpeechRunFrames < 4)
 }
 
+@Test func bluetoothProfileTransitionBurstIsRejectedBeforeTranscription() {
+    let samples = (0..<Int(testSampleRate)).map { index -> Float in
+        let time = Double(index) / testSampleRate
+        guard time >= 0.18, time < 0.36 else { return 0 }
+        let burstTime = time - 0.18
+        let envelope = sin(.pi * burstTime / 0.18)
+        let routeTone =
+            sin(2 * .pi * (185 + 210 * burstTime) * burstTime)
+            + 0.24 * sin(2 * .pi * 740 * burstTime)
+        return Float(0.035 * envelope * routeTone)
+    }
+
+    let result = LocalSpeechEvidenceAnalyzer.analyze(
+        samples: samples,
+        sampleRate: testSampleRate
+    )
+
+    #expect(!result.containsSpeech)
+}
+
 @Test func shortSoftSpeechShapedCaptureIsAccepted() {
     let samples = (0..<Int(testSampleRate * 0.55)).map { index -> Float in
         let time = Double(index) / testSampleRate
