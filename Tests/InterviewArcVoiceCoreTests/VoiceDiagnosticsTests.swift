@@ -33,6 +33,7 @@ import Testing
                 wordAlignmentComplete: true,
                 evaluatedSegmentCount: 3,
                 wordTimestampCount: 12,
+                microphoneRecoveryCount: 2,
                 outcome: .delivered
             )
         )
@@ -73,6 +74,7 @@ import Testing
         wordAlignmentComplete: true,
         evaluatedSegmentCount: 2,
         wordTimestampCount: 8,
+        microphoneRecoveryCount: 2,
         outcome: .delivered
     )
 
@@ -80,6 +82,7 @@ import Testing
     #expect(record.report.contains("Segment validation: <1 ms"))
     #expect(record.report.contains("Unsupported words omitted: 2"))
     #expect(record.report.contains("Word alignment complete: true"))
+    #expect(record.report.contains("Microphone recovery attempts: 2"))
 }
 
 @Test func diagnosticsDecodeRecordsWrittenBeforeWordLevelMetrics() throws {
@@ -112,6 +115,7 @@ import Testing
     #expect(records[0].wordAlignmentComplete == nil)
     #expect(records[0].evaluatedSegmentCount == nil)
     #expect(records[0].wordTimestampCount == nil)
+    #expect(records[0].microphoneRecoveryCount == nil)
 }
 
 @Test func diagnosticsStoreCanBeCleared() async throws {

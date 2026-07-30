@@ -24,6 +24,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
     public let wordAlignmentComplete: Bool?
     public let evaluatedSegmentCount: Int?
     public let wordTimestampCount: Int?
+    public let microphoneRecoveryCount: Int?
     public let outcome: VoiceDiagnosticOutcome
 
     public init(
@@ -44,6 +45,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         wordAlignmentComplete: Bool? = nil,
         evaluatedSegmentCount: Int? = nil,
         wordTimestampCount: Int? = nil,
+        microphoneRecoveryCount: Int? = nil,
         outcome: VoiceDiagnosticOutcome
     ) {
         self.id = id
@@ -63,6 +65,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         self.wordAlignmentComplete = wordAlignmentComplete
         self.evaluatedSegmentCount = evaluatedSegmentCount
         self.wordTimestampCount = wordTimestampCount
+        self.microphoneRecoveryCount = microphoneRecoveryCount
         self.outcome = outcome
     }
 
@@ -84,6 +87,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
             "Word alignment complete: \(wordAlignmentComplete.map { String($0) } ?? "Unavailable")",
             "Segments evaluated: \(evaluatedSegmentCount.map { String($0) } ?? "Unavailable")",
             "Word timestamps: \(wordTimestampCount.map { String($0) } ?? "Unavailable")",
+            "Microphone recovery attempts: \(microphoneRecoveryCount.map { String($0) } ?? "Unavailable")",
             "Outcome: \(outcome.rawValue)",
         ].joined(separator: "\n")
     }

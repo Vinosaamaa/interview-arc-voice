@@ -262,3 +262,51 @@ The deterministic mixed-segment matrix, exact package checks, staged launch,
 and installed launch are complete. The next naturally occurring long-pause
 capture remains required before closing #81 so the release record does not
 substitute synthetic evidence for the reported acoustic environment.
+
+## 2026-07-29 whole-capture recurrence
+
+The installed application again inserted short fabricated transcripts from
+captures where the user reported saying nothing while the microphone route was
+also failing. The bounded local history and privacy-safe diagnostics recorded:
+
+- a 1.678-second capture delivered three provider words;
+- a 1.838-second capture delivered one provider word;
+- a 2.502-second capture delivered two provider words; and
+- a nearby 1.437-second capture was correctly rejected as `noSpeech`.
+
+The fabricated outputs included the same short provider patterns that motivated
+the original incident. They are not reproduced here as a blacklist: legitimate
+users can say those words.
+
+The confirmed software gap was the whole-capture gate. It treated as speech as
+few as seven speech-like 20-millisecond frames, with only four consecutive
+frames required. A short, amplitude-varying Bluetooth/profile-transition burst
+can satisfy the energy, zero-crossing, crest-factor, peak, and range checks even
+though no human speech exists. Once that gate passed, a confident provider
+hallucination was retained because segment-local rejection deliberately
+requires provider silence/low-confidence corroboration.
+
+The exact delivered source files had already followed normal successful-capture
+cleanup, so this postmortem does not claim a byte-level acoustic classification
+of those three files. The user report, simultaneous no-signal recorder state,
+diagnostics, and a deterministic route-transition fixture establish the failed
+software boundary without inventing unavailable evidence.
+
+The recurrence repair strengthens only the whole-capture authorization:
+
+- short captures require at least twelve speech-like frames;
+- longer captures require at least fourteen;
+- at least six frames must be consecutive;
+- evidence must span at least 260 milliseconds; and
+- the existing dynamic-range and peak safeguards remain.
+
+The segment/word validator keeps its more local thresholds so genuine short
+words inside an otherwise valid answer are not removed. A deterministic
+Bluetooth transition burst now fails closed, while the existing 550-millisecond
+soft-speech fixture remains accepted. The normal path still performs one local
+decode and one provider request; rejected captures never reach the provider,
+cursor, D1, R2, or Delivery Coach.
+
+Issue #33 was reopened for this recurrence and is cross-linked to the active
+silent-microphone recurrence in #58. Final merged-main artifact and installed
+acoustic verification are recorded in those issue resolution histories.

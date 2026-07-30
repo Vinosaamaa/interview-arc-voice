@@ -154,6 +154,7 @@ final class VoiceBridgeModel: ObservableObject {
         let integrityInspectionSeconds: Double
         let localSpeechScanSeconds: Double
         let protectionMode: SpeechProtectionMode
+        let microphoneRecoveryCount: Int
     }
 
     @Published var phase: Phase = .setup
@@ -1056,7 +1057,8 @@ final class VoiceBridgeModel: ObservableObject {
                 fileFinalizationSeconds: 0,
                 integrityInspectionSeconds: 0,
                 localSpeechScanSeconds: speechScanSeconds,
-                protectionMode: speechProtectionMode
+                protectionMode: speechProtectionMode,
+                microphoneRecoveryCount: 0
             )
             targetApplicationPID = currentInsertionTargetPID()
             canRetryLastTranscription = false
@@ -1212,6 +1214,7 @@ final class VoiceBridgeModel: ObservableObject {
             wordAlignmentComplete: wordAlignmentComplete,
             evaluatedSegmentCount: evaluatedSegmentCount,
             wordTimestampCount: wordTimestampCount,
+            microphoneRecoveryCount: seed.microphoneRecoveryCount,
             outcome: outcome
         )
         try? await diagnosticsStore?.append(record)
@@ -2122,7 +2125,8 @@ final class VoiceBridgeModel: ObservableObject {
                 fileFinalizationSeconds: fileFinalizationSeconds,
                 integrityInspectionSeconds: integrityInspectionSeconds,
                 localSpeechScanSeconds: localSpeechScanSeconds,
-                protectionMode: speechProtectionMode
+                protectionMode: speechProtectionMode,
+                microphoneRecoveryCount: recorder.automaticRecoveryCount
             )
 
             switch recovery {
