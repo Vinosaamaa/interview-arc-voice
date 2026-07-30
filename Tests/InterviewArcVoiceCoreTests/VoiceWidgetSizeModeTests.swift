@@ -200,14 +200,18 @@ struct VoiceWidgetSizeModeTests {
         #expect(MiniWidgetAudioGlowPolicy.normalizedLevel(decibels: 0) == 1)
 
         let quiet = MiniWidgetAudioGlowPolicy.normalizedLevel(decibels: -45)
-        let loud = MiniWidgetAudioGlowPolicy.normalizedLevel(decibels: -12)
+        let conversational = MiniWidgetAudioGlowPolicy.normalizedLevel(
+            decibels: -30
+        )
+        let loud = MiniWidgetAudioGlowPolicy.normalizedLevel(decibels: -18)
         #expect(loud > quiet)
+        #expect(conversational >= 0.7)
 
         let smoothed = MiniWidgetAudioGlowPolicy.smoothedLevel(
             previous: 0.2,
             current: 1
         )
-        #expect(smoothed > 0.2)
+        #expect(smoothed >= 0.5)
         #expect(smoothed < 1)
         #expect(
             MiniWidgetAudioGlowPolicy.pulseDuration(level: loud)
@@ -236,6 +240,20 @@ struct VoiceWidgetSizeModeTests {
         #expect(
             MiniWidgetAudioGlowPolicy.ringLineWidth(level: loud)
                 > MiniWidgetAudioGlowPolicy.ringLineWidth(level: quiet)
+        )
+        #expect(
+            MiniWidgetAudioGlowPolicy.maximumLineWidth
+                >= MiniWidgetAudioGlowPolicy.persistentLineWidth * 2
+        )
+        #expect(
+            MiniWidgetAudioGlowPolicy.meterArcFraction(level: quiet)
+                < MiniWidgetAudioGlowPolicy.meterArcFraction(level: loud)
+        )
+        #expect(
+            MiniWidgetAudioGlowPolicy.meterArcFraction(level: 0) == 0
+        )
+        #expect(
+            MiniWidgetAudioGlowPolicy.meterArcFraction(level: 1) == 1
         )
     }
 

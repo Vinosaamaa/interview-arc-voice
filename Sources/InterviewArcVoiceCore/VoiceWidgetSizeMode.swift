@@ -89,17 +89,20 @@ public enum MiniWidgetTimerSource: Equatable, Sendable {
 }
 
 public enum MiniWidgetAudioGlowPolicy {
+    // AVAudioRecorder's ordinary close-range speech commonly sits around
+    // -35...-22 dB. Saturating at -22 dB gives conversational speech enough
+    // visual range without requiring the user to shout.
     public static let quietDecibels: Double = -55
-    public static let loudDecibels: Double = -8
+    public static let loudDecibels: Double = -22
     public static let persistentRingDiameter: CGFloat = 44
-    public static let persistentRingOpacity = 0.96
-    public static let persistentLineWidth: CGFloat = 3.2
+    public static let persistentRingOpacity = 0.52
+    public static let persistentLineWidth: CGFloat = 2.4
     public static let minimumRingDiameter: CGFloat = 44
     public static let maximumRingDiameter: CGFloat = 48
-    public static let minimumRingOpacity = 0.28
+    public static let minimumRingOpacity = 0.46
     public static let maximumRingOpacity = 1.0
-    public static let minimumLineWidth: CGFloat = 2.0
-    public static let maximumLineWidth: CGFloat = 4.0
+    public static let minimumLineWidth: CGFloat = 2.5
+    public static let maximumLineWidth: CGFloat = 6.5
 
     public static func normalizedLevel(decibels: Double) -> Double {
         let span = loudDecibels - quietDecibels
@@ -110,7 +113,7 @@ public enum MiniWidgetAudioGlowPolicy {
     public static func smoothedLevel(
         previous: Double,
         current: Double,
-        response: Double = 0.18
+        response: Double = 0.42
     ) -> Double {
         let clampedResponse = max(0, min(1, response))
         let value = previous + ((current - previous) * clampedResponse)
@@ -118,7 +121,7 @@ public enum MiniWidgetAudioGlowPolicy {
     }
 
     public static func pulseDuration(level: Double) -> TimeInterval {
-        1.45 - (max(0, min(1, level)) * 0.70)
+        1.25 - (max(0, min(1, level)) * 0.72)
     }
 
     public static func ringDiameter(level: Double, pulse: Double) -> CGFloat {
@@ -153,5 +156,9 @@ public enum MiniWidgetAudioGlowPolicy {
 
     public static func shadowRadius(level: Double) -> CGFloat {
         4 + (CGFloat(max(0, min(1, level))) * 5)
+    }
+
+    public static func meterArcFraction(level: Double) -> Double {
+        max(0, min(1, level))
     }
 }
