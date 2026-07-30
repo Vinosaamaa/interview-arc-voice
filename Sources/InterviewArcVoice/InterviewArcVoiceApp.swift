@@ -155,6 +155,8 @@ final class VoiceBridgeModel: ObservableObject {
         let localSpeechScanSeconds: Double
         let protectionMode: SpeechProtectionMode
         let microphoneRecoveryCount: Int
+        let vadSpeechFrameCount: Int?
+        let vadLongestSpeechRunFrames: Int?
     }
 
     @Published var phase: Phase = .setup
@@ -1092,7 +1094,7 @@ final class VoiceBridgeModel: ObservableObject {
                     kind: .recording,
                     title: "No speech detected",
                     message: "Nothing was inserted or sent · record again when ready",
-                    detail: "Local speech detection found no sustained speech-shaped frames in the preserved recording.",
+                    detail: "Local voice-activity checks found no sustained speech in the preserved recording.",
                     actions: [.recordAgain, .playRecording, .saveRecording]
                 )
                 return
@@ -1105,7 +1107,10 @@ final class VoiceBridgeModel: ObservableObject {
                 integrityInspectionSeconds: 0,
                 localSpeechScanSeconds: speechScanSeconds,
                 protectionMode: speechProtectionMode,
-                microphoneRecoveryCount: 0
+                microphoneRecoveryCount: 0,
+                vadSpeechFrameCount: speechEvidence?.vadSpeechFrameCount,
+                vadLongestSpeechRunFrames:
+                    speechEvidence?.vadLongestSpeechRunFrames
             )
             targetApplicationPID = currentInsertionTargetPID()
             canRetryLastTranscription = false
@@ -1292,6 +1297,8 @@ final class VoiceBridgeModel: ObservableObject {
             evaluatedSegmentCount: evaluatedSegmentCount,
             wordTimestampCount: wordTimestampCount,
             microphoneRecoveryCount: seed.microphoneRecoveryCount,
+            vadSpeechFrameCount: seed.vadSpeechFrameCount,
+            vadLongestSpeechRunFrames: seed.vadLongestSpeechRunFrames,
             outcome: outcome
         )
         try? await diagnosticsStore?.append(record)
@@ -2240,14 +2247,17 @@ final class VoiceBridgeModel: ObservableObject {
                 integrityInspectionSeconds: integrityInspectionSeconds,
                 localSpeechScanSeconds: localSpeechScanSeconds,
                 protectionMode: speechProtectionMode,
-                microphoneRecoveryCount: recorder.automaticRecoveryCount
+                microphoneRecoveryCount: recorder.automaticRecoveryCount,
+                vadSpeechFrameCount: speechEvidence?.vadSpeechFrameCount,
+                vadLongestSpeechRunFrames:
+                    speechEvidence?.vadLongestSpeechRunFrames
             )
 
             switch recovery {
             case .transcribe:
                 if let speechEvidence {
                     voiceBridgeLogger.info(
-                        "Local speech evidence: speech=\(speechEvidence.containsSpeech, privacy: .public) duration=\(speechEvidence.analyzedDurationSeconds, privacy: .public)s frames=\(speechEvidence.speechLikeFrameCount, privacy: .public) run=\(speechEvidence.longestSpeechRunFrames, privacy: .public) floor=\(speechEvidence.noiseFloorDecibels, privacy: .public)dB peak=\(speechEvidence.peakFrameDecibels, privacy: .public)dB"
+                        "Local speech evidence: speech=\(speechEvidence.containsSpeech, privacy: .public) duration=\(speechEvidence.analyzedDurationSeconds, privacy: .public)s frames=\(speechEvidence.speechLikeFrameCount, privacy: .public) run=\(speechEvidence.longestSpeechRunFrames, privacy: .public) vadFrames=\(speechEvidence.vadSpeechFrameCount, privacy: .public) vadRun=\(speechEvidence.vadLongestSpeechRunFrames, privacy: .public) floor=\(speechEvidence.noiseFloorDecibels, privacy: .public)dB peak=\(speechEvidence.peakFrameDecibels, privacy: .public)dB"
                     )
                     guard speechEvidence.containsSpeech else {
                         Task {
@@ -2267,7 +2277,7 @@ final class VoiceBridgeModel: ObservableObject {
                             kind: .recording,
                             title: "No speech detected",
                             message: "Nothing was inserted or sent · record again when ready",
-                            detail: "Local speech detection found no sustained speech-shaped frames in the finalized recording.",
+                            detail: "Local voice-activity checks found no sustained speech in the finalized recording.",
                             actions: [.recordAgain]
                         )
                         return
