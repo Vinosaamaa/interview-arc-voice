@@ -75,6 +75,28 @@ import Testing
     )
 }
 
+@Test func menuInsertionWaitsForTheMenuWindowToActuallyDismiss() {
+    #expect(
+        !MenuInsertionDismissalPolicy.hasDismissed(
+            windowIsVisible: true,
+            windowIsKey: true
+        )
+    )
+    #expect(
+        MenuInsertionDismissalPolicy.hasDismissed(
+            windowIsVisible: false,
+            windowIsKey: true
+        )
+    )
+    #expect(
+        !MenuInsertionDismissalPolicy.hasDismissed(
+            windowIsVisible: true,
+            windowIsKey: false
+        )
+    )
+    #expect(MenuInsertionDismissalPolicy.maximumChecks > 0)
+}
+
 @Test func transcriptHistoryIsNewestFirstBoundedAndExpires() async throws {
     let root = FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString, directoryHint: .isDirectory)
@@ -83,11 +105,10 @@ import Testing
     let now = Date(timeIntervalSince1970: 10_000_000)
     let store = try LocalTranscriptHistoryStore(
         directory: root,
-        retentionDuration: 24 * 60 * 60,
-        retentionLimit: 5
+        retentionDuration: 24 * 60 * 60
     )
 
-    for offset in 0..<7 {
+    for offset in 0..<23 {
         try await store.append(
             LocalTranscriptRecord(
                 id: UUID(),
@@ -100,18 +121,13 @@ import Testing
         )
     }
 
-    let current = try await store.records(now: now.addingTimeInterval(7))
-    #expect(current.count == 5)
-    #expect(current.map(\.transcript) == [
-        "Transcript 6",
-        "Transcript 5",
-        "Transcript 4",
-        "Transcript 3",
-        "Transcript 2",
-    ])
+    let current = try await store.records(now: now.addingTimeInterval(23))
+    #expect(current.count == 20)
+    #expect(current.first?.transcript == "Transcript 22")
+    #expect(current.last?.transcript == "Transcript 3")
 
     let expired = try await store.records(
-        now: now.addingTimeInterval(24 * 60 * 60 + 7)
+        now: now.addingTimeInterval(24 * 60 * 60 + 23)
     )
     #expect(expired.isEmpty)
 

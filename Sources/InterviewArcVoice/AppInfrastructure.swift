@@ -721,6 +721,7 @@ private struct PasteboardSnapshot {
 final class FloatingPanelController {
     static let shared = FloatingPanelController()
     private var panel: NSPanel?
+    private var miniDragStartFrame: NSRect?
 
     func show(model: VoiceBridgeModel) {
         if let panel {
@@ -794,6 +795,23 @@ final class FloatingPanelController {
                 panel.animator().setFrame(frame, display: true)
             }
         }
+    }
+
+    func beginMiniDrag() {
+        guard let panel, miniDragStartFrame == nil else { return }
+        miniDragStartFrame = panel.frame
+    }
+
+    func updateMiniDrag(translation: CGSize) {
+        guard let panel, let start = miniDragStartFrame else { return }
+        var frame = start
+        frame.origin.x += translation.width
+        frame.origin.y -= translation.height
+        panel.setFrame(frame, display: true)
+    }
+
+    func endMiniDrag() {
+        miniDragStartFrame = nil
     }
 }
 
@@ -982,6 +1000,7 @@ struct FloatingRecorderView: View {
     @ObservedObject var model: VoiceBridgeModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var miniSmoothedLevel = 0.0
+    @State private var suppressMiniRecordToggle = false
 
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
@@ -1094,10 +1113,17 @@ struct FloatingRecorderView: View {
                 : .easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds),
             value: showsSharedCapsuleSurface
         )
+        .animation(
+            reduceMotion
+                ? nil
+                : .easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds),
+            value: model.miniWidgetLayout
+        )
     }
 
     private var showsSharedCapsuleSurface: Bool {
-        model.widgetSizeMode == .standard || model.miniWidgetLayout == .timer
+        model.widgetSizeMode == .standard
+            || model.miniWidgetLayout != .microphoneOnly
     }
 
     private var standardCapsuleContent: some View {
@@ -1187,24 +1213,83 @@ struct FloatingRecorderView: View {
 
     @ViewBuilder
     private var miniCapsuleContent: some View {
-        if model.miniWidgetLayout == .timer {
+        if model.miniWidgetLayout != .microphoneOnly {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
-                HStack(spacing: 4) {
-                    Text(model.miniTimerText(at: timeline.date) ?? "00:00")
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
-                        .monospacedDigit()
-                        .foregroundStyle(palette.tealDark)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .accessibilityLabel("Current timer")
+                HStack(spacing: 0) {
+                    if model.canExpandMiniSessionTimer {
+                        Button(action: model.toggleMiniSessionTimer) {
+                            HStack(spacing: 0) {
+                                if model.miniWidgetLayout == .dualTimer {
+                                    miniTimerCell(
+                                        model.compactSessionTime(at: timeline.date)
+                                            ?? "00:00",
+                                        color: palette.connectedIdle,
+                                        label: "Session timer"
+                                    )
+                                    ZStack {
+                                        Rectangle()
+                                            .fill(palette.divider.opacity(0.72))
+                                            .frame(width: 1, height: 22)
+                                    }
+                                    .frame(
+                                        width: FloatingWidgetWindowPolicy
+                                            .miniTimerDividerWidth
+                                    )
+                                }
+                                miniTimerCell(
+                                    model.compactActivityTime(at: timeline.date)
+                                        ?? "00:00",
+                                    color: palette.tealDark,
+                                    label: "Activity timer"
+                                )
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .voiceHoverFeedback(
+                            cornerRadius: 8,
+                            tint: palette.teal
+                        )
+                        .help(
+                            model.miniWidgetLayout == .dualTimer
+                                ? "Hide session timer"
+                                : "Show session timer"
+                        )
+                    } else {
+                        miniTimerCell(
+                            model.miniTimerText(at: timeline.date) ?? "00:00",
+                            color: palette.tealDark,
+                            label: "Current timer"
+                        )
+                    }
                     Color.clear
                         .frame(width: 36, height: 36)
+                        .padding(.leading, 4)
                         .accessibilityHidden(true)
                 }
                 .padding(.horizontal, 4)
             }
         }
+    }
+
+    private func miniTimerCell(
+        _ text: String,
+        color: Color,
+        label: String
+    ) -> some View {
+        Text(text)
+            .font(.system(size: 12, weight: .bold, design: .monospaced))
+            .monospacedDigit()
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+            .frame(
+                width: FloatingWidgetWindowPolicy.miniTimerCellWidth,
+                height: 32,
+                alignment: .center
+            )
+            .accessibilityLabel(label)
+            .accessibilityValue(text)
     }
 
     private func resizeWindow() {
@@ -1543,7 +1628,13 @@ struct FloatingRecorderView: View {
     }
 
     private var recordButton: some View {
-        Button(action: model.toggleRecording) {
+        Button {
+            guard !(
+                model.widgetSizeMode == .mini
+                    && suppressMiniRecordToggle
+            ) else { return }
+            model.toggleRecording()
+        } label: {
             ZStack {
                 miniRecordingGlow
                 Circle()
@@ -1612,6 +1703,29 @@ struct FloatingRecorderView: View {
             tint: model.isRecording ? .red : palette.teal
         )
         .disabled(!model.isStartingRecording && !model.isRecording && !model.canRecord)
+        .simultaneousGesture(
+            DragGesture(
+                minimumDistance: MiniWidgetPointerPolicy.dragThreshold,
+                coordinateSpace: .global
+            )
+            .onChanged { value in
+                guard model.widgetSizeMode == .mini else { return }
+                suppressMiniRecordToggle = true
+                FloatingPanelController.shared.beginMiniDrag()
+                FloatingPanelController.shared.updateMiniDrag(
+                    translation: value.translation
+                )
+            }
+            .onEnded { _ in
+                guard model.widgetSizeMode == .mini else { return }
+                FloatingPanelController.shared.endMiniDrag()
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(100))
+                    suppressMiniRecordToggle = false
+                }
+            },
+            including: model.widgetSizeMode == .mini ? .all : .none
+        )
         .accessibilityLabel(
             model.isBusy
                 ? model.processingStatus
@@ -1630,29 +1744,51 @@ struct FloatingRecorderView: View {
     @ViewBuilder
     private var miniRecordingGlow: some View {
         if model.widgetSizeMode == .mini, model.isRecording {
-            if reduceMotion {
-                miniGlow(level: miniSmoothedLevel, pulse: 0.5)
-            } else {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-                    let duration = MiniWidgetAudioGlowPolicy.pulseDuration(
-                        level: miniSmoothedLevel
+            ZStack {
+                Circle()
+                    .stroke(
+                        palette.recordingSignal.opacity(
+                            MiniWidgetAudioGlowPolicy.persistentRingOpacity
+                        ),
+                        lineWidth: MiniWidgetAudioGlowPolicy.persistentLineWidth
                     )
-                    let radians = (
-                        timeline.date.timeIntervalSinceReferenceDate
-                            .truncatingRemainder(dividingBy: duration)
-                        / duration
-                    ) * .pi * 2
-                    miniGlow(
-                        level: miniSmoothedLevel,
-                        pulse: (sin(radians) + 1) / 2
+                    .frame(
+                        width: MiniWidgetAudioGlowPolicy
+                            .persistentRingDiameter,
+                        height: MiniWidgetAudioGlowPolicy
+                            .persistentRingDiameter
                     )
+                    .shadow(
+                        color: palette.recordingSignal.opacity(0.82),
+                        radius: 7
+                    )
+                if reduceMotion {
+                    miniGlow(level: miniSmoothedLevel, pulse: 0.5)
+                } else {
+                    TimelineView(
+                        .animation(minimumInterval: 1.0 / 30.0)
+                    ) { timeline in
+                        let duration = MiniWidgetAudioGlowPolicy.pulseDuration(
+                            level: miniSmoothedLevel
+                        )
+                        let radians = (
+                            timeline.date.timeIntervalSinceReferenceDate
+                                .truncatingRemainder(dividingBy: duration)
+                            / duration
+                        ) * .pi * 2
+                        miniGlow(
+                            level: miniSmoothedLevel,
+                            pulse: (sin(radians) + 1) / 2
+                        )
+                    }
                 }
             }
+            .allowsHitTesting(false)
         }
     }
 
     private func miniGlow(level: Double, pulse: Double) -> some View {
-        let boundedLevel = max(0, min(1, level))
+        let boundedLevel = max(0, min(1, (level - 0.08) / 0.92))
         let boundedPulse = max(0, min(1, pulse))
         return Circle()
             .stroke(
@@ -1682,6 +1818,7 @@ struct FloatingRecorderView: View {
                 ),
                 radius: MiniWidgetAudioGlowPolicy.shadowRadius(level: boundedLevel)
             )
+            .opacity(boundedLevel > 0 ? 1 : 0)
             .allowsHitTesting(false)
     }
 

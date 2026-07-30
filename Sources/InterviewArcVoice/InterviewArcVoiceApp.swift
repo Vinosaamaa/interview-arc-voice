@@ -165,6 +165,7 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var timerMutationInFlight = false
     @Published private(set) var timerMutationMessage: String?
     @Published var timerPanelExpanded = false
+    @Published var miniSessionTimerExpanded = false
     @Published var activityPickerExpanded = false
     @Published private(set) var finishingActivityID: String?
     @Published var sessionFinishResolutionRequested = false
@@ -458,6 +459,14 @@ final class VoiceBridgeModel: ObservableObject {
         MiniWidgetPresentationPolicy.layout(
             linkEnabled: linkToInterviewArc,
             hasActivityTimer: timerInstrument?.activity?.timer != nil,
+            hasSessionTimer: timerInstrument?.session?.timer != nil,
+            recordingActive: isStartingRecording || isRecording,
+            sessionTimerDisclosed: miniSessionTimerExpanded
+        )
+    }
+    var canExpandMiniSessionTimer: Bool {
+        MiniWidgetPresentationPolicy.canDiscloseSessionTimer(
+            hasActivityTimer: timerInstrument?.activity?.timer != nil,
             hasSessionTimer: timerInstrument?.session?.timer != nil
         )
     }
@@ -507,6 +516,11 @@ final class VoiceBridgeModel: ObservableObject {
         case nil:
             return nil
         }
+    }
+
+    func toggleMiniSessionTimer() {
+        guard canExpandMiniSessionTimer else { return }
+        miniSessionTimerExpanded.toggle()
     }
     private var compactLinkPresentation: CompactVoicePresentation {
         compactPresentationPolicy.presentation(
@@ -890,10 +904,17 @@ final class VoiceBridgeModel: ObservableObject {
         selectedTranscriptIndex += 1
     }
 
-    func insertSelectedTranscriptFromMenu() {
+    func insertSelectedTranscriptFromMenu(
+        dismissMenu: @escaping @MainActor () -> Void
+    ) {
         guard let selectedTranscript else { return }
-        targetApplicationPID = manualInsertionTargetPID(surface: .menuBar)
-        Task {
+        let targetPID = manualInsertionTargetPID(surface: .menuBar)
+        let menuWindow = NSApp.keyWindow
+        dismissMenu()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await waitForMenuDismissal(menuWindow)
+            targetApplicationPID = targetPID
             let inserted = await insertTranscript(
                 selectedTranscript.transcript,
                 editorText: selectedTranscript.editorText,
@@ -930,15 +951,23 @@ final class VoiceBridgeModel: ObservableObject {
         contextMessage = "Capture and Voice v2 envelope copied."
     }
 
-    func insertPendingAgain(_ capture: PendingVoiceCapture) {
+    func insertPendingAgain(
+        _ capture: PendingVoiceCapture,
+        dismissMenu: @escaping @MainActor () -> Void
+    ) {
         let envelope = VoiceCaptureEnvelope(
             captureID: capture.id,
             activityID: capture.activity.activityId,
             turnID: capture.turnID,
             transcript: capture.transcript
         )
-        targetApplicationPID = manualInsertionTargetPID(surface: .menuBar)
-        Task {
+        let targetPID = manualInsertionTargetPID(surface: .menuBar)
+        let menuWindow = NSApp.keyWindow
+        dismissMenu()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await waitForMenuDismissal(menuWindow)
+            targetApplicationPID = targetPID
             let inserted = await insertTranscript(
                 capture.transcript,
                 editorText: envelope.editorText,
@@ -953,6 +982,27 @@ final class VoiceBridgeModel: ObservableObject {
                 phase = hasGroqCredential ? .idle : .setup
                 contextMessage = "No editable cursor was available."
             }
+        }
+    }
+
+    private func waitForMenuDismissal(_ window: NSWindow?) async {
+        guard let window else {
+            await Task.yield()
+            return
+        }
+        for _ in 0..<MenuInsertionDismissalPolicy.maximumChecks {
+            if MenuInsertionDismissalPolicy.hasDismissed(
+                windowIsVisible: window.isVisible,
+                windowIsKey: window.isKeyWindow
+            ) {
+                await Task.yield()
+                return
+            }
+            try? await Task.sleep(
+                for: .milliseconds(
+                    MenuInsertionDismissalPolicy.pollingMilliseconds
+                )
+            )
         }
     }
 
@@ -3496,6 +3546,7 @@ private struct WidgetThemePreview: View {
 
 private struct VoiceBridgeMenu: View {
     @ObservedObject var model: VoiceBridgeModel
+    @Environment(\.dismiss) private var dismiss
     @State private var showsAllCaptures = false
 
     var body: some View {
@@ -3730,32 +3781,31 @@ private struct VoiceBridgeMenu: View {
     private var transcriptPreview: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("LAST TRANSCRIPT").font(.caption2.weight(.bold)).tracking(0.8).foregroundStyle(.secondary)
+                Text("RECENT TRANSCRIPTS")
+                    .font(.caption2.weight(.bold))
+                    .tracking(0.8)
+                    .foregroundStyle(.secondary)
                 Spacer()
-                memoAction(
-                    symbol: "doc.on.doc",
-                    label: "Copy transcript",
-                    disabled: model.selectedTranscript == nil,
-                    action: model.copySelectedTranscript
-                )
-                memoAction(
-                    symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
-                    label: model.isPlayingLastAudio ? "Pause recording" : "Play recording",
-                    disabled: !model.selectedTranscriptOwnsAudio,
-                    action: model.toggleLastAudioPlayback
-                )
-                memoAction(
-                    symbol: "square.and.arrow.down",
-                    label: "Save audio and transcript",
-                    disabled: !model.selectedTranscriptOwnsAudio,
-                    action: model.exportLastMemo
-                )
-                memoAction(
-                    symbol: "text.cursor",
-                    label: "Insert transcript again",
-                    disabled: model.selectedTranscript == nil,
-                    action: model.insertSelectedTranscriptFromMenu
-                )
+                if model.transcriptHistory.count > 1 {
+                    Text(model.selectedTranscriptPosition)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(
+                            "Transcript \(model.selectedTranscriptPosition)"
+                        )
+                    memoAction(
+                        symbol: "chevron.left",
+                        label: "Newer transcript",
+                        disabled: !model.canSelectNewerTranscript,
+                        action: model.selectNewerTranscript
+                    )
+                    memoAction(
+                        symbol: "chevron.right",
+                        label: "Older transcript",
+                        disabled: !model.canSelectOlderTranscript,
+                        action: model.selectOlderTranscript
+                    )
+                }
             }
             if let selectedTranscript = model.selectedTranscript {
                 ScrollView {
@@ -3786,23 +3836,37 @@ private struct VoiceBridgeMenu: View {
                     .voiceHoverFeedback(enabled: !model.isBusy && !model.isRecording, cornerRadius: 6)
                     .disabled(model.isBusy || model.isRecording)
                 }
-                Text(model.selectedTranscriptPosition)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(
-                        "Transcript \(model.selectedTranscriptPosition)"
-                    )
                 memoAction(
-                    symbol: "chevron.left",
-                    label: "Newer transcript",
-                    disabled: !model.canSelectNewerTranscript,
-                    action: model.selectNewerTranscript
+                    symbol: "doc.on.doc",
+                    label: "Copy transcript",
+                    disabled: model.selectedTranscript == nil,
+                    action: model.copySelectedTranscript
                 )
                 memoAction(
-                    symbol: "chevron.right",
-                    label: "Older transcript",
-                    disabled: !model.canSelectOlderTranscript,
-                    action: model.selectOlderTranscript
+                    symbol: model.isPlayingLastAudio
+                        ? "pause.fill"
+                        : "play.fill",
+                    label: model.isPlayingLastAudio
+                        ? "Pause recording"
+                        : "Play recording",
+                    disabled: !model.selectedTranscriptOwnsAudio,
+                    action: model.toggleLastAudioPlayback
+                )
+                memoAction(
+                    symbol: "square.and.arrow.down",
+                    label: "Save audio and transcript",
+                    disabled: !model.selectedTranscriptOwnsAudio,
+                    action: model.exportLastMemo
+                )
+                memoAction(
+                    symbol: "text.cursor",
+                    label: "Insert transcript again",
+                    disabled: model.selectedTranscript == nil,
+                    action: {
+                        model.insertSelectedTranscriptFromMenu {
+                            dismiss()
+                        }
+                    }
                 )
             }
         }
@@ -3885,7 +3949,9 @@ private struct VoiceBridgeMenu: View {
             }
             HStack(spacing: 5) {
                 captureAction("Insert Again", symbol: "text.cursor") {
-                    model.insertPendingAgain(capture)
+                    model.insertPendingAgain(capture) {
+                        dismiss()
+                    }
                 }
                 captureAction("Copy", symbol: "doc.on.doc") {
                     model.copyPendingCapture(capture)

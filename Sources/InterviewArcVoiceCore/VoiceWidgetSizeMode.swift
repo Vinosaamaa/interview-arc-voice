@@ -32,28 +32,45 @@ public enum VoiceWidgetSizeMode: String, CaseIterable, Codable, Identifiable, Se
 
 public enum MiniWidgetLayout: Equatable, Sendable {
     case microphoneOnly
-    case timer
+    case singleTimer
+    case dualTimer
 }
 
 public enum MiniWidgetPresentationPolicy {
     public static func layout(
         linkEnabled: Bool,
         hasActivityTimer: Bool,
-        hasSessionTimer: Bool
+        hasSessionTimer: Bool,
+        recordingActive: Bool,
+        sessionTimerDisclosed: Bool
     ) -> MiniWidgetLayout {
-        guard linkEnabled, hasActivityTimer || hasSessionTimer else {
+        guard !recordingActive,
+              linkEnabled,
+              hasActivityTimer || hasSessionTimer else {
             return .microphoneOnly
         }
-        return .timer
+        if hasActivityTimer, hasSessionTimer, sessionTimerDisclosed {
+            return .dualTimer
+        }
+        return .singleTimer
     }
 
     public static func width(for layout: MiniWidgetLayout) -> CGFloat {
         switch layout {
         case .microphoneOnly:
             FloatingWidgetWindowPolicy.miniMicrophoneWidth
-        case .timer:
+        case .singleTimer:
             FloatingWidgetWindowPolicy.miniTimerWidth
+        case .dualTimer:
+            FloatingWidgetWindowPolicy.miniDualTimerWidth
         }
+    }
+
+    public static func canDiscloseSessionTimer(
+        hasActivityTimer: Bool,
+        hasSessionTimer: Bool
+    ) -> Bool {
+        hasActivityTimer && hasSessionTimer
     }
 
     public static func timerSource(
@@ -74,12 +91,15 @@ public enum MiniWidgetTimerSource: Equatable, Sendable {
 public enum MiniWidgetAudioGlowPolicy {
     public static let quietDecibels: Double = -55
     public static let loudDecibels: Double = -8
-    public static let minimumRingDiameter: CGFloat = 40
-    public static let maximumRingDiameter: CGFloat = 44
-    public static let minimumRingOpacity = 0.62
+    public static let persistentRingDiameter: CGFloat = 44
+    public static let persistentRingOpacity = 0.96
+    public static let persistentLineWidth: CGFloat = 3.2
+    public static let minimumRingDiameter: CGFloat = 44
+    public static let maximumRingDiameter: CGFloat = 48
+    public static let minimumRingOpacity = 0.28
     public static let maximumRingOpacity = 1.0
-    public static let minimumLineWidth: CGFloat = 2.2
-    public static let maximumLineWidth: CGFloat = 3.6
+    public static let minimumLineWidth: CGFloat = 2.0
+    public static let maximumLineWidth: CGFloat = 4.0
 
     public static func normalizedLevel(decibels: Double) -> Double {
         let span = loudDecibels - quietDecibels
@@ -107,8 +127,8 @@ public enum MiniWidgetAudioGlowPolicy {
         return min(
             maximumRingDiameter,
             minimumRingDiameter
-                + (CGFloat(boundedLevel) * 2.5)
-                + (CGFloat(boundedPulse) * 1.5)
+                + (CGFloat(boundedLevel) * 3.0)
+                + (CGFloat(boundedPulse) * 1.0)
         )
     }
 
@@ -117,7 +137,7 @@ public enum MiniWidgetAudioGlowPolicy {
         let boundedPulse = max(0, min(1, pulse))
         return min(
             maximumRingOpacity,
-            minimumRingOpacity + (boundedLevel * 0.26) + (boundedPulse * 0.12)
+            minimumRingOpacity + (boundedLevel * 0.58) + (boundedPulse * 0.14)
         )
     }
 

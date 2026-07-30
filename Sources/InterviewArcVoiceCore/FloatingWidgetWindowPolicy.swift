@@ -60,7 +60,10 @@ public enum FloatingWidgetWindowPolicy {
     public static let recordingWidth: CGFloat = 340
     public static let miniMicrophoneWidth: CGFloat = 48
     public static let miniMicrophoneSurfaceDiameter: CGFloat = 40
-    public static let miniTimerWidth: CGFloat = 118
+    public static let miniTimerCellWidth: CGFloat = 60
+    public static let miniTimerDividerWidth: CGFloat = 9
+    public static let miniTimerWidth: CGFloat = 108
+    public static let miniDualTimerWidth: CGFloat = 177
     public static let recordingWaveformSampleCount = 64
     public static let recordingWaveformBarWidth: CGFloat = 1
     public static let playbackWidth: CGFloat = 410
@@ -109,6 +112,14 @@ public enum FloatingWidgetWindowPolicy {
 
 public enum FloatingWidgetMotionPolicy {
     public static let durationSeconds: TimeInterval = 0.30
+}
+
+public enum MiniWidgetPointerPolicy {
+    public static let dragThreshold: CGFloat = 5
+
+    public static func isDrag(translation: CGSize) -> Bool {
+        hypot(translation.width, translation.height) >= dragThreshold
+    }
 }
 
 public enum FloatingWidgetCompactTimerLayoutPolicy {

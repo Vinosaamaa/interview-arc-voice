@@ -72,6 +72,19 @@ public struct ManualInsertionTargetPolicy: Sendable {
     }
 }
 
+public enum MenuInsertionDismissalPolicy {
+    public static let pollingMilliseconds = 25
+    public static let maximumChecks = 36
+
+    public static func hasDismissed(
+        windowIsVisible: Bool,
+        windowIsKey: Bool
+    ) -> Bool {
+        _ = windowIsKey
+        return !windowIsVisible
+    }
+}
+
 public struct LocalTranscriptRecord: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public let createdAt: Date
@@ -113,7 +126,7 @@ public actor LocalTranscriptHistoryStore {
     public init(
         directory: URL,
         retentionDuration: TimeInterval = 24 * 60 * 60,
-        retentionLimit: Int = 5,
+        retentionLimit: Int = 20,
         fileManager: FileManager = .default
     ) throws {
         self.retentionDuration = max(1, retentionDuration)
