@@ -110,14 +110,14 @@ Save, and Retry instead of being discarded.
   timer exists. Tapping an activity timer can prepend the session countdown on
   the left without moving the activity clock or microphone. Recording always
   shrinks Mini to the same one-circle state and restores the prior timer
-  disclosure on Stop. A restrained amber ring remains visible during silence;
-  ordinary speech immediately adds a thick, bright-yellow level arc and faster
-  volume-reactive halo. The contrast is intentionally strong enough to answer
-  “is the microphone hearing me?” without moving or resizing the Stop control.
-  The meter is constrained to a circular alpha envelope, so the transparent
-  Mini host never exposes a rectangular glow on light or dark backgrounds.
-  Clicking toggles recording, while dragging past the movement threshold only
-  repositions the widget.
+  disclosure on Stop. The red Stop mark becomes a four-point dot during
+  silence and expands with local speech volume into a rounded square that
+  remains inside the fixed circular control. Its fast attack and slower release
+  make ordinary speech visible without moving the microphone face. The
+  transparent Mini host never exposes a rectangular glow on light or dark
+  backgrounds. Clicking toggles recording, while dragging past the movement
+  threshold repositions the widget exactly with the pointer and suppresses
+  both recording and timer-disclosure clicks.
   Detailed memo and recovery controls remain in the menu-bar panel. Standard
   and Mini share one trailing microphone control and one bottom-right-anchored
   window resize, preventing a mode switch from moving or flashing the control.

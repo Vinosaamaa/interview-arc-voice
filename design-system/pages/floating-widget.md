@@ -35,7 +35,6 @@ The following table defines the default `Arctic Teal` theme.
 | `linkOff` | `#173A68` | Hollow broken-chain mark |
 | `connectedIdle` | `#A65D1C` | Interview Arc connected, but speech is using general dictation |
 | `warning` | `#B85A32` | Compact actionable failure |
-| `recordingSignal` | `#FFD12E` family | High-visibility Mini recording ring |
 
 Alternate themes replace these values through the centralized palette only.
 Status colors may be used only when they communicate a real state.
@@ -123,18 +122,22 @@ least 58 points for the activity title.
   the session cell. A session-only timer has no disclosure.
 - Starting or preparing a recording shrinks any Mini timer capsule into the
   same one-circle recording state. Stop restores the exact single- or
-  dual-timer disclosure. Recording swaps the microphone for the unmistakable
-  red Stop symbol and keeps a restrained amber ring visible even during
-  silence. Speech adds a thick bright-yellow level arc plus a faster second
-  halo driven by the recorder's smoothed local power meter. Conversational
-  speech—not only shouting—must produce an obvious response. Silence and
-  detected sound must be distinguishable at a glance. The feedback never moves
-  the control or adds network/transcription work. All meter paint is clipped to
-  a circular alpha envelope inside the transparent host. A rectangular glow,
-  backing fill, or clipped square is a release-blocking defect on every
-  desktop background.
+  dual-timer disclosure. Recording keeps the 32-point circular face fixed and
+  replaces the microphone with an expanding red Stop mark driven by the
+  recorder's smoothed local power meter. Silence is a four-point dot. Speech
+  grows it continuously into a rounded square, and loud speech approaches but
+  never exceeds 28 points inside the face. Attack is deliberately faster than
+  release so ordinary speech—not only shouting—produces an obvious response
+  without flicker. The feedback never moves the outer control or adds
+  network/transcription work. The transparent 48-point host contains no meter
+  ring, glow, backing fill, or rectangular alpha; any visible outer square is a
+  release-blocking defect on every desktop background.
 - A click toggles recording. Movement beyond the five-point drag threshold
-  moves the panel and cancels the click, whether Mini is idle or recording.
+  moves the panel exactly one-for-one in macOS screen coordinates and cancels
+  the click, whether Mini is idle, recording, or showing timers. Mini has one
+  movement owner; AppKit background dragging and SwiftUI dragging must never
+  run simultaneously. Dragging the timer region must not toggle its
+  single-/dual-timer disclosure.
 - Previous-capture, playback, failure, recovery, picker, and finish controls
   remain available in the menu-bar popover. Returning to Standard renders the
   current authoritative state rather than a stale hidden drawer.
