@@ -3,8 +3,8 @@
 - Incident issues:
   [#33](https://github.com/Vinosaamaa/interview-arc-voice/issues/33),
   [#81](https://github.com/Vinosaamaa/interview-arc-voice/issues/81)
-- Status: whole-recording failure remediated; incomplete-alignment recurrence
-  repair implemented and awaiting merged-artifact verification
+- Status: recurrence repair in progress; exact merged-artifact verification
+  required
 - Affected surface: general dictation and Interview Arc-linked recording
 - Severity: data-integrity risk
 
@@ -107,6 +107,15 @@ unrelated portion of a long answer. That global fail-open rule preserved
 genuine text, but it also prevented a separate, uniquely identifiable
 timestamped hallucination run from being removed.
 
+A third installed recurrence occurred after the hand-built whole-capture
+threshold was extended to require a 260 ms speech-like span. The exact
+merged-main executable passed one staged silent capture, then admitted a second
+silent AirPods capture after installation. That attempt reached the provider
+and delivered a known two-word hallucination. The byte-identical result proved
+that a longer Bluetooth/profile-transition artifact could still satisfy the
+energy, zero-crossing, crest-factor, and duration heuristic. Threshold tuning
+alone was not an adequate independent proof of human speech.
+
 ## Resolution
 
 `LocalSpeechEvidenceAnalyzer` decodes the finalized file locally and evaluates
@@ -121,6 +130,23 @@ timestamped hallucination run from being removed.
 Only audio with positive local speech evidence continues to transcription.
 This adds no network request and uses a small linear pass over decoded mono
 samples. On a 30-minute answer, the work remains O(n) with bounded frame state.
+
+The third recurrence adds an independent whole-capture admission check using
+the WebRTC voice-activity detector pinned through Swift Package Manager.
+Decoded samples are deterministically resampled to 16 kHz and evaluated in
+20 ms frames using the detector's very-aggressive mode. The final Boolean now
+requires both gates:
+
+- the existing acoustic-frame heuristic must find the minimum sustained span;
+- WebRTC VAD must find at least 12 consecutive active frames and at least 12
+  active frames total for sub-750 ms captures, or 14 total for longer
+  captures; and
+- detector setup or processing failure fails closed.
+
+The existing frame timeline remains unchanged for Enhanced timestamp-local
+validation. The VAD does not rewrite audio, inspect transcript text, invoke an
+AI classifier, or add a provider request. Diagnostics persist only the VAD
+active-frame count and longest run.
 
 For Enhanced protection, that same scan retains each 20 ms frame's speech-like
 decision and level. The existing verbose Groq response retains timestamped
@@ -176,6 +202,9 @@ Deterministic regression fixtures cover:
 - steady fan-like hum;
 - isolated keyboard-like clicks;
 - short, soft, speech-shaped audio.
+- Bluetooth/profile-transition noise rejected by independent VAD;
+- valid short speech accepted at both 16 kHz and the 24 kHz AirPods fallback
+  rate;
 - speech before and after one or multiple sustained pauses;
 - a genuinely spoken “Thank you”;
 - suspicious “Thank you” and prompt-derived vocabulary over silence;
@@ -189,6 +218,7 @@ Deterministic regression fixtures cover:
 - incomplete provider segment metadata;
 - one-provider-call behavior and older saved-result compatibility;
 - bounded permission-0600 diagnostics with no private content.
+- backward-compatible diagnostic decoding with optional VAD metrics.
 
 The optimized frame comparison remains linear and uses the already decoded
 timeline. Word alignment and source-range filtering are also linear in the
@@ -206,6 +236,13 @@ room tone, a click, “Thank you,” a soft short answer, general dictation, and
 linked mode. Network logs and Interview Arc state must confirm that rejected
 captures create no provider call, insertion, D1 turn, R2 object, or coaching
 job.
+
+For the third recurrence, staged and installed verification must additionally
+confirm that a silent AirPods/profile-transition capture reports `noSpeech`,
+provider wait remains zero, and the diagnostic contains VAD frame/run counts.
+The exact same installed executable must then preserve a genuine short AirPods
+utterance. Issues #33 and #58 remain open until that installed positive/negative
+matrix passes.
 
 ## Prevention and follow-up
 

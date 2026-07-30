@@ -277,3 +277,32 @@ tokens, and private URLs. Regression coverage requires restart decisions
 Issue #58 remains the canonical microphone incident. Final merged-main package,
 AirPods verification, executable hash, and rollback location are recorded in
 its resolution history after release.
+
+## Fifth recurrence: transition audio passed whole-capture admission
+
+The two-transition recovery state machine shipped through PR #97 and passed
+CI, signature checks, package checks, and one staged silent capture. A second
+silent capture using the exact same executable after installation nevertheless
+reached Groq and delivered a known two-word hallucination.
+
+The capture-backend repair remained present: Voice still bounded recovery to
+the primary recorder, one engine fallback, and one clean engine rebind. The
+remaining failure was downstream. The hand-built whole-capture speech
+heuristic treated a longer AirPods/profile-transition artifact as sustained
+speech. Once that gate passed, provider confidence and complete two-word
+alignment could not prove that the input was non-speech.
+
+The follow-up preserves the recovery state machine and adds an independent
+WebRTC VAD requirement before any provider call. The decoded mono audio is
+resampled to 16 kHz, inspected in 20 ms frames, and must contain a sustained
+VAD-positive run. The preexisting energy/zero-crossing/crest heuristic remains
+the second required gate and continues to own Enhanced timestamp-local
+evidence. Either detector failing rejects locally. Diagnostics add only
+privacy-safe VAD frame/run counts.
+
+Deterministic coverage includes silence, hum, isolated clicks, a modeled short
+Bluetooth transition, soft short speech, and speech at the AirPods 24 kHz
+fallback rate. Release completion still requires the exact merged-main signed
+artifact to pass both a silent AirPods capture with zero provider wait and a
+genuine short spoken AirPods capture. Until then, issues #58 and #33 remain
+open.
