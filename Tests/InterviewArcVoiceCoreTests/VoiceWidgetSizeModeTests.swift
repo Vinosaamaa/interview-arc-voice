@@ -172,6 +172,20 @@ struct VoiceWidgetSizeModeTests {
                 translation: CGSize(width: 5, height: 0)
             )
         )
+
+        let origin = MiniWidgetPointerPolicy.translatedOrigin(
+            startOrigin: CGPoint(x: 120, y: 80),
+            startPointer: CGPoint(x: 400, y: 300),
+            currentPointer: CGPoint(x: 525, y: 255)
+        )
+        #expect(origin == CGPoint(x: 245, y: 35))
+
+        let clamped = MiniWidgetPointerPolicy.clampedOrigin(
+            proposed: CGPoint(x: -200, y: 900),
+            panelSize: CGSize(width: 108, height: 56),
+            visibleFrame: CGRect(x: 0, y: 0, width: 800, height: 600)
+        )
+        #expect(clamped == CGPoint(x: 0, y: 544))
     }
 
     @Test
@@ -195,59 +209,58 @@ struct VoiceWidgetSizeModeTests {
     }
 
     @Test
-    func audioGlowLevelIsBoundedSmoothedAndFasterWhenLouder() {
-        #expect(MiniWidgetAudioGlowPolicy.normalizedLevel(decibels: -90) == 0)
-        #expect(MiniWidgetAudioGlowPolicy.normalizedLevel(decibels: 0) == 1)
+    func expandingStopIsBoundedResponsiveAndVisibleAtConversationLevel() {
+        #expect(
+            MiniWidgetExpandingStopPolicy.normalizedLevel(decibels: -90) == 0
+        )
+        #expect(
+            MiniWidgetExpandingStopPolicy.normalizedLevel(decibels: 0) == 1
+        )
 
-        let quiet = MiniWidgetAudioGlowPolicy.normalizedLevel(decibels: -45)
-        let conversational = MiniWidgetAudioGlowPolicy.normalizedLevel(
+        let quiet = MiniWidgetExpandingStopPolicy.normalizedLevel(
+            decibels: -45
+        )
+        let conversational = MiniWidgetExpandingStopPolicy.normalizedLevel(
             decibels: -30
         )
-        let loud = MiniWidgetAudioGlowPolicy.normalizedLevel(decibels: -18)
+        let loud = MiniWidgetExpandingStopPolicy.normalizedLevel(
+            decibels: -18
+        )
         #expect(loud > quiet)
         #expect(conversational >= 0.7)
 
-        let smoothed = MiniWidgetAudioGlowPolicy.smoothedLevel(
-            previous: 0.2,
+        let attack = MiniWidgetExpandingStopPolicy.smoothedLevel(
+            previous: 0.1,
             current: 1
         )
-        #expect(smoothed >= 0.5)
-        #expect(smoothed < 1)
-        #expect(
-            MiniWidgetAudioGlowPolicy.pulseDuration(level: loud)
-                < MiniWidgetAudioGlowPolicy.pulseDuration(level: quiet)
+        let release = MiniWidgetExpandingStopPolicy.smoothedLevel(
+            previous: 0.9,
+            current: 0
         )
-
+        #expect(attack - 0.1 > 0.9 - release)
         #expect(
-            MiniWidgetAudioGlowPolicy.ringOpacity(level: loud, pulse: 1)
-                > MiniWidgetAudioGlowPolicy.ringOpacity(level: quiet, pulse: 0)
+            MiniWidgetExpandingStopPolicy.stopSize(level: 0)
+                == MiniWidgetExpandingStopPolicy.minimumSize
         )
         #expect(
-            MiniWidgetAudioGlowPolicy.ringLineWidth(level: loud)
-                > MiniWidgetAudioGlowPolicy.ringLineWidth(level: quiet)
+            MiniWidgetExpandingStopPolicy.stopSize(level: conversational)
+                > MiniWidgetExpandingStopPolicy.stopSize(level: quiet)
         )
         #expect(
-            MiniWidgetAudioGlowPolicy.maximumLineWidth
-                >= MiniWidgetAudioGlowPolicy.persistentLineWidth * 2
+            MiniWidgetExpandingStopPolicy.stopSize(level: loud)
+                == MiniWidgetExpandingStopPolicy.maximumSize
         )
         #expect(
-            MiniWidgetAudioGlowPolicy.meterArcDiameter
-                + MiniWidgetAudioGlowPolicy.maximumLineWidth
-                <= MiniWidgetAudioGlowPolicy.visualEnvelopeDiameter
+            MiniWidgetExpandingStopPolicy.maximumSize < 32
         )
         #expect(
-            MiniWidgetAudioGlowPolicy.visualEnvelopeDiameter
-                <= FloatingWidgetWindowPolicy.miniMicrophoneWidth
+            MiniWidgetExpandingStopPolicy.cornerRadius(
+                for: MiniWidgetExpandingStopPolicy.minimumSize
+            ) == MiniWidgetExpandingStopPolicy.minimumSize / 2
         )
         #expect(
-            MiniWidgetAudioGlowPolicy.meterArcFraction(level: quiet)
-                < MiniWidgetAudioGlowPolicy.meterArcFraction(level: loud)
-        )
-        #expect(
-            MiniWidgetAudioGlowPolicy.meterArcFraction(level: 0) == 0
-        )
-        #expect(
-            MiniWidgetAudioGlowPolicy.meterArcFraction(level: 1) == 1
+            MiniWidgetExpandingStopPolicy.accessibilityDescription(level: 0)
+                == "No sound detected"
         )
     }
 

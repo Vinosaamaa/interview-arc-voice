@@ -88,21 +88,18 @@ public enum MiniWidgetTimerSource: Equatable, Sendable {
     case session
 }
 
-public enum MiniWidgetAudioGlowPolicy {
+public enum MiniWidgetExpandingStopPolicy {
     // AVAudioRecorder's ordinary close-range speech commonly sits around
     // -35...-22 dB. Saturating at -22 dB gives conversational speech enough
     // visual range without requiring the user to shout.
     public static let quietDecibels: Double = -55
     public static let loudDecibels: Double = -22
-    public static let persistentRingDiameter: CGFloat = 44
-    public static let persistentRingOpacity = 0.52
-    public static let persistentLineWidth: CGFloat = 2.4
-    public static let visualEnvelopeDiameter: CGFloat = 44
-    public static let meterArcDiameter: CGFloat = 37.5
-    public static let minimumRingOpacity = 0.46
-    public static let maximumRingOpacity = 1.0
-    public static let minimumLineWidth: CGFloat = 2.5
-    public static let maximumLineWidth: CGFloat = 6.5
+    public static let activationThreshold = 0.16
+    public static let minimumSize: CGFloat = 4
+    public static let maximumSize: CGFloat = 28
+    public static let maximumCornerRadius: CGFloat = 6
+    public static let attackResponse = 0.60
+    public static let releaseResponse = 0.25
 
     public static func normalizedLevel(decibels: Double) -> Double {
         let span = loudDecibels - quietDecibels
@@ -112,34 +109,47 @@ public enum MiniWidgetAudioGlowPolicy {
 
     public static func smoothedLevel(
         previous: Double,
-        current: Double,
-        response: Double = 0.42
+        current: Double
     ) -> Double {
+        let response = current >= previous ? attackResponse : releaseResponse
         let clampedResponse = max(0, min(1, response))
         let value = previous + ((current - previous) * clampedResponse)
         return max(0, min(1, value))
     }
 
-    public static func pulseDuration(level: Double) -> TimeInterval {
-        1.25 - (max(0, min(1, level)) * 0.72)
-    }
-
-    public static func ringOpacity(level: Double, pulse: Double) -> Double {
-        let boundedLevel = max(0, min(1, level))
-        let boundedPulse = max(0, min(1, pulse))
+    public static func visibleLevel(level: Double) -> Double {
+        let bounded = max(0, min(1, level))
+        guard bounded > activationThreshold else { return 0 }
         return min(
-            maximumRingOpacity,
-            minimumRingOpacity + (boundedLevel * 0.58) + (boundedPulse * 0.14)
+            1,
+            (bounded - activationThreshold) / (1 - activationThreshold)
         )
     }
 
-    public static func ringLineWidth(level: Double) -> CGFloat {
-        let boundedLevel = max(0, min(1, level))
-        return minimumLineWidth
-            + (CGFloat(boundedLevel) * (maximumLineWidth - minimumLineWidth))
+    public static func stopSize(level: Double) -> CGFloat {
+        let visible = visibleLevel(level: level)
+        let emphasized = pow(visible, 0.72)
+        return minimumSize
+            + CGFloat(emphasized) * (maximumSize - minimumSize)
     }
 
-    public static func meterArcFraction(level: Double) -> Double {
-        max(0, min(1, level))
+    public static func cornerRadius(for size: CGFloat) -> CGFloat {
+        min(
+            max(0, size / 2),
+            maximumCornerRadius
+        )
+    }
+
+    public static func accessibilityDescription(level: Double) -> String {
+        switch visibleLevel(level: level) {
+        case 0:
+            "No sound detected"
+        case ..<0.35:
+            "Quiet sound detected"
+        case ..<0.78:
+            "Sound detected"
+        default:
+            "Loud sound detected"
+        }
     }
 }

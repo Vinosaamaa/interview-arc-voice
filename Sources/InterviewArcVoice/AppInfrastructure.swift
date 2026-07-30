@@ -26,7 +26,6 @@ struct VoiceWidgetPalette {
     let linkOff: Color
     let connectedIdle: Color
     let warning: Color
-    let recordingSignal: Color
     let previewBackground: Color
     let isDark: Bool
 
@@ -48,7 +47,6 @@ struct VoiceWidgetPalette {
                 linkOff: Color(red: 0.090, green: 0.227, blue: 0.408),
                 connectedIdle: Color(red: 0.651, green: 0.365, blue: 0.110),
                 warning: Color(red: 0.722, green: 0.353, blue: 0.196),
-                recordingSignal: Color(red: 1.000, green: 0.820, blue: 0.180),
                 previewBackground: Color(red: 0.941, green: 0.963, blue: 0.963),
                 isDark: false
             )
@@ -68,7 +66,6 @@ struct VoiceWidgetPalette {
                 linkOff: Color(red: 0.420, green: 0.619, blue: 0.902),
                 connectedIdle: Color(red: 1.000, green: 0.636, blue: 0.239),
                 warning: Color(red: 1.000, green: 0.404, blue: 0.337),
-                recordingSignal: Color(red: 1.000, green: 0.925, blue: 0.220),
                 previewBackground: Color(red: 0.018, green: 0.027, blue: 0.059),
                 isDark: true
             )
@@ -88,7 +85,6 @@ struct VoiceWidgetPalette {
                 linkOff: Color(red: 0.431, green: 0.616, blue: 0.863),
                 connectedIdle: Color(red: 0.965, green: 0.651, blue: 0.310),
                 warning: Color(red: 0.976, green: 0.424, blue: 0.345),
-                recordingSignal: Color(red: 1.000, green: 0.875, blue: 0.270),
                 previewBackground: Color(red: 0.024, green: 0.055, blue: 0.110),
                 isDark: true
             )
@@ -108,7 +104,6 @@ struct VoiceWidgetPalette {
                 linkOff: Color(red: 0.456, green: 0.596, blue: 0.792),
                 connectedIdle: Color(red: 1.000, green: 0.702, blue: 0.310),
                 warning: Color(red: 1.000, green: 0.388, blue: 0.259),
-                recordingSignal: Color(red: 1.000, green: 0.790, blue: 0.165),
                 previewBackground: Color(red: 0.086, green: 0.075, blue: 0.063),
                 isDark: true
             )
@@ -128,7 +123,6 @@ struct VoiceWidgetPalette {
                 linkOff: Color(red: 0.169, green: 0.298, blue: 0.510),
                 connectedIdle: Color(red: 0.682, green: 0.365, blue: 0.118),
                 warning: Color(red: 0.745, green: 0.294, blue: 0.235),
-                recordingSignal: Color(red: 1.000, green: 0.760, blue: 0.220),
                 previewBackground: Color(red: 0.996, green: 0.957, blue: 0.965),
                 isDark: false
             )
@@ -722,6 +716,8 @@ final class FloatingPanelController {
     static let shared = FloatingPanelController()
     private var panel: NSPanel?
     private var miniDragStartFrame: NSRect?
+    private var miniDragStartPointer: CGPoint?
+    private var miniDragDidMove = false
 
     func show(model: VoiceBridgeModel) {
         if let panel {
@@ -750,7 +746,12 @@ final class FloatingPanelController {
         panel.hasShadow = FloatingWidgetWindowPolicy.usesNativeWindowShadow
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.isMovableByWindowBackground = true
+        // Mini owns one thresholded drag path below. Letting AppKit move the
+        // borderless window at the same time makes the two coordinate systems
+        // fight, producing under-travel, oscillation, and direction reversals.
+        // Standard preserves its established native background drag behavior.
+        panel.isMovableByWindowBackground =
+            model.widgetSizeMode == .standard
         panel.becomesKeyOnlyIfNeeded = true
         let hostingView = TransparentHostingView(
             rootView: FloatingRecorderView(model: model)
@@ -797,21 +798,61 @@ final class FloatingPanelController {
         }
     }
 
-    func beginMiniDrag() {
+    func setNativeBackgroundDragging(for mode: VoiceWidgetSizeMode) {
+        panel?.isMovableByWindowBackground = mode == .standard
+    }
+
+    func beginMiniDrag(pointerLocation: CGPoint) {
         guard let panel, miniDragStartFrame == nil else { return }
         miniDragStartFrame = panel.frame
+        miniDragStartPointer = pointerLocation
+        miniDragDidMove = false
     }
 
-    func updateMiniDrag(translation: CGSize) {
-        guard let panel, let start = miniDragStartFrame else { return }
-        var frame = start
-        frame.origin.x += translation.width
-        frame.origin.y -= translation.height
-        panel.setFrame(frame, display: true)
+    @discardableResult
+    func updateMiniDrag(pointerLocation: CGPoint) -> Bool {
+        guard let panel,
+              let startFrame = miniDragStartFrame,
+              let startPointer = miniDragStartPointer else {
+            return false
+        }
+        let translation = MiniWidgetPointerPolicy.screenTranslation(
+            from: startPointer,
+            to: pointerLocation
+        )
+        guard miniDragDidMove
+                || MiniWidgetPointerPolicy.isDrag(translation: translation) else {
+            return false
+        }
+
+        miniDragDidMove = true
+        let proposed = MiniWidgetPointerPolicy.translatedOrigin(
+            startOrigin: startFrame.origin,
+            startPointer: startPointer,
+            currentPointer: pointerLocation
+        )
+        let screen = NSScreen.screens.first {
+            $0.frame.contains(pointerLocation)
+        } ?? panel.screen ?? NSScreen.main
+        let origin = screen.map {
+            MiniWidgetPointerPolicy.clampedOrigin(
+                proposed: proposed,
+                panelSize: panel.frame.size,
+                visibleFrame: $0.visibleFrame
+            )
+        } ?? proposed
+        panel.contentView?.layer?.removeAllAnimations()
+        panel.setFrameOrigin(origin)
+        return true
     }
 
-    func endMiniDrag() {
+    @discardableResult
+    func endMiniDrag() -> Bool {
+        let didMove = miniDragDidMove
         miniDragStartFrame = nil
+        miniDragStartPointer = nil
+        miniDragDidMove = false
+        return didMove
     }
 }
 
@@ -1000,7 +1041,7 @@ struct FloatingRecorderView: View {
     @ObservedObject var model: VoiceBridgeModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var miniSmoothedLevel = 0.0
-    @State private var suppressMiniRecordToggle = false
+    @State private var suppressMiniClick = false
 
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
@@ -1036,15 +1077,20 @@ struct FloatingRecorderView: View {
             )
         }
         .onChange(of: model.floatingSize) { _, _ in resizeWindow() }
+        .onChange(of: model.widgetSizeMode) { _, mode in
+            FloatingPanelController.shared.setNativeBackgroundDragging(
+                for: mode
+            )
+        }
         .onChange(of: model.isRecording) { _, isRecording in
             if !isRecording { miniSmoothedLevel = 0 }
         }
         .onReceive(model.recorder.$averagePower) { averagePower in
             guard model.widgetSizeMode == .mini, model.isRecording else { return }
-            let current = MiniWidgetAudioGlowPolicy.normalizedLevel(
+            let current = MiniWidgetExpandingStopPolicy.normalizedLevel(
                 decibels: Double(averagePower)
             )
-            miniSmoothedLevel = MiniWidgetAudioGlowPolicy.smoothedLevel(
+            miniSmoothedLevel = MiniWidgetExpandingStopPolicy.smoothedLevel(
                 previous: miniSmoothedLevel,
                 current: current
             )
@@ -1118,6 +1164,10 @@ struct FloatingRecorderView: View {
                 ? nil
                 : .easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds),
             value: model.miniWidgetLayout
+        )
+        .simultaneousGesture(
+            miniDragGesture,
+            including: model.widgetSizeMode == .mini ? .all : .none
         )
     }
 
@@ -1217,7 +1267,10 @@ struct FloatingRecorderView: View {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 HStack(spacing: 0) {
                     if model.canExpandMiniSessionTimer {
-                        Button(action: model.toggleMiniSessionTimer) {
+                        Button {
+                            guard !suppressMiniClick else { return }
+                            model.toggleMiniSessionTimer()
+                        } label: {
                             HStack(spacing: 0) {
                                 if model.miniWidgetLayout == .dualTimer {
                                     miniTimerCell(
@@ -1631,12 +1684,11 @@ struct FloatingRecorderView: View {
         Button {
             guard !(
                 model.widgetSizeMode == .mini
-                    && suppressMiniRecordToggle
+                    && suppressMiniClick
             ) else { return }
             model.toggleRecording()
         } label: {
             ZStack {
-                miniRecordingGlow
                 Circle()
                     .fill(recordHaloColor.opacity(model.isBusy ? 0.12 : 0.46))
                     .frame(
@@ -1667,6 +1719,8 @@ struct FloatingRecorderView: View {
                     .frame(width: 32, height: 32)
                 if model.isBusy {
                     ProgressView().controlSize(.small)
+                } else if model.widgetSizeMode == .mini, model.isRecording {
+                    miniExpandingStop
                 } else {
                     Image(systemName: model.isRecording ? "stop.fill" : "mic.fill")
                         .font(.system(size: 17, weight: .bold))
@@ -1703,35 +1757,16 @@ struct FloatingRecorderView: View {
             tint: model.isRecording ? .red : palette.teal
         )
         .disabled(!model.isStartingRecording && !model.isRecording && !model.canRecord)
-        .simultaneousGesture(
-            DragGesture(
-                minimumDistance: MiniWidgetPointerPolicy.dragThreshold,
-                coordinateSpace: .global
-            )
-            .onChanged { value in
-                guard model.widgetSizeMode == .mini else { return }
-                suppressMiniRecordToggle = true
-                FloatingPanelController.shared.beginMiniDrag()
-                FloatingPanelController.shared.updateMiniDrag(
-                    translation: value.translation
-                )
-            }
-            .onEnded { _ in
-                guard model.widgetSizeMode == .mini else { return }
-                FloatingPanelController.shared.endMiniDrag()
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(100))
-                    suppressMiniRecordToggle = false
-                }
-            },
-            including: model.widgetSizeMode == .mini ? .all : .none
-        )
         .accessibilityLabel(
             model.isBusy
                 ? model.processingStatus
                 : (
                     model.isRecording
-                        ? "Stop recording"
+                        ? (
+                            model.widgetSizeMode == .mini
+                                ? "Stop recording, \(MiniWidgetExpandingStopPolicy.accessibilityDescription(level: miniSmoothedLevel))"
+                                : "Stop recording"
+                        )
                         : (
                             model.widgetSizeMode == .mini
                                 ? "Start recording, \(model.linkStatusAccessibilityLabel)"
@@ -1741,94 +1776,50 @@ struct FloatingRecorderView: View {
         )
     }
 
-    @ViewBuilder
-    private var miniRecordingGlow: some View {
-        if model.widgetSizeMode == .mini, model.isRecording {
-            ZStack {
-                Circle()
-                    .strokeBorder(
-                        palette.recordingSignal.opacity(
-                            MiniWidgetAudioGlowPolicy.persistentRingOpacity
-                        ),
-                        lineWidth: MiniWidgetAudioGlowPolicy.persistentLineWidth
-                    )
-                    .frame(
-                        width: MiniWidgetAudioGlowPolicy
-                            .persistentRingDiameter,
-                        height: MiniWidgetAudioGlowPolicy
-                            .persistentRingDiameter
-                    )
-                if reduceMotion {
-                    miniGlow(level: miniSmoothedLevel, pulse: 0.5)
-                } else {
-                    TimelineView(
-                        .animation(minimumInterval: 1.0 / 30.0)
-                    ) { timeline in
-                        let duration = MiniWidgetAudioGlowPolicy.pulseDuration(
-                            level: miniSmoothedLevel
-                        )
-                        let radians = (
-                            timeline.date.timeIntervalSinceReferenceDate
-                                .truncatingRemainder(dividingBy: duration)
-                            / duration
-                        ) * .pi * 2
-                        miniGlow(
-                            level: miniSmoothedLevel,
-                            pulse: (sin(radians) + 1) / 2
-                        )
-                    }
-                }
-            }
-            .frame(
-                width: MiniWidgetAudioGlowPolicy.visualEnvelopeDiameter,
-                height: MiniWidgetAudioGlowPolicy.visualEnvelopeDiameter
-            )
-            // The host window is rectangular but transparent. Constrain every
-            // sound-level pixel to this circle so no desktop can reveal the
-            // host's bounds.
-            .mask(
-                Circle()
-                    .frame(
-                        width: MiniWidgetAudioGlowPolicy.visualEnvelopeDiameter,
-                        height: MiniWidgetAudioGlowPolicy.visualEnvelopeDiameter
-                    )
-            )
-            .allowsHitTesting(false)
-        }
+    private var miniExpandingStop: some View {
+        let size = MiniWidgetExpandingStopPolicy.stopSize(
+            level: miniSmoothedLevel
+        )
+        return RoundedRectangle(
+            cornerRadius: MiniWidgetExpandingStopPolicy.cornerRadius(for: size),
+            style: .continuous
+        )
+        .fill(recordIconColor)
+        .frame(width: size, height: size)
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: 0.10),
+            value: size
+        )
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
-    private func miniGlow(level: Double, pulse: Double) -> some View {
-        let boundedLevel = max(0, min(1, (level - 0.06) / 0.94))
-        let boundedPulse = max(0, min(1, pulse))
-        let lineWidth = MiniWidgetAudioGlowPolicy.ringLineWidth(
-            level: boundedLevel
-        )
-        return Circle()
-            .trim(
-                from: 0,
-                to: MiniWidgetAudioGlowPolicy.meterArcFraction(
-                    level: boundedLevel
+    private var miniDragGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .onChanged { _ in
+                guard model.widgetSizeMode == .mini else { return }
+                let pointer = NSEvent.mouseLocation
+                FloatingPanelController.shared.beginMiniDrag(
+                    pointerLocation: pointer
                 )
-            )
-            .stroke(
-                palette.recordingSignal.opacity(
-                    MiniWidgetAudioGlowPolicy.ringOpacity(
-                        level: boundedLevel,
-                        pulse: boundedPulse
-                    )
-                ),
-                style: StrokeStyle(
-                    lineWidth: lineWidth,
-                    lineCap: .round
-                )
-            )
-            .rotationEffect(.degrees(-90))
-            .frame(
-                width: MiniWidgetAudioGlowPolicy.meterArcDiameter,
-                height: MiniWidgetAudioGlowPolicy.meterArcDiameter
-            )
-            .opacity(boundedLevel > 0 ? 1 : 0)
-            .allowsHitTesting(false)
+                if FloatingPanelController.shared.updateMiniDrag(
+                    pointerLocation: pointer
+                ) {
+                    suppressMiniClick = true
+                }
+            }
+            .onEnded { _ in
+                guard model.widgetSizeMode == .mini else { return }
+                let didDrag = FloatingPanelController.shared.endMiniDrag()
+                if didDrag {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(120))
+                        suppressMiniClick = false
+                    }
+                } else {
+                    suppressMiniClick = false
+                }
+            }
     }
 
     private var recordHaloColor: Color {

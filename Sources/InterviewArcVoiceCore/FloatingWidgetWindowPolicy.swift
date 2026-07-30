@@ -120,6 +120,48 @@ public enum MiniWidgetPointerPolicy {
     public static func isDrag(translation: CGSize) -> Bool {
         hypot(translation.width, translation.height) >= dragThreshold
     }
+
+    public static func screenTranslation(
+        from start: CGPoint,
+        to current: CGPoint
+    ) -> CGSize {
+        CGSize(
+            width: current.x - start.x,
+            height: current.y - start.y
+        )
+    }
+
+    public static func translatedOrigin(
+        startOrigin: CGPoint,
+        startPointer: CGPoint,
+        currentPointer: CGPoint
+    ) -> CGPoint {
+        let translation = screenTranslation(
+            from: startPointer,
+            to: currentPointer
+        )
+        return CGPoint(
+            x: startOrigin.x + translation.width,
+            y: startOrigin.y + translation.height
+        )
+    }
+
+    public static func clampedOrigin(
+        proposed: CGPoint,
+        panelSize: CGSize,
+        visibleFrame: CGRect
+    ) -> CGPoint {
+        CGPoint(
+            x: min(
+                max(proposed.x, visibleFrame.minX),
+                max(visibleFrame.minX, visibleFrame.maxX - panelSize.width)
+            ),
+            y: min(
+                max(proposed.y, visibleFrame.minY),
+                max(visibleFrame.minY, visibleFrame.maxY - panelSize.height)
+            )
+        )
+    }
 }
 
 public enum FloatingWidgetCompactTimerLayoutPolicy {
