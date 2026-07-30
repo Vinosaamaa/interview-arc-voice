@@ -1019,14 +1019,22 @@ struct FloatingRecorderView: View {
             HStack(spacing: model.isRecording ? 4 : 6) {
                 linkButton
                 if model.isStartingRecording {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Preparing mic…")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .foregroundStyle(palette.tealDark)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .accessibilityLabel("Preparing microphone")
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Preparing mic…")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(palette.tealDark)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    // Keep the center slot flexible while the microphone route
+                    // starts. Without this fill, the HStack collapses to its
+                    // intrinsic width and the trailing record control jumps
+                    // left before recording expands the capsule.
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Preparing microphone")
                 } else if model.isRecording {
                     if model.dynamicRecordingInterfaceActive {
                         Circle()
