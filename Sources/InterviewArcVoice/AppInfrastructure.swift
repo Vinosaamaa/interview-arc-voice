@@ -147,6 +147,12 @@ struct HotKeyShortcut: Codable, Equatable, Sendable {
         displayName: "⌃⌥L"
     )
 
+    static let widgetSizeToggle = HotKeyShortcut(
+        keyCode: UInt32(kVK_ANSI_M),
+        carbonModifiers: UInt32(optionKey),
+        displayName: "⌥M"
+    )
+
     static func from(event: NSEvent) -> HotKeyShortcut? {
         let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
         var modifiers: UInt32 = 0
@@ -715,12 +721,13 @@ final class FloatingPanelController {
             panel.orderFrontRegardless()
             return
         }
+        let initialSize = model.floatingSize
         let panel = NSPanel(
             contentRect: NSRect(
                 x: 0,
                 y: 0,
-                width: FloatingWidgetWindowPolicy.collapsedWidth,
-                height: FloatingWidgetWindowPolicy.hostHeight
+                width: initialSize.width,
+                height: initialSize.height
             ),
             styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
             backing: .buffered,
@@ -746,11 +753,12 @@ final class FloatingPanelController {
         if !panel.setFrameUsingName("InterviewArcVoiceFloatingPanel") {
             panel.center()
         }
-        panel.setContentSize(
-            NSSize(
-                width: FloatingWidgetWindowPolicy.collapsedWidth,
-                height: FloatingWidgetWindowPolicy.hostHeight
-            )
+        panel.setFrame(
+            FloatingWidgetGeometryPolicy.anchoredFrame(
+                currentFrame: panel.frame,
+                targetSize: initialSize
+            ),
+            display: true
         )
         panel.invalidateShadow()
         panel.orderFrontRegardless()
@@ -967,13 +975,15 @@ private struct OverflowMarqueeText: View {
 struct FloatingRecorderView: View {
     @ObservedObject var model: VoiceBridgeModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var miniSmoothedLevel = 0.0
 
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
     var body: some View {
         GeometryReader { host in
             VStack(alignment: .trailing, spacing: FloatingWidgetWindowPolicy.timerGap) {
-                if !model.dynamicRecordingInterfaceActive,
+                if model.widgetSizeMode == .standard,
+                   !model.dynamicRecordingInterfaceActive,
                    model.timerPanelExpanded,
                    model.hasTimerInstrument,
                    let instrument = model.timerInstrument {
@@ -1001,6 +1011,19 @@ struct FloatingRecorderView: View {
             )
         }
         .onChange(of: model.floatingSize) { _, _ in resizeWindow() }
+        .onChange(of: model.isRecording) { _, isRecording in
+            if !isRecording { miniSmoothedLevel = 0 }
+        }
+        .onReceive(model.recorder.$averagePower) { averagePower in
+            guard model.widgetSizeMode == .mini, model.isRecording else { return }
+            let current = MiniWidgetAudioGlowPolicy.normalizedLevel(
+                decibels: Double(averagePower)
+            )
+            miniSmoothedLevel = MiniWidgetAudioGlowPolicy.smoothedLevel(
+                previous: miniSmoothedLevel,
+                current: current
+            )
+        }
     }
 
     private func recorderCapsule(width: CGFloat) -> some View {
@@ -1014,86 +1037,16 @@ struct FloatingRecorderView: View {
                 )
             FrostedInstrumentCapsule(
                 palette: palette,
-                isRecording: model.dynamicRecordingInterfaceActive && model.isRecording
+                isRecording: model.isRecording
             )
-            HStack(spacing: model.isRecording ? 4 : 6) {
-                linkButton
-                if model.isStartingRecording {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Preparing mic…")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .foregroundStyle(palette.tealDark)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-                    // Keep the center slot flexible while the microphone route
-                    // starts. Without this fill, the HStack collapses to its
-                    // intrinsic width and the trailing record control jumps
-                    // left before recording expands the capsule.
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Preparing microphone")
-                } else if model.isRecording {
-                    if model.dynamicRecordingInterfaceActive {
-                        Circle()
-                            .fill(palette.warning)
-                            .frame(width: 7, height: 7)
-                            .shadow(color: palette.warning.opacity(0.65), radius: 4)
-                            .accessibilityLabel("Recording live")
-                    }
-                    if model.recorder.signalHealth == .absent {
-                        microphoneSignalWarning
-                    } else {
-                        LiveVoiceWaveform(
-                            recorder: model.recorder,
-                            color: model.dynamicRecordingInterfaceActive
-                                ? palette.warning
-                                : palette.teal,
-                            historical: model.dynamicRecordingInterfaceActive
-                        )
-                    }
-                    RecordingClock(
-                        recorder: model.recorder,
-                        compact: true,
-                        foregroundColor: palette.ink
-                    )
-                } else if model.isPlaybackExpanded {
-                    playbackControls
-                } else if model.isFailurePresented {
-                    failureControls
-                } else if model.isBusy, model.showProcessingIndicator {
-                    processingLabel
-                } else {
-                    activityLabel
-                    if !model.hasTimerInstrument, model.hasLastAudio {
-                        memoButton(
-                            symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
-                            label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
-                            action: model.toggleLastAudioPlayback
-                        )
-                    }
-                    if !model.hasTimerInstrument, !model.lastTranscript.isEmpty {
-                        memoButton(
-                            symbol: "text.cursor",
-                            label: "Insert last transcript",
-                            action: model.reinsertLastTranscript
-                        )
-                        memoButton(
-                            symbol: "doc.on.doc",
-                            label: "Copy last transcript",
-                            action: model.copyLastTranscript
-                        )
-                    }
-                    if !model.hasTimerInstrument, model.hasLastAudio {
-                        memoButton(
-                            symbol: "square.and.arrow.down",
-                            label: "Save last audio and transcript",
-                            action: model.exportLastMemo
-                        )
-                    }
-                }
+            standardCapsuleContent
+                .opacity(model.widgetSizeMode == .standard ? 1 : 0)
+                .allowsHitTesting(model.widgetSizeMode == .standard)
+            miniCapsuleContent
+                .opacity(model.widgetSizeMode == .mini ? 1 : 0)
+                .allowsHitTesting(model.widgetSizeMode == .mini)
+            HStack {
+                Spacer(minLength: 0)
                 recordButton
             }
             .padding(.horizontal, 4)
@@ -1105,6 +1058,119 @@ struct FloatingRecorderView: View {
         .clipShape(Capsule(style: .continuous))
         .contentShape(Capsule(style: .continuous))
         .frame(width: width, alignment: .trailing)
+        .animation(
+            reduceMotion
+                ? nil
+                : .easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds),
+            value: model.widgetSizeMode
+        )
+    }
+
+    private var standardCapsuleContent: some View {
+        HStack(spacing: model.isRecording ? 4 : 6) {
+            linkButton
+            if model.isStartingRecording {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Preparing mic…")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.tealDark)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                // Keep the center slot flexible while the microphone route
+                // starts. Without this fill, the HStack collapses to its
+                // intrinsic width and the trailing record control jumps.
+                .frame(maxWidth: .infinity, alignment: .center)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Preparing microphone")
+            } else if model.isRecording {
+                if model.dynamicRecordingInterfaceActive {
+                    Circle()
+                        .fill(palette.warning)
+                        .frame(width: 7, height: 7)
+                        .shadow(color: palette.warning.opacity(0.65), radius: 4)
+                        .accessibilityLabel("Recording live")
+                }
+                if model.recorder.signalHealth == .absent {
+                    microphoneSignalWarning
+                } else {
+                    LiveVoiceWaveform(
+                        recorder: model.recorder,
+                        color: model.dynamicRecordingInterfaceActive
+                            ? palette.warning
+                            : palette.teal,
+                        historical: model.dynamicRecordingInterfaceActive
+                    )
+                }
+                RecordingClock(
+                    recorder: model.recorder,
+                    compact: true,
+                    foregroundColor: palette.ink
+                )
+            } else if model.isPlaybackExpanded {
+                playbackControls
+            } else if model.isFailurePresented {
+                failureControls
+            } else if model.isBusy, model.showProcessingIndicator {
+                processingLabel
+            } else {
+                activityLabel
+                if !model.hasTimerInstrument, model.hasLastAudio {
+                    memoButton(
+                        symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
+                        label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
+                        action: model.toggleLastAudioPlayback
+                    )
+                }
+                if !model.hasTimerInstrument, !model.lastTranscript.isEmpty {
+                    memoButton(
+                        symbol: "text.cursor",
+                        label: "Insert last transcript",
+                        action: model.reinsertLastTranscript
+                    )
+                    memoButton(
+                        symbol: "doc.on.doc",
+                        label: "Copy last transcript",
+                        action: model.copyLastTranscript
+                    )
+                }
+                if !model.hasTimerInstrument, model.hasLastAudio {
+                    memoButton(
+                        symbol: "square.and.arrow.down",
+                        label: "Save last audio and transcript",
+                        action: model.exportLastMemo
+                    )
+                }
+            }
+            Color.clear
+                .frame(width: 36, height: 36)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 4)
+    }
+
+    @ViewBuilder
+    private var miniCapsuleContent: some View {
+        if model.miniWidgetLayout == .timer {
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                HStack(spacing: 4) {
+                    Text(model.miniTimerText(at: timeline.date) ?? "00:00")
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(palette.tealDark)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .accessibilityLabel("Current timer")
+                    Color.clear
+                        .frame(width: 36, height: 36)
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal, 4)
+            }
+        }
     }
 
     private func resizeWindow() {
@@ -1445,6 +1511,7 @@ struct FloatingRecorderView: View {
     private var recordButton: some View {
         Button(action: model.toggleRecording) {
             ZStack {
+                miniRecordingGlow
                 Circle()
                     .fill(recordHaloColor.opacity(model.isBusy ? 0.12 : 0.46))
                     .frame(width: 38, height: 38)
@@ -1477,6 +1544,21 @@ struct FloatingRecorderView: View {
                         .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(recordIconColor)
                 }
+                if model.widgetSizeMode == .mini,
+                   model.linkToInterviewArc,
+                   !model.isRecording,
+                   !model.isBusy {
+                    Image(systemName: "link")
+                        .font(.system(size: 6, weight: .bold))
+                        .foregroundStyle(Color.white)
+                        .padding(3)
+                        .background(
+                            Circle()
+                                .fill(model.linkStatusColor)
+                        )
+                        .offset(x: -10, y: 10)
+                        .accessibilityHidden(true)
+                }
             }
             .frame(width: 36, height: 36)
         }
@@ -1496,12 +1578,73 @@ struct FloatingRecorderView: View {
         .accessibilityLabel(
             model.isBusy
                 ? model.processingStatus
-                : (model.isRecording ? "Stop recording" : "Start recording")
+                : (
+                    model.isRecording
+                        ? "Stop recording"
+                        : (
+                            model.widgetSizeMode == .mini
+                                ? "Start recording, \(model.linkStatusAccessibilityLabel)"
+                                : "Start recording"
+                        )
+                )
         )
     }
 
+    @ViewBuilder
+    private var miniRecordingGlow: some View {
+        if model.widgetSizeMode == .mini, model.isRecording {
+            if reduceMotion {
+                miniGlow(level: miniSmoothedLevel, pulse: 0.5)
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                    let duration = MiniWidgetAudioGlowPolicy.pulseDuration(
+                        level: miniSmoothedLevel
+                    )
+                    let radians = (
+                        timeline.date.timeIntervalSinceReferenceDate
+                            .truncatingRemainder(dividingBy: duration)
+                        / duration
+                    ) * .pi * 2
+                    miniGlow(
+                        level: miniSmoothedLevel,
+                        pulse: (sin(radians) + 1) / 2
+                    )
+                }
+            }
+        }
+    }
+
+    private func miniGlow(level: Double, pulse: Double) -> some View {
+        let boundedLevel = max(0, min(1, level))
+        let boundedPulse = max(0, min(1, pulse))
+        let levelDimension = CGFloat(boundedLevel)
+        let pulseDimension = CGFloat(boundedPulse)
+        return Circle()
+            .stroke(
+                palette.warning.opacity(
+                    0.22 + (boundedLevel * 0.34) + (boundedPulse * 0.12)
+                ),
+                lineWidth: 1.2 + levelDimension
+            )
+            .frame(
+                width: 34 + (levelDimension * 2.5) + (pulseDimension * 1.5),
+                height: 34 + (levelDimension * 2.5) + (pulseDimension * 1.5)
+            )
+            .shadow(
+                color: palette.warning.opacity(0.24 + (boundedLevel * 0.34)),
+                radius: 2 + (levelDimension * 4)
+            )
+            .allowsHitTesting(false)
+    }
+
     private var recordHaloColor: Color {
-        model.isRecording ? Color(red: 0.96, green: 0.29, blue: 0.25) : palette.tealGlow
+        if model.isRecording {
+            return Color(red: 0.96, green: 0.29, blue: 0.25)
+        }
+        if model.widgetSizeMode == .mini, !model.linkToInterviewArc {
+            return palette.linkOff
+        }
+        return palette.tealGlow
     }
 
     private var recordFaceColor: Color {
@@ -1509,7 +1652,13 @@ struct FloatingRecorderView: View {
     }
 
     private var recordIconColor: Color {
-        model.isRecording ? Color(red: 0.72, green: 0.12, blue: 0.10) : palette.tealDark
+        if model.isRecording {
+            return Color(red: 0.72, green: 0.12, blue: 0.10)
+        }
+        if model.widgetSizeMode == .mini {
+            return model.linkToInterviewArc ? model.linkStatusColor : palette.linkOff
+        }
+        return palette.tealDark
     }
 
 }

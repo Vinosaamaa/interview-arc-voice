@@ -58,6 +58,8 @@ public enum FloatingWidgetWindowPolicy {
     public static let usesNativeWindowShadow = false
     public static let collapsedWidth: CGFloat = 250
     public static let recordingWidth: CGFloat = 340
+    public static let miniMicrophoneWidth: CGFloat = 48
+    public static let miniTimerWidth: CGFloat = 118
     public static let recordingWaveformSampleCount = 64
     public static let recordingWaveformBarWidth: CGFloat = 1
     public static let playbackWidth: CGFloat = 410

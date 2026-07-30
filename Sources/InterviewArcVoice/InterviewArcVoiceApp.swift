@@ -182,6 +182,7 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var legacyVoiceOrphans: [LegacyVoiceCapture] = []
     @Published var linkToInterviewArc: Bool
     @Published var widgetTheme: VoiceWidgetTheme
+    @Published var widgetSizeMode: VoiceWidgetSizeMode
     @Published var backgroundAudioMode: BackgroundAudioRecordingMode
     @Published var backgroundAudioRelativeLevel: Double
     @Published var dynamicRecordingInterfaceEnabled: Bool
@@ -192,6 +193,8 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var shortcutCapturing = false
     @Published var linkShortcut: HotKeyShortcut
     @Published var linkShortcutCapturing = false
+    @Published var widgetSizeShortcut: HotKeyShortcut
+    @Published var widgetSizeShortcutCapturing = false
     @Published var shortcutMessage: String?
     @Published var accessibilityNeeded = false
     @Published var deliveryStates: [VoiceDeliveryComponent: VoiceDeliveryComponentState] = [:]
@@ -224,6 +227,7 @@ final class VoiceBridgeModel: ObservableObject {
     private let compactPresentationPolicy = CompactVoicePresentationPolicy()
     private let hotKeyManager = GlobalHotKeyManager(identifierID: 1)
     private let linkHotKeyManager = GlobalHotKeyManager(identifierID: 2)
+    private let widgetSizeHotKeyManager = GlobalHotKeyManager(identifierID: 3)
     private let textInjector = DictationTextInjector()
     private let outputVolumeController = SystemOutputVolumeController()
     private var recordingStore: RecordingStore?
@@ -238,6 +242,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var lastInsertionText = ""
     private var shortcutMonitor: Any?
     private var linkShortcutMonitor: Any?
+    private var widgetSizeShortcutMonitor: Any?
     private var lastInsertionSucceeded = false
     private var contextPollTask: Task<Void, Never>?
     private var pendingReconciliationTask: Task<Void, Never>?
@@ -410,6 +415,9 @@ final class VoiceBridgeModel: ObservableObject {
         return false
     }
     var floatingWidth: CGFloat {
+        if widgetSizeMode == .mini {
+            return MiniWidgetPresentationPolicy.width(for: miniWidgetLayout)
+        }
         if dynamicRecordingInterfaceActive {
             return FloatingWidgetWindowPolicy.recordingWidth
         }
@@ -424,6 +432,9 @@ final class VoiceBridgeModel: ObservableObject {
         CGSize(width: floatingWidth, height: floatingHeight)
     }
     var floatingHeight: CGFloat {
+        if widgetSizeMode == .mini {
+            return FloatingWidgetWindowPolicy.hostHeight
+        }
         if dynamicRecordingInterfaceActive {
             return FloatingWidgetWindowPolicy.hostHeight
         }
@@ -439,6 +450,13 @@ final class VoiceBridgeModel: ObservableObject {
     var hasTimerInstrument: Bool {
         linkToInterviewArc
             && (timerInstrument?.session != nil || timerInstrument?.activity != nil)
+    }
+    var miniWidgetLayout: MiniWidgetLayout {
+        MiniWidgetPresentationPolicy.layout(
+            linkEnabled: linkToInterviewArc,
+            hasActivityTimer: timerInstrument?.activity?.timer != nil,
+            hasSessionTimer: timerInstrument?.session?.timer != nil
+        )
     }
     var isFinishDrawerPresented: Bool {
         finishingActivityID != nil
@@ -473,6 +491,20 @@ final class VoiceBridgeModel: ObservableObject {
             ? compactClock(remaining)
             : "+\(compactClock(abs(remaining)))"
     }
+
+    func miniTimerText(at now: Date) -> String? {
+        switch MiniWidgetPresentationPolicy.timerSource(
+            hasActivityTimer: timerInstrument?.activity?.timer != nil,
+            hasSessionTimer: timerInstrument?.session?.timer != nil
+        ) {
+        case .activity:
+            return compactActivityTime(at: now)
+        case .session:
+            return compactSessionTime(at: now)
+        case nil:
+            return nil
+        }
+    }
     private var compactLinkPresentation: CompactVoicePresentation {
         compactPresentationPolicy.presentation(
             linkEnabled: linkToInterviewArc,
@@ -502,6 +534,7 @@ final class VoiceBridgeModel: ObservableObject {
         codexPath = defaults.string(forKey: "voice.codexPath") ?? "/Applications/ChatGPT.app/Contents/Resources/codex"
         linkToInterviewArc = defaults.object(forKey: "voice.linkToInterviewArc") as? Bool ?? true
         widgetTheme = VoiceWidgetTheme.load(from: defaults)
+        widgetSizeMode = VoiceWidgetSizeMode.load(from: defaults)
         backgroundAudioMode = BackgroundAudioRecordingMode(
             rawValue: defaults.string(forKey: "voice.backgroundAudioMode") ?? ""
         ) ?? .lower
@@ -531,6 +564,20 @@ final class VoiceBridgeModel: ObservableObject {
         if resolvedLinkShortcut == .linkToggle,
            let data = try? JSONEncoder().encode(resolvedLinkShortcut) {
             defaults.set(data, forKey: "voice.linkShortcut")
+        }
+        let resolvedWidgetSizeShortcut: HotKeyShortcut
+        if let data = defaults.data(forKey: "voice.widgetSizeShortcut"),
+           let saved = try? JSONDecoder().decode(HotKeyShortcut.self, from: data),
+           saved != resolvedShortcut,
+           saved != resolvedLinkShortcut {
+            resolvedWidgetSizeShortcut = saved
+        } else {
+            resolvedWidgetSizeShortcut = .widgetSizeToggle
+        }
+        widgetSizeShortcut = resolvedWidgetSizeShortcut
+        if resolvedWidgetSizeShortcut == .widgetSizeToggle,
+           let data = try? JSONEncoder().encode(resolvedWidgetSizeShortcut) {
+            defaults.set(data, forKey: "voice.widgetSizeShortcut")
         }
         if let data = defaults.data(forKey: "voice.lastFailure"),
            let storedFailure = try? JSONDecoder().decode(VoiceFailureNotice.self, from: data) {
@@ -1105,6 +1152,36 @@ final class VoiceBridgeModel: ObservableObject {
         theme.save()
     }
 
+    func selectWidgetSizeMode(_ mode: VoiceWidgetSizeMode) {
+        guard widgetSizeMode != mode else { return }
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let update = {
+            self.widgetSizeMode = mode
+            if mode == .mini {
+                self.timerPanelExpanded = false
+                self.activityPickerExpanded = false
+                self.finishingActivityID = nil
+                self.finishOutcome = nil
+                self.finishStarred = false
+                self.sessionFinishResolutionRequested = false
+                SessionFinishResolverWindowPresenter.shared.dismiss()
+            }
+        }
+        if reduceMotion {
+            update()
+        } else {
+            withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
+                update()
+            }
+        }
+        mode.save()
+        synchronizeFloatingPanelSize()
+    }
+
+    func toggleWidgetSizeMode() {
+        selectWidgetSizeMode(widgetSizeMode == .standard ? .mini : .standard)
+    }
+
     func setBackgroundAudioMode(_ mode: BackgroundAudioRecordingMode) {
         backgroundAudioMode = mode
         UserDefaults.standard.set(mode.rawValue, forKey: "voice.backgroundAudioMode")
@@ -1324,7 +1401,9 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func beginShortcutCapture() {
-        guard shortcutMonitor == nil, linkShortcutMonitor == nil else { return }
+        guard shortcutMonitor == nil,
+              linkShortcutMonitor == nil,
+              widgetSizeShortcutMonitor == nil else { return }
         shortcutMessage = nil
         shortcutCapturing = true
         suspendGlobalShortcuts()
@@ -1335,8 +1414,9 @@ final class VoiceBridgeModel: ObservableObject {
                 return nil
             }
             guard let shortcut = HotKeyShortcut.from(event: event) else { return nil }
-            guard shortcut != self.linkShortcut else {
-                self.shortcutMessage = "Record/Stop and link mode need different shortcuts."
+            guard shortcut != self.linkShortcut,
+                  shortcut != self.widgetSizeShortcut else {
+                self.shortcutMessage = "Record/Stop, link mode, and widget size need different shortcuts."
                 self.endShortcutCapture()
                 return nil
             }
@@ -1350,7 +1430,9 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func beginLinkShortcutCapture() {
-        guard shortcutMonitor == nil, linkShortcutMonitor == nil else { return }
+        guard shortcutMonitor == nil,
+              linkShortcutMonitor == nil,
+              widgetSizeShortcutMonitor == nil else { return }
         shortcutMessage = nil
         linkShortcutCapturing = true
         suspendGlobalShortcuts()
@@ -1361,8 +1443,9 @@ final class VoiceBridgeModel: ObservableObject {
                 return nil
             }
             guard let shortcut = HotKeyShortcut.from(event: event) else { return nil }
-            guard shortcut != self.shortcut else {
-                self.shortcutMessage = "Record/Stop and link mode need different shortcuts."
+            guard shortcut != self.shortcut,
+                  shortcut != self.widgetSizeShortcut else {
+                self.shortcutMessage = "Record/Stop, link mode, and widget size need different shortcuts."
                 self.endLinkShortcutCapture()
                 return nil
             }
@@ -1375,11 +1458,42 @@ final class VoiceBridgeModel: ObservableObject {
         }
     }
 
+    func beginWidgetSizeShortcutCapture() {
+        guard shortcutMonitor == nil,
+              linkShortcutMonitor == nil,
+              widgetSizeShortcutMonitor == nil else { return }
+        shortcutMessage = nil
+        widgetSizeShortcutCapturing = true
+        suspendGlobalShortcuts()
+        widgetSizeShortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            if Int(event.keyCode) == kVK_Escape {
+                self.endWidgetSizeShortcutCapture()
+                return nil
+            }
+            guard let shortcut = HotKeyShortcut.from(event: event) else { return nil }
+            guard shortcut != self.shortcut,
+                  shortcut != self.linkShortcut else {
+                self.shortcutMessage = "Record/Stop, link mode, and widget size need different shortcuts."
+                self.endWidgetSizeShortcutCapture()
+                return nil
+            }
+            self.widgetSizeShortcut = shortcut
+            if let data = try? JSONEncoder().encode(shortcut) {
+                UserDefaults.standard.set(data, forKey: "voice.widgetSizeShortcut")
+            }
+            self.endWidgetSizeShortcutCapture()
+            return nil
+        }
+    }
+
     func cancelShortcutCapture() {
         if shortcutCapturing {
             endShortcutCapture()
         } else if linkShortcutCapturing {
             endLinkShortcutCapture()
+        } else if widgetSizeShortcutCapturing {
+            endWidgetSizeShortcutCapture()
         }
     }
 
@@ -2689,9 +2803,19 @@ final class VoiceBridgeModel: ObservableObject {
         registerGlobalShortcuts()
     }
 
+    private func endWidgetSizeShortcutCapture() {
+        if let widgetSizeShortcutMonitor {
+            NSEvent.removeMonitor(widgetSizeShortcutMonitor)
+        }
+        widgetSizeShortcutMonitor = nil
+        widgetSizeShortcutCapturing = false
+        registerGlobalShortcuts()
+    }
+
     private func suspendGlobalShortcuts() {
         hotKeyManager.unregister()
         linkHotKeyManager.unregister()
+        widgetSizeHotKeyManager.unregister()
     }
 
     private func registerGlobalShortcuts() {
@@ -2700,6 +2824,9 @@ final class VoiceBridgeModel: ObservableObject {
         }
         linkHotKeyManager.register(linkShortcut) { [weak self] in
             self?.toggleLinkMode()
+        }
+        widgetSizeHotKeyManager.register(widgetSizeShortcut) { [weak self] in
+            self?.toggleWidgetSizeMode()
         }
     }
 
@@ -2907,10 +3034,33 @@ private struct VoiceSettingsWindow: View {
     var body: some View {
         Form {
             Section("Appearance") {
+                VStack(alignment: .leading, spacing: 7) {
+                    Picker(
+                        "Widget size",
+                        selection: Binding(
+                            get: { model.widgetSizeMode },
+                            set: { mode in model.selectWidgetSizeMode(mode) }
+                        )
+                    ) {
+                        ForEach(VoiceWidgetSizeMode.allCases) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Text(
+                        model.widgetSizeMode == .mini
+                            ? "Mini keeps only the microphone and an active linked timer. Detailed controls remain in the menu-bar panel."
+                            : "Standard shows the activity identity, memo actions, timers, and recording instrument."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Widget theme")
                         .font(.headline)
-                    Text("Choose how the floating recorder looks. Its layout and controls stay the same.")
+                    Text("Choose the floating recorder's material and color treatment.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     VStack(spacing: 6) {
@@ -3036,7 +3186,24 @@ private struct VoiceSettingsWindow: View {
                         Button("Cancel", action: model.cancelShortcutCapture)
                     }
                 }
-                if model.shortcutCapturing || model.linkShortcutCapturing {
+                HStack {
+                    Text("Toggle Standard / Mini")
+                    Spacer()
+                    Button(
+                        model.widgetSizeShortcutCapturing
+                            ? "Press shortcut…"
+                            : model.widgetSizeShortcut.displayName
+                    ) {
+                        model.beginWidgetSizeShortcutCapture()
+                    }
+                    .disabled(model.widgetSizeShortcutCapturing)
+                    if model.widgetSizeShortcutCapturing {
+                        Button("Cancel", action: model.cancelShortcutCapture)
+                    }
+                }
+                if model.shortcutCapturing
+                    || model.linkShortcutCapturing
+                    || model.widgetSizeShortcutCapturing {
                     Text("Press the new shortcut. Press Escape or choose Cancel to keep the current one.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
