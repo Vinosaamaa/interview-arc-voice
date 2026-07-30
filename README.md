@@ -77,8 +77,10 @@ Save, and Retry instead of being discarded.
   link controls.
 - The Record/Stop shortcut defaults to `Control-Option-Space`. A separate
   configurable `Control-Option-L` shortcut toggles Interview Arc linking while
-  Voice is idle.
-- Both shortcuts are routed independently by their registered macOS hotkey ID.
+  Voice is idle. A third configurable shortcut, `Option-M`, switches the
+  floating recorder between Standard and Mini.
+- All three shortcuts are routed independently by their registered macOS hotkey
+  ID.
   Settings temporarily suspends the registrations while learning a replacement,
   so an existing shortcut can be entered again; Escape or Cancel abandons
   capture.
@@ -102,6 +104,15 @@ Save, and Retry instead of being discarded.
   left open.
   Playback keeps seek, pause/resume, Stop, and timer-disclosure controls
   available.
+- Settings → Appearance also offers a persistent Mini presentation. Mini is a
+  fixed microphone-only capsule while unlinked or linked without a timer, and
+  a fixed timer-plus-microphone capsule while a linked activity or session
+  timer exists. It never expands during recording: a volume-reactive glow
+  communicates live capture, the microphone color and integrated chain badge
+  communicate link state, and detailed memo/recovery controls remain in the
+  menu-bar panel. Standard and Mini share one trailing microphone control and
+  one bottom-right-anchored window resize, preventing a mode switch from
+  moving or flashing the control.
 - The permanent widget visual and interaction contract is
   [`design-system/pages/floating-widget.md`](design-system/pages/floating-widget.md).
 - Settings → Appearance offers five persistent widget themes: the original

@@ -43,9 +43,10 @@ Status colors may be used only when they communicate a real state.
 
 - The approved themes are `Arctic Teal`, `Neon Circuit`, `Aurora Night`,
   `Solar Ember`, and `Sakura Glass`.
-- Every theme preserves the 250-by-40 resting capsule, host transparency,
-  spacing, typography roles, icon family, microphone elevation, timer layout,
-  playback width, and motion timing.
+- Every theme preserves Standard's 250-by-40 resting capsule, Mini's 48-by-40
+  microphone capsule and 118-by-40 timer capsule, host transparency, spacing,
+  typography roles, icon family, microphone elevation, timer layout, playback
+  width, and motion timing.
 - One theme is visible at a time. Never mix accents or surfaces from two
   themes inside the same widget.
 - Link-off, connected-idle, warning, and recording states remain semantically
@@ -67,7 +68,8 @@ Timer values must never change width as they count.
 
 ## Geometry and material
 
-1. The resting widget is a 250-by-40-point capsule.
+1. Standard rests as a 250-by-40-point capsule. Mini rests as either a
+   48-by-40 microphone capsule or a 118-by-40 timer-plus-microphone capsule.
 2. The actual `NSPanel`, hosting view, and SwiftUI root must all be transparent
    outside the capsule. A rounded child inside an opaque rectangular host is a
    release-blocking defect.
@@ -94,6 +96,30 @@ controls. Long activity names scroll on one line when motion is allowed.
 The compact timer cluster is deliberately dense: activity and session clocks
 share at most 84 points, use no decorative stopwatch badge, and preserve at
 least 58 points for the activity title.
+
+### Mini presentation
+
+- Mini is an optional persistent presentation selected in Settings →
+  Appearance or with its configurable global shortcut. It changes presentation,
+  never capture routing, timer authority, recording evidence, or recovery
+  state.
+- With no linked timer, Mini contains one microphone control and no visible
+  link button, title, waveform, memo action, or disclosure.
+- Link state remains legible without expanding the capsule: unlinked uses the
+  theme's `linkOff` microphone treatment; linked uses the active link color and
+  an integrated chain badge. Link/unlink remains available through the global
+  link shortcut and the menu-bar panel.
+- When linked and an activity timer exists, Mini shows that elapsed timer.
+  Otherwise it shows the linked session countdown/overtime timer. A paused
+  timer remains visible at its frozen value.
+- Mini never changes width because recording starts or stops. Recording swaps
+  the microphone for the unmistakable Stop symbol and adds a bounded glow
+  driven by the recorder's smoothed local power meter. Louder speech increases
+  glow intensity and modestly shortens its pulse; it never moves the control or
+  adds network/transcription work.
+- Previous-capture, playback, failure, recovery, picker, and finish controls
+  remain available in the menu-bar popover. Returning to Standard renders the
+  current authoritative state rather than a stale hidden drawer.
 
 ## Expanded timer instrument
 
@@ -198,6 +224,10 @@ least 58 points for the activity title.
   shifting neighboring layout.
 - Press: compress the control by about three percent.
 - Width changes: 200–260 ms ease-in-out, anchored to the widget’s right edge.
+- Standard/Mini switching uses the same native bottom-right-anchored resize and
+  a content crossfade. Both modes share one trailing microphone control, so its
+  center must remain stationary throughout every intermediate frame. Do not
+  build two independent capsules or two competing microphone layouts.
 - Timer expansion changes both width and height over the same 200–260 ms
   interval, anchored to the widget’s bottom-right corner.
 - Timer disclosure explicitly synchronizes the native `NSPanel` size after the
@@ -259,6 +289,16 @@ least 58 points for the activity title.
   target-width snap may be hidden inside an otherwise animated native panel.
 - Expand and collapse keep the capsule on one bottom baseline with no vertical
   hop, flash, or competing SwiftUI geometry animation.
+- Mini stays at 48 points wide before, during, and after an unlinked or
+  timerless recording. A linked Mini timer stays at 118 points during the same
+  transition.
+- Standard ↔ Mini works from Settings and the configured global shortcut while
+  idle, recording, processing, linked, unlinked, and timer-active. The
+  microphone center does not move, and no clipped Standard content, ghost
+  capsule, rectangular host, or one-frame flash appears.
+- Mini's idle linked/unlinked treatments are visually distinct in every theme;
+  recording is recognizable without relying only on color, and the glow
+  responds to local volume without changing layout.
 - Hover, keyboard focus, press feedback, Reduce Motion, and accessibility
   labels are verified.
 - The signed artifact from merged `main` is installed and exercised; a source
