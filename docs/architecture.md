@@ -116,9 +116,20 @@ offers Play, Save, and Retry.
 Silence protection has three persistent modes:
 
 - **Off** skips local no-speech validation and displays a warning.
-- **Basic** is the default and preserves the existing whole-recording gate.
+- **Basic** is the default. Its whole-recording gate requires both the
+  deterministic acoustic-frame heuristic and a pinned local WebRTC VAD to
+  report sustained voice activity.
 - **Enhanced — Experimental** adds the segment-local corroboration described
   above without another decode, provider request, or AI layer.
+
+The independent VAD resamples decoded mono samples to 16 kHz and evaluates
+20 ms frames in very-aggressive mode. A capture must contain at least 12
+consecutive VAD-positive frames and at least 12 positive frames total for
+sub-750 ms audio, or 14 total frames for longer audio. The original heuristic
+remains available as the timestamped evidence timeline used by Enhanced
+segment/word validation. VAD setup or processing failure rejects the capture
+locally rather than silently weakening the gate. The VAD is a linear local
+pass: it adds no model download, provider call, or transcript-processing stage.
 
 Enhanced removal requires a complete segment representation of the canonical
 provider text, high provider no-speech probability, low provider log
@@ -140,7 +151,7 @@ upload object.
 Every completed attempt appends one bounded, permission-0600 diagnostic record
 containing only numeric stage timings, the selected protection mode, omission
 counts, exact-alignment status, timestamp coverage counts, microphone recovery
-count, and outcome. The
+count, WebRTC VAD speech-frame count/longest run, and outcome. The
 Settings diagnostics surface can copy, reveal, and clear that file. It never
 records transcript text, audio, credentials, tokens, private URLs, or activity
 descriptions. Validation time is recorded separately from decoding,

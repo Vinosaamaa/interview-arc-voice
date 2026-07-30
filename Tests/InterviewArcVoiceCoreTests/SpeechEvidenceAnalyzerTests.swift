@@ -12,6 +12,8 @@ private let testSampleRate = 16_000.0
 
     #expect(!result.containsSpeech)
     #expect(result.speechLikeFrameCount == 0)
+    #expect(result.vadSpeechFrameCount == 0)
+    #expect(result.vadLongestSpeechRunFrames == 0)
 }
 
 @Test func steadyFanLikeHumIsNotMistakenForSpeech() {
@@ -26,6 +28,10 @@ private let testSampleRate = 16_000.0
     )
 
     #expect(!result.containsSpeech)
+    #expect(
+        result.vadSpeechFrameCount < 12
+            || result.vadLongestSpeechRunFrames < 12
+    )
 }
 
 @Test func isolatedKeyboardLikeClicksAreRejected() {
@@ -63,6 +69,10 @@ private let testSampleRate = 16_000.0
     )
 
     #expect(!result.containsSpeech)
+    #expect(
+        result.vadSpeechFrameCount < 12
+            || result.vadLongestSpeechRunFrames < 12
+    )
 }
 
 @Test func shortSoftSpeechShapedCaptureIsAccepted() {
@@ -84,6 +94,25 @@ private let testSampleRate = 16_000.0
 
     #expect(result.containsSpeech)
     #expect(result.longestSpeechRunFrames >= 4)
+    #expect(result.vadSpeechFrameCount >= 12)
+    #expect(result.vadLongestSpeechRunFrames >= 12)
+}
+
+@Test func validSpeechAtAirPodsFallbackRateIsAccepted() {
+    let sampleRate = 24_000.0
+    let samples = speechShapedSamples(
+        duration: 0.8,
+        sampleRate: sampleRate
+    )
+
+    let result = LocalSpeechEvidenceAnalyzer.analyze(
+        samples: samples,
+        sampleRate: sampleRate
+    )
+
+    #expect(result.containsSpeech)
+    #expect(result.vadSpeechFrameCount >= 14)
+    #expect(result.vadLongestSpeechRunFrames >= 12)
 }
 
 @Test func validRecordingRetainsSegmentLocalSpeechEvidence() {
@@ -102,9 +131,12 @@ private let testSampleRate = 16_000.0
     #expect(result.evidence(from: 3.1, to: 3.9).hasSustainedSpeech)
 }
 
-private func speechShapedSamples(duration: Double) -> [Float] {
-    (0..<Int(testSampleRate * duration)).map { index -> Float in
-        let time = Double(index) / testSampleRate
+private func speechShapedSamples(
+    duration: Double,
+    sampleRate: Double = testSampleRate
+) -> [Float] {
+    (0..<Int(sampleRate * duration)).map { index -> Float in
+        let time = Double(index) / sampleRate
         let envelope = max(0, sin(.pi * time / duration))
         let syllables = 0.45 + 0.55 * abs(sin(2 * .pi * 4.2 * time))
         let voiced =

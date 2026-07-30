@@ -130,7 +130,10 @@ Save, and Retry instead of being discarded.
   so ambient noise cannot become a guessed one-word transcript.
 - Settings → Silence protection offers `Off`, `Basic`, and
   `Enhanced — Experimental`. Basic rejects an entire recording with no
-  sustained speech. Enhanced reuses the same local scan and Groq request, then
+  sustained speech. Whole-capture admission requires both the existing
+  acoustic-frame heuristic and a pinned local WebRTC VAD decision; neither
+  mode adds another provider request. Enhanced reuses the same local scan and
+  Groq request, then
   omits a returned segment only when its local timestamped audio and Groq's
   confidence metadata both identify it as unsupported non-speech. When a
   provider segment mixes genuine speech with a hallucinated phrase over
@@ -144,9 +147,9 @@ Save, and Retry instead of being discarded.
   audio decode and never cuts, rewrites, or replaces the original M4A.
 - Settings → Diagnostics records a bounded local timing breakdown for capture,
   validation, Groq, transcript corroboration, response handling, and insertion,
-  plus privacy-safe segment/word coverage and omission counts. The report can
-  be copied, revealed, or cleared and never contains transcript text, audio,
-  credentials, tokens, or private URLs.
+  plus privacy-safe WebRTC VAD frame/run counts, segment/word coverage, and
+  omission counts. The report can be copied, revealed, or cleared and never
+  contains transcript text, audio, credentials, tokens, or private URLs.
 
 ## First-time setup
 

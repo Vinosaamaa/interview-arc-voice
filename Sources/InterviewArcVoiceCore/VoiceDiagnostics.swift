@@ -25,6 +25,8 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
     public let evaluatedSegmentCount: Int?
     public let wordTimestampCount: Int?
     public let microphoneRecoveryCount: Int?
+    public let vadSpeechFrameCount: Int?
+    public let vadLongestSpeechRunFrames: Int?
     public let outcome: VoiceDiagnosticOutcome
 
     public init(
@@ -46,6 +48,8 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         evaluatedSegmentCount: Int? = nil,
         wordTimestampCount: Int? = nil,
         microphoneRecoveryCount: Int? = nil,
+        vadSpeechFrameCount: Int? = nil,
+        vadLongestSpeechRunFrames: Int? = nil,
         outcome: VoiceDiagnosticOutcome
     ) {
         self.id = id
@@ -66,6 +70,8 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         self.evaluatedSegmentCount = evaluatedSegmentCount
         self.wordTimestampCount = wordTimestampCount
         self.microphoneRecoveryCount = microphoneRecoveryCount
+        self.vadSpeechFrameCount = vadSpeechFrameCount
+        self.vadLongestSpeechRunFrames = vadLongestSpeechRunFrames
         self.outcome = outcome
     }
 
@@ -88,6 +94,8 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
             "Segments evaluated: \(evaluatedSegmentCount.map { String($0) } ?? "Unavailable")",
             "Word timestamps: \(wordTimestampCount.map { String($0) } ?? "Unavailable")",
             "Microphone recovery attempts: \(microphoneRecoveryCount.map { String($0) } ?? "Unavailable")",
+            "WebRTC VAD speech frames: \(vadSpeechFrameCount.map { String($0) } ?? "Unavailable")",
+            "WebRTC VAD longest run: \(vadLongestSpeechRunFrames.map { String($0) } ?? "Unavailable")",
             "Outcome: \(outcome.rawValue)",
         ].joined(separator: "\n")
     }

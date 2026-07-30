@@ -34,6 +34,8 @@ import Testing
                 evaluatedSegmentCount: 3,
                 wordTimestampCount: 12,
                 microphoneRecoveryCount: 2,
+                vadSpeechFrameCount: 18,
+                vadLongestSpeechRunFrames: 15,
                 outcome: .delivered
             )
         )
@@ -75,6 +77,8 @@ import Testing
         evaluatedSegmentCount: 2,
         wordTimestampCount: 8,
         microphoneRecoveryCount: 2,
+        vadSpeechFrameCount: 18,
+        vadLongestSpeechRunFrames: 15,
         outcome: .delivered
     )
 
@@ -83,6 +87,8 @@ import Testing
     #expect(record.report.contains("Unsupported words omitted: 2"))
     #expect(record.report.contains("Word alignment complete: true"))
     #expect(record.report.contains("Microphone recovery attempts: 2"))
+    #expect(record.report.contains("WebRTC VAD speech frames: 18"))
+    #expect(record.report.contains("WebRTC VAD longest run: 15"))
 }
 
 @Test func diagnosticsDecodeRecordsWrittenBeforeWordLevelMetrics() throws {
@@ -116,6 +122,8 @@ import Testing
     #expect(records[0].evaluatedSegmentCount == nil)
     #expect(records[0].wordTimestampCount == nil)
     #expect(records[0].microphoneRecoveryCount == nil)
+    #expect(records[0].vadSpeechFrameCount == nil)
+    #expect(records[0].vadLongestSpeechRunFrames == nil)
 }
 
 @Test func diagnosticsStoreCanBeCleared() async throws {
