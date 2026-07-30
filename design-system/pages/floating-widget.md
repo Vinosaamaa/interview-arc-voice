@@ -46,7 +46,8 @@ Status colors may be used only when they communicate a real state.
   `Solar Ember`, and `Sakura Glass`.
 - Every theme preserves Standard's 250-by-40 resting capsule, Mini's
   40-point circular microphone surface inside a transparent 48-point host and
-  118-by-40 timer capsule, host transparency, spacing,
+  108-by-40 single-timer capsule and 177-by-40 dual-timer capsule, host
+  transparency, spacing,
   typography roles, icon family, microphone elevation, timer layout, playback
   width, and motion timing.
 - One theme is visible at a time. Never mix accents or surfaces from two
@@ -72,7 +73,7 @@ Timer values must never change width as they count.
 
 1. Standard rests as a 250-by-40-point capsule. Mini rests as either one
    40-point microphone circle inside a transparent 48-by-40 host or a
-   118-by-40 timer-plus-microphone capsule.
+   108-by-40 single-timer capsule or 177-by-40 dual-timer capsule.
 2. The actual `NSPanel`, hosting view, and SwiftUI root must all be transparent
    outside the capsule. A rounded child inside an opaque rectangular host is a
    release-blocking defect.
@@ -116,12 +117,19 @@ least 58 points for the activity title.
 - When linked and an activity timer exists, Mini shows that elapsed timer.
   Otherwise it shows the linked session countdown/overtime timer. A paused
   timer remains visible at its frozen value.
-- Mini never changes width because recording starts or stops. Recording swaps
-  the microphone for the unmistakable red Stop symbol and adds a distinct
-  golden-yellow bounded ring/glow
-  driven by the recorder's smoothed local power meter. Louder speech increases
-  glow intensity and modestly shortens its pulse; it never moves the control or
-  adds network/transcription work.
+- When both timers exist, tapping the activity-timer region prepends one
+  equal-width session-timer cell on the left. The activity cell and microphone
+  remain anchored. Divider spacing is symmetric, and tapping again collapses
+  the session cell. A session-only timer has no disclosure.
+- Starting or preparing a recording shrinks any Mini timer capsule into the
+  same one-circle recording state. Stop restores the exact single- or
+  dual-timer disclosure. Recording swaps the microphone for the unmistakable
+  red Stop symbol and keeps a persistent bright golden ring visible even during
+  silence. Speech adds a stronger second halo driven by the recorder's smoothed
+  local power meter. It never moves the control or adds network/transcription
+  work.
+- A click toggles recording. Movement beyond the five-point drag threshold
+  moves the panel and cancels the click, whether Mini is idle or recording.
 - Previous-capture, playback, failure, recovery, picker, and finish controls
   remain available in the menu-bar popover. Returning to Standard renders the
   current authoritative state rather than a stale hidden drawer.
@@ -272,7 +280,12 @@ least 58 points for the activity title.
 - Previous-capture controls appear only when corresponding content exists.
 - Insert is available beside the other previous-capture controls and targets
   the last eligible external editor; transient menu-bar and system UI processes
-  are never remembered as insertion destinations.
+  are never remembered as insertion destinations. Menu insertion waits until
+  AppKit has actually dismissed the menu window before restoring the editor.
+- **Recent Transcripts** retains at most 20 newest-first items for 24 hours in a
+  permission-0600 local file. Position and navigation stay in the header;
+  Copy, Play, Save, and Insert stay in the footer and always act on the visible
+  item.
 - Timer rows expose no result or star controls until Finish opens its drawer.
 - The next-activity picker exposes no result or star controls.
 - Pausing a session freezes both clocks and preserves the last-focused
@@ -294,18 +307,18 @@ least 58 points for the activity title.
   target-width snap may be hidden inside an otherwise animated native panel.
 - Expand and collapse keep the capsule on one bottom baseline with no vertical
   hop, flash, or competing SwiftUI geometry animation.
-- Mini stays at 48 points wide before, during, and after an unlinked or
-  timerless recording. A linked Mini timer stays at 118 points during the same
-  transition.
+- Mini recording is always the 48-point one-circle state. A linked 108-point
+  single timer or 177-point dual timer shrinks to that circle and restores the
+  exact prior disclosure on Stop.
 - Standard ↔ Mini works from Settings and the configured global shortcut while
   idle, recording, processing, linked, unlinked, and timer-active. The
   microphone center does not move, and no clipped Standard content, ghost
   capsule, rectangular host, or one-frame flash appears.
 - Mini's idle linked/unlinked treatments are visually distinct in every theme;
   microphone-only Mini has no surrounding capsule rim, recording is
-  recognizable through the Stop symbol plus golden signal rather than color
-  alone, and the glow
-  responds to local volume without changing layout.
+  recognizable through the Stop symbol plus the persistent golden ring rather
+  than color alone, and speech adds a clearly stronger volume-responsive halo
+  without changing layout.
 - Hover, keyboard focus, press feedback, Reduce Motion, and accessibility
   labels are verified.
 - The signed artifact from merged `main` is installed and exercised; a source

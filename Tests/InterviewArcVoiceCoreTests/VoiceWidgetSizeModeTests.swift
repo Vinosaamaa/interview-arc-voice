@@ -34,29 +34,75 @@ struct VoiceWidgetSizeModeTests {
             MiniWidgetPresentationPolicy.layout(
                 linkEnabled: false,
                 hasActivityTimer: true,
-                hasSessionTimer: true
+                hasSessionTimer: true,
+                recordingActive: false,
+                sessionTimerDisclosed: false
             ) == .microphoneOnly
         )
         #expect(
             MiniWidgetPresentationPolicy.layout(
                 linkEnabled: true,
                 hasActivityTimer: false,
-                hasSessionTimer: false
+                hasSessionTimer: false,
+                recordingActive: false,
+                sessionTimerDisclosed: false
             ) == .microphoneOnly
         )
         #expect(
             MiniWidgetPresentationPolicy.layout(
                 linkEnabled: true,
                 hasActivityTimer: true,
-                hasSessionTimer: false
-            ) == .timer
+                hasSessionTimer: false,
+                recordingActive: false,
+                sessionTimerDisclosed: false
+            ) == .singleTimer
         )
         #expect(
             MiniWidgetPresentationPolicy.layout(
                 linkEnabled: true,
                 hasActivityTimer: false,
+                hasSessionTimer: true,
+                recordingActive: false,
+                sessionTimerDisclosed: false
+            ) == .singleTimer
+        )
+    }
+
+    @Test
+    func miniRecordingAlwaysCollapsesToTheOneCircleState() {
+        #expect(
+            MiniWidgetPresentationPolicy.layout(
+                linkEnabled: true,
+                hasActivityTimer: true,
+                hasSessionTimer: true,
+                recordingActive: true,
+                sessionTimerDisclosed: true
+            ) == .microphoneOnly
+        )
+    }
+
+    @Test
+    func miniDisclosesTheSessionOnlyBesideAnActivityTimer() {
+        #expect(
+            MiniWidgetPresentationPolicy.canDiscloseSessionTimer(
+                hasActivityTimer: true,
                 hasSessionTimer: true
-            ) == .timer
+            )
+        )
+        #expect(
+            !MiniWidgetPresentationPolicy.canDiscloseSessionTimer(
+                hasActivityTimer: false,
+                hasSessionTimer: true
+            )
+        )
+        #expect(
+            MiniWidgetPresentationPolicy.layout(
+                linkEnabled: true,
+                hasActivityTimer: true,
+                hasSessionTimer: true,
+                recordingActive: false,
+                sessionTimerDisclosed: true
+            ) == .dualTimer
         )
     }
 
@@ -89,12 +135,20 @@ struct VoiceWidgetSizeModeTests {
                 == FloatingWidgetWindowPolicy.miniMicrophoneWidth
         )
         #expect(
-            MiniWidgetPresentationPolicy.width(for: .timer)
+            MiniWidgetPresentationPolicy.width(for: .singleTimer)
                 == FloatingWidgetWindowPolicy.miniTimerWidth
+        )
+        #expect(
+            MiniWidgetPresentationPolicy.width(for: .dualTimer)
+                == FloatingWidgetWindowPolicy.miniDualTimerWidth
         )
         #expect(
             FloatingWidgetWindowPolicy.miniMicrophoneWidth
                 < FloatingWidgetWindowPolicy.miniTimerWidth
+        )
+        #expect(
+            FloatingWidgetWindowPolicy.miniTimerWidth
+                < FloatingWidgetWindowPolicy.miniDualTimerWidth
         )
         #expect(
             FloatingWidgetWindowPolicy.miniMicrophoneWidth
@@ -103,6 +157,20 @@ struct VoiceWidgetSizeModeTests {
         #expect(
             FloatingWidgetWindowPolicy.miniMicrophoneSurfaceDiameter
                 == FloatingWidgetWindowPolicy.capsuleHeight
+        )
+    }
+
+    @Test
+    func miniPointerMovementSeparatesClicksFromDrags() {
+        #expect(
+            !MiniWidgetPointerPolicy.isDrag(
+                translation: CGSize(width: 3, height: 3)
+            )
+        )
+        #expect(
+            MiniWidgetPointerPolicy.isDrag(
+                translation: CGSize(width: 5, height: 0)
+            )
         )
     }
 

@@ -106,14 +106,22 @@ Save, and Retry instead of being discarded.
   available.
 - Settings → Appearance also offers a persistent Mini presentation. Mini is a
   single circular microphone surface while unlinked or linked without a timer, and
-  a fixed timer-plus-microphone capsule while a linked activity or session
-  timer exists. It never expands during recording: a high-visibility golden,
-  volume-reactive glow
-  communicates live capture, the microphone color and integrated chain badge
-  communicate link state, and detailed memo/recovery controls remain in the
-  menu-bar panel. Standard and Mini share one trailing microphone control and
-  one bottom-right-anchored window resize, preventing a mode switch from
-  moving or flashing the control.
+  a dense timer-plus-microphone capsule while a linked activity or session
+  timer exists. Tapping an activity timer can prepend the session countdown on
+  the left without moving the activity clock or microphone. Recording always
+  shrinks Mini to the same one-circle state and restores the prior timer
+  disclosure on Stop. A persistent golden ring remains visible during silence;
+  speech adds a stronger volume-reactive halo. Clicking toggles recording,
+  while dragging past the movement threshold only repositions the widget.
+  Detailed memo and recovery controls remain in the menu-bar panel. Standard
+  and Mini share one trailing microphone control and one bottom-right-anchored
+  window resize, preventing a mode switch from moving or flashing the control.
+- The menu-bar panel retains the 20 newest transcripts locally for at most
+  24 hours in a permission-0600 file. **Recent Transcripts** keeps its position
+  and navigation controls in a stable header and its Copy, Play, Save, and
+  Insert actions in the footer. Menu insertion preserves the last eligible
+  external editor, dismisses the menu window fully, then restores that editor
+  before inserting.
 - The permanent widget visual and interaction contract is
   [`design-system/pages/floating-widget.md`](design-system/pages/floating-widget.md).
 - Settings → Appearance offers five persistent widget themes: the original
