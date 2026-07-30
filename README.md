@@ -105,9 +105,10 @@ Save, and Retry instead of being discarded.
   Playback keeps seek, pause/resume, Stop, and timer-disclosure controls
   available.
 - Settings → Appearance also offers a persistent Mini presentation. Mini is a
-  fixed microphone-only capsule while unlinked or linked without a timer, and
+  single circular microphone surface while unlinked or linked without a timer, and
   a fixed timer-plus-microphone capsule while a linked activity or session
-  timer exists. It never expands during recording: a volume-reactive glow
+  timer exists. It never expands during recording: a high-visibility golden,
+  volume-reactive glow
   communicates live capture, the microphone color and integrated chain badge
   communicate link state, and detailed memo/recovery controls remain in the
   menu-bar panel. Standard and Mini share one trailing microphone control and

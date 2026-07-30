@@ -26,6 +26,7 @@ struct VoiceWidgetPalette {
     let linkOff: Color
     let connectedIdle: Color
     let warning: Color
+    let recordingSignal: Color
     let previewBackground: Color
     let isDark: Bool
 
@@ -47,6 +48,7 @@ struct VoiceWidgetPalette {
                 linkOff: Color(red: 0.090, green: 0.227, blue: 0.408),
                 connectedIdle: Color(red: 0.651, green: 0.365, blue: 0.110),
                 warning: Color(red: 0.722, green: 0.353, blue: 0.196),
+                recordingSignal: Color(red: 1.000, green: 0.820, blue: 0.180),
                 previewBackground: Color(red: 0.941, green: 0.963, blue: 0.963),
                 isDark: false
             )
@@ -66,6 +68,7 @@ struct VoiceWidgetPalette {
                 linkOff: Color(red: 0.420, green: 0.619, blue: 0.902),
                 connectedIdle: Color(red: 1.000, green: 0.636, blue: 0.239),
                 warning: Color(red: 1.000, green: 0.404, blue: 0.337),
+                recordingSignal: Color(red: 1.000, green: 0.925, blue: 0.220),
                 previewBackground: Color(red: 0.018, green: 0.027, blue: 0.059),
                 isDark: true
             )
@@ -85,6 +88,7 @@ struct VoiceWidgetPalette {
                 linkOff: Color(red: 0.431, green: 0.616, blue: 0.863),
                 connectedIdle: Color(red: 0.965, green: 0.651, blue: 0.310),
                 warning: Color(red: 0.976, green: 0.424, blue: 0.345),
+                recordingSignal: Color(red: 1.000, green: 0.875, blue: 0.270),
                 previewBackground: Color(red: 0.024, green: 0.055, blue: 0.110),
                 isDark: true
             )
@@ -104,6 +108,7 @@ struct VoiceWidgetPalette {
                 linkOff: Color(red: 0.456, green: 0.596, blue: 0.792),
                 connectedIdle: Color(red: 1.000, green: 0.702, blue: 0.310),
                 warning: Color(red: 1.000, green: 0.388, blue: 0.259),
+                recordingSignal: Color(red: 1.000, green: 0.790, blue: 0.165),
                 previewBackground: Color(red: 0.086, green: 0.075, blue: 0.063),
                 isDark: true
             )
@@ -123,6 +128,7 @@ struct VoiceWidgetPalette {
                 linkOff: Color(red: 0.169, green: 0.298, blue: 0.510),
                 connectedIdle: Color(red: 0.682, green: 0.365, blue: 0.118),
                 warning: Color(red: 0.745, green: 0.294, blue: 0.235),
+                recordingSignal: Color(red: 1.000, green: 0.760, blue: 0.220),
                 previewBackground: Color(red: 0.996, green: 0.957, blue: 0.965),
                 isDark: false
             )
@@ -1028,33 +1034,38 @@ struct FloatingRecorderView: View {
 
     private func recorderCapsule(width: CGFloat) -> some View {
         ZStack {
-            Capsule(style: .continuous)
-                .fill(Color.black.opacity(0.001))
-                .shadow(
-                    color: palette.coolShadow,
-                    radius: 7,
-                    y: 3
+            ZStack {
+                Capsule(style: .continuous)
+                    .fill(Color.black.opacity(0.001))
+                    .shadow(
+                        color: palette.coolShadow,
+                        radius: 7,
+                        y: 3
+                    )
+                FrostedInstrumentCapsule(
+                    palette: palette,
+                    isRecording: model.isRecording
                 )
-            FrostedInstrumentCapsule(
-                palette: palette,
-                isRecording: model.isRecording
-            )
-            standardCapsuleContent
-                .frame(
-                    width: width,
-                    height: FloatingWidgetWindowPolicy.capsuleHeight
-                )
-                .clipped()
-                .opacity(model.widgetSizeMode == .standard ? 1 : 0)
-                .allowsHitTesting(model.widgetSizeMode == .standard)
-            miniCapsuleContent
-                .frame(
-                    width: width,
-                    height: FloatingWidgetWindowPolicy.capsuleHeight
-                )
-                .clipped()
-                .opacity(model.widgetSizeMode == .mini ? 1 : 0)
-                .allowsHitTesting(model.widgetSizeMode == .mini)
+                standardCapsuleContent
+                    .frame(
+                        width: width,
+                        height: FloatingWidgetWindowPolicy.capsuleHeight
+                    )
+                    .clipped()
+                    .opacity(model.widgetSizeMode == .standard ? 1 : 0)
+                    .allowsHitTesting(model.widgetSizeMode == .standard)
+                miniCapsuleContent
+                    .frame(
+                        width: width,
+                        height: FloatingWidgetWindowPolicy.capsuleHeight
+                    )
+                    .clipped()
+                    .opacity(model.widgetSizeMode == .mini ? 1 : 0)
+                    .allowsHitTesting(model.widgetSizeMode == .mini)
+            }
+            .clipShape(Capsule(style: .continuous))
+            .opacity(showsSharedCapsuleSurface ? 1 : 0)
+            .allowsHitTesting(showsSharedCapsuleSurface)
             HStack {
                 Spacer(minLength: 0)
                 recordButton
@@ -1069,7 +1080,6 @@ struct FloatingRecorderView: View {
             width: width,
             height: FloatingWidgetWindowPolicy.capsuleHeight
         )
-        .clipShape(Capsule(style: .continuous))
         .contentShape(Capsule(style: .continuous))
         .frame(width: width, alignment: .trailing)
         .animation(
@@ -1078,6 +1088,16 @@ struct FloatingRecorderView: View {
                 : .easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds),
             value: model.widgetSizeMode
         )
+        .animation(
+            reduceMotion
+                ? nil
+                : .easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds),
+            value: showsSharedCapsuleSurface
+        )
+    }
+
+    private var showsSharedCapsuleSurface: Bool {
+        model.widgetSizeMode == .standard || model.miniWidgetLayout == .timer
     }
 
     private var standardCapsuleContent: some View {
@@ -1528,7 +1548,10 @@ struct FloatingRecorderView: View {
                 miniRecordingGlow
                 Circle()
                     .fill(recordHaloColor.opacity(model.isBusy ? 0.12 : 0.46))
-                    .frame(width: 38, height: 38)
+                    .frame(
+                        width: recordSurfaceDiameter,
+                        height: recordSurfaceDiameter
+                    )
                 Circle()
                     .fill(
                         LinearGradient(
@@ -1631,22 +1654,33 @@ struct FloatingRecorderView: View {
     private func miniGlow(level: Double, pulse: Double) -> some View {
         let boundedLevel = max(0, min(1, level))
         let boundedPulse = max(0, min(1, pulse))
-        let levelDimension = CGFloat(boundedLevel)
-        let pulseDimension = CGFloat(boundedPulse)
         return Circle()
             .stroke(
-                palette.warning.opacity(
-                    0.22 + (boundedLevel * 0.34) + (boundedPulse * 0.12)
+                palette.recordingSignal.opacity(
+                    MiniWidgetAudioGlowPolicy.ringOpacity(
+                        level: boundedLevel,
+                        pulse: boundedPulse
+                    )
                 ),
-                lineWidth: 1.2 + levelDimension
+                lineWidth: MiniWidgetAudioGlowPolicy.ringLineWidth(
+                    level: boundedLevel
+                )
             )
             .frame(
-                width: 34 + (levelDimension * 2.5) + (pulseDimension * 1.5),
-                height: 34 + (levelDimension * 2.5) + (pulseDimension * 1.5)
+                width: MiniWidgetAudioGlowPolicy.ringDiameter(
+                    level: boundedLevel,
+                    pulse: boundedPulse
+                ),
+                height: MiniWidgetAudioGlowPolicy.ringDiameter(
+                    level: boundedLevel,
+                    pulse: boundedPulse
+                )
             )
             .shadow(
-                color: palette.warning.opacity(0.24 + (boundedLevel * 0.34)),
-                radius: 2 + (levelDimension * 4)
+                color: palette.recordingSignal.opacity(
+                    MiniWidgetAudioGlowPolicy.shadowOpacity(level: boundedLevel)
+                ),
+                radius: MiniWidgetAudioGlowPolicy.shadowRadius(level: boundedLevel)
             )
             .allowsHitTesting(false)
     }
@@ -1659,6 +1693,12 @@ struct FloatingRecorderView: View {
             return palette.linkOff
         }
         return palette.tealGlow
+    }
+
+    private var recordSurfaceDiameter: CGFloat {
+        model.widgetSizeMode == .mini
+            ? FloatingWidgetWindowPolicy.miniMicrophoneSurfaceDiameter
+            : 38
     }
 
     private var recordFaceColor: Color {
