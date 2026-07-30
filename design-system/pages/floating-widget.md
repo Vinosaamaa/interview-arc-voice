@@ -35,6 +35,7 @@ The following table defines the default `Arctic Teal` theme.
 | `linkOff` | `#173A68` | Hollow broken-chain mark |
 | `connectedIdle` | `#A65D1C` | Interview Arc connected, but speech is using general dictation |
 | `warning` | `#B85A32` | Compact actionable failure |
+| `recordingSignal` | `#FFD12E` family | High-visibility Mini recording ring |
 
 Alternate themes replace these values through the centralized palette only.
 Status colors may be used only when they communicate a real state.
@@ -43,8 +44,9 @@ Status colors may be used only when they communicate a real state.
 
 - The approved themes are `Arctic Teal`, `Neon Circuit`, `Aurora Night`,
   `Solar Ember`, and `Sakura Glass`.
-- Every theme preserves Standard's 250-by-40 resting capsule, Mini's 48-by-40
-  microphone capsule and 118-by-40 timer capsule, host transparency, spacing,
+- Every theme preserves Standard's 250-by-40 resting capsule, Mini's
+  40-point circular microphone surface inside a transparent 48-point host and
+  118-by-40 timer capsule, host transparency, spacing,
   typography roles, icon family, microphone elevation, timer layout, playback
   width, and motion timing.
 - One theme is visible at a time. Never mix accents or surfaces from two
@@ -68,8 +70,9 @@ Timer values must never change width as they count.
 
 ## Geometry and material
 
-1. Standard rests as a 250-by-40-point capsule. Mini rests as either a
-   48-by-40 microphone capsule or a 118-by-40 timer-plus-microphone capsule.
+1. Standard rests as a 250-by-40-point capsule. Mini rests as either one
+   40-point microphone circle inside a transparent 48-by-40 host or a
+   118-by-40 timer-plus-microphone capsule.
 2. The actual `NSPanel`, hosting view, and SwiftUI root must all be transparent
    outside the capsule. A rounded child inside an opaque rectangular host is a
    release-blocking defect.
@@ -103,8 +106,9 @@ least 58 points for the activity title.
   Appearance or with its configurable global shortcut. It changes presentation,
   never capture routing, timer authority, recording evidence, or recovery
   state.
-- With no linked timer, Mini contains one microphone control and no visible
-  link button, title, waveform, memo action, or disclosure.
+- With no linked timer, Mini contains exactly one circular microphone surface
+  with no surrounding frosted capsule rim and no visible link button, title,
+  waveform, memo action, or disclosure.
 - Link state remains legible without expanding the capsule: unlinked uses the
   theme's `linkOff` microphone treatment; linked uses the active link color and
   an integrated chain badge. Link/unlink remains available through the global
@@ -113,7 +117,8 @@ least 58 points for the activity title.
   Otherwise it shows the linked session countdown/overtime timer. A paused
   timer remains visible at its frozen value.
 - Mini never changes width because recording starts or stops. Recording swaps
-  the microphone for the unmistakable Stop symbol and adds a bounded glow
+  the microphone for the unmistakable red Stop symbol and adds a distinct
+  golden-yellow bounded ring/glow
   driven by the recorder's smoothed local power meter. Louder speech increases
   glow intensity and modestly shortens its pulse; it never moves the control or
   adds network/transcription work.
@@ -297,7 +302,9 @@ least 58 points for the activity title.
   microphone center does not move, and no clipped Standard content, ghost
   capsule, rectangular host, or one-frame flash appears.
 - Mini's idle linked/unlinked treatments are visually distinct in every theme;
-  recording is recognizable without relying only on color, and the glow
+  microphone-only Mini has no surrounding capsule rim, recording is
+  recognizable through the Stop symbol plus golden signal rather than color
+  alone, and the glow
   responds to local volume without changing layout.
 - Hover, keyboard focus, press feedback, Reduce Motion, and accessibility
   labels are verified.

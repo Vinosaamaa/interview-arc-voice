@@ -74,6 +74,12 @@ public enum MiniWidgetTimerSource: Equatable, Sendable {
 public enum MiniWidgetAudioGlowPolicy {
     public static let quietDecibels: Double = -55
     public static let loudDecibels: Double = -8
+    public static let minimumRingDiameter: CGFloat = 40
+    public static let maximumRingDiameter: CGFloat = 44
+    public static let minimumRingOpacity = 0.62
+    public static let maximumRingOpacity = 1.0
+    public static let minimumLineWidth: CGFloat = 2.2
+    public static let maximumLineWidth: CGFloat = 3.6
 
     public static func normalizedLevel(decibels: Double) -> Double {
         let span = loudDecibels - quietDecibels
@@ -93,5 +99,39 @@ public enum MiniWidgetAudioGlowPolicy {
 
     public static func pulseDuration(level: Double) -> TimeInterval {
         1.45 - (max(0, min(1, level)) * 0.70)
+    }
+
+    public static func ringDiameter(level: Double, pulse: Double) -> CGFloat {
+        let boundedLevel = max(0, min(1, level))
+        let boundedPulse = max(0, min(1, pulse))
+        return min(
+            maximumRingDiameter,
+            minimumRingDiameter
+                + (CGFloat(boundedLevel) * 2.5)
+                + (CGFloat(boundedPulse) * 1.5)
+        )
+    }
+
+    public static func ringOpacity(level: Double, pulse: Double) -> Double {
+        let boundedLevel = max(0, min(1, level))
+        let boundedPulse = max(0, min(1, pulse))
+        return min(
+            maximumRingOpacity,
+            minimumRingOpacity + (boundedLevel * 0.26) + (boundedPulse * 0.12)
+        )
+    }
+
+    public static func ringLineWidth(level: Double) -> CGFloat {
+        let boundedLevel = max(0, min(1, level))
+        return minimumLineWidth
+            + (CGFloat(boundedLevel) * (maximumLineWidth - minimumLineWidth))
+    }
+
+    public static func shadowOpacity(level: Double) -> Double {
+        0.50 + (max(0, min(1, level)) * 0.34)
+    }
+
+    public static func shadowRadius(level: Double) -> CGFloat {
+        4 + (CGFloat(max(0, min(1, level))) * 5)
     }
 }
