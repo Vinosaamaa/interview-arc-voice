@@ -1040,9 +1040,19 @@ struct FloatingRecorderView: View {
                 isRecording: model.isRecording
             )
             standardCapsuleContent
+                .frame(
+                    width: width,
+                    height: FloatingWidgetWindowPolicy.capsuleHeight
+                )
+                .clipped()
                 .opacity(model.widgetSizeMode == .standard ? 1 : 0)
                 .allowsHitTesting(model.widgetSizeMode == .standard)
             miniCapsuleContent
+                .frame(
+                    width: width,
+                    height: FloatingWidgetWindowPolicy.capsuleHeight
+                )
+                .clipped()
                 .opacity(model.widgetSizeMode == .mini ? 1 : 0)
                 .allowsHitTesting(model.widgetSizeMode == .mini)
             HStack {
@@ -1050,6 +1060,10 @@ struct FloatingRecorderView: View {
                 recordButton
             }
             .padding(.horizontal, 4)
+            .frame(
+                width: width,
+                height: FloatingWidgetWindowPolicy.capsuleHeight
+            )
         }
         .frame(
             width: width,
