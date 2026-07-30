@@ -114,6 +114,8 @@ Save, and Retry instead of being discarded.
   ordinary speech immediately adds a thick, bright-yellow level arc and faster
   volume-reactive halo. The contrast is intentionally strong enough to answer
   “is the microphone hearing me?” without moving or resizing the Stop control.
+  The meter is constrained to a circular alpha envelope, so the transparent
+  Mini host never exposes a rectangular glow on light or dark backgrounds.
   Clicking toggles recording, while dragging past the movement threshold only
   repositions the widget.
   Detailed memo and recovery controls remain in the menu-bar panel. Standard

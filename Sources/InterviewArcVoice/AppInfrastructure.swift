@@ -1746,7 +1746,7 @@ struct FloatingRecorderView: View {
         if model.widgetSizeMode == .mini, model.isRecording {
             ZStack {
                 Circle()
-                    .stroke(
+                    .strokeBorder(
                         palette.recordingSignal.opacity(
                             MiniWidgetAudioGlowPolicy.persistentRingOpacity
                         ),
@@ -1757,10 +1757,6 @@ struct FloatingRecorderView: View {
                             .persistentRingDiameter,
                         height: MiniWidgetAudioGlowPolicy
                             .persistentRingDiameter
-                    )
-                    .shadow(
-                        color: palette.recordingSignal.opacity(0.38),
-                        radius: 4
                     )
                 if reduceMotion {
                     miniGlow(level: miniSmoothedLevel, pulse: 0.5)
@@ -1783,6 +1779,20 @@ struct FloatingRecorderView: View {
                     }
                 }
             }
+            .frame(
+                width: MiniWidgetAudioGlowPolicy.visualEnvelopeDiameter,
+                height: MiniWidgetAudioGlowPolicy.visualEnvelopeDiameter
+            )
+            // The host window is rectangular but transparent. Constrain every
+            // sound-level pixel to this circle so no desktop can reveal the
+            // host's bounds.
+            .mask(
+                Circle()
+                    .frame(
+                        width: MiniWidgetAudioGlowPolicy.visualEnvelopeDiameter,
+                        height: MiniWidgetAudioGlowPolicy.visualEnvelopeDiameter
+                    )
+            )
             .allowsHitTesting(false)
         }
     }
@@ -1793,54 +1803,30 @@ struct FloatingRecorderView: View {
         let lineWidth = MiniWidgetAudioGlowPolicy.ringLineWidth(
             level: boundedLevel
         )
-        return ZStack {
-            Circle()
-                .stroke(
-                    palette.recordingSignal.opacity(
-                        MiniWidgetAudioGlowPolicy.ringOpacity(
-                            level: boundedLevel,
-                            pulse: boundedPulse
-                        )
-                    ),
-                    lineWidth: lineWidth
+        return Circle()
+            .trim(
+                from: 0,
+                to: MiniWidgetAudioGlowPolicy.meterArcFraction(
+                    level: boundedLevel
                 )
-                .frame(
-                    width: MiniWidgetAudioGlowPolicy.ringDiameter(
-                        level: boundedLevel,
-                        pulse: boundedPulse
-                    ),
-                    height: MiniWidgetAudioGlowPolicy.ringDiameter(
+            )
+            .stroke(
+                palette.recordingSignal.opacity(
+                    MiniWidgetAudioGlowPolicy.ringOpacity(
                         level: boundedLevel,
                         pulse: boundedPulse
                     )
+                ),
+                style: StrokeStyle(
+                    lineWidth: lineWidth,
+                    lineCap: .round
                 )
-            Circle()
-                .trim(
-                    from: 0,
-                    to: MiniWidgetAudioGlowPolicy.meterArcFraction(
-                        level: boundedLevel
-                    )
-                )
-                .stroke(
-                    palette.recordingSignal,
-                    style: StrokeStyle(
-                        lineWidth: lineWidth,
-                        lineCap: .round
-                    )
-                )
-                .rotationEffect(.degrees(-90))
-                .frame(width: 46, height: 46)
-                .shadow(
-                    color: palette.recordingSignal.opacity(
-                        MiniWidgetAudioGlowPolicy.shadowOpacity(
-                            level: boundedLevel
-                        )
-                    ),
-                    radius: MiniWidgetAudioGlowPolicy.shadowRadius(
-                        level: boundedLevel
-                    )
-                )
-        }
+            )
+            .rotationEffect(.degrees(-90))
+            .frame(
+                width: MiniWidgetAudioGlowPolicy.meterArcDiameter,
+                height: MiniWidgetAudioGlowPolicy.meterArcDiameter
+            )
             .opacity(boundedLevel > 0 ? 1 : 0)
             .allowsHitTesting(false)
     }

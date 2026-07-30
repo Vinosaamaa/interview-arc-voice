@@ -218,21 +218,6 @@ struct VoiceWidgetSizeModeTests {
                 < MiniWidgetAudioGlowPolicy.pulseDuration(level: quiet)
         )
 
-        let quietDiameter = MiniWidgetAudioGlowPolicy.ringDiameter(
-            level: quiet,
-            pulse: 0.25
-        )
-        let loudDiameter = MiniWidgetAudioGlowPolicy.ringDiameter(
-            level: loud,
-            pulse: 0.75
-        )
-        #expect(loudDiameter > quietDiameter)
-        #expect(
-            quietDiameter >= MiniWidgetAudioGlowPolicy.minimumRingDiameter
-        )
-        #expect(
-            loudDiameter <= MiniWidgetAudioGlowPolicy.maximumRingDiameter
-        )
         #expect(
             MiniWidgetAudioGlowPolicy.ringOpacity(level: loud, pulse: 1)
                 > MiniWidgetAudioGlowPolicy.ringOpacity(level: quiet, pulse: 0)
@@ -244,6 +229,15 @@ struct VoiceWidgetSizeModeTests {
         #expect(
             MiniWidgetAudioGlowPolicy.maximumLineWidth
                 >= MiniWidgetAudioGlowPolicy.persistentLineWidth * 2
+        )
+        #expect(
+            MiniWidgetAudioGlowPolicy.meterArcDiameter
+                + MiniWidgetAudioGlowPolicy.maximumLineWidth
+                <= MiniWidgetAudioGlowPolicy.visualEnvelopeDiameter
+        )
+        #expect(
+            MiniWidgetAudioGlowPolicy.visualEnvelopeDiameter
+                <= FloatingWidgetWindowPolicy.miniMicrophoneWidth
         )
         #expect(
             MiniWidgetAudioGlowPolicy.meterArcFraction(level: quiet)

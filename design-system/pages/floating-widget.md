@@ -129,7 +129,10 @@ least 58 points for the activity title.
   halo driven by the recorder's smoothed local power meter. Conversational
   speech—not only shouting—must produce an obvious response. Silence and
   detected sound must be distinguishable at a glance. The feedback never moves
-  the control or adds network/transcription work.
+  the control or adds network/transcription work. All meter paint is clipped to
+  a circular alpha envelope inside the transparent host. A rectangular glow,
+  backing fill, or clipped square is a release-blocking defect on every
+  desktop background.
 - A click toggles recording. Movement beyond the five-point drag threshold
   moves the panel and cancels the click, whether Mini is idle or recording.
 - Previous-capture, playback, failure, recovery, picker, and finish controls
