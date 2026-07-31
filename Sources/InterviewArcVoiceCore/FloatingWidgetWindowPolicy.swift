@@ -181,16 +181,9 @@ public enum FloatingWidgetCompactTimerLayoutPolicy {
         + (clusterSpacing * 2)
 }
 
-public enum FloatingWidgetMemoShelf: Equatable, Hashable, Sendable {
-    case primary
-    case secondary
-}
-
 public enum FloatingWidgetMemoAction: Equatable, Hashable, Sendable {
     case play
     case insert
-    case more
-    case back
     case copy
     case save
     case planToday
@@ -198,7 +191,6 @@ public enum FloatingWidgetMemoAction: Equatable, Hashable, Sendable {
 
 public enum FloatingWidgetMemoActionPolicy {
     public static func actions(
-        shelf: FloatingWidgetMemoShelf,
         hasTranscript: Bool,
         hasAudio: Bool,
         canPlanToday: Bool
@@ -208,20 +200,13 @@ public enum FloatingWidgetMemoActionPolicy {
             return canPlanToday ? [.planToday] : []
         }
 
-        switch shelf {
-        case .primary:
-            var actions: [FloatingWidgetMemoAction] = []
-            if hasAudio { actions.append(.play) }
-            if hasTranscript { actions.append(.insert) }
-            actions.append(.more)
-            return actions
-        case .secondary:
-            var actions: [FloatingWidgetMemoAction] = [.back]
-            if hasTranscript { actions.append(.copy) }
-            if hasAudio { actions.append(.save) }
-            if canPlanToday { actions.append(.planToday) }
-            return actions
-        }
+        var actions: [FloatingWidgetMemoAction] = []
+        if hasAudio { actions.append(.play) }
+        if hasTranscript { actions.append(.insert) }
+        if hasTranscript { actions.append(.copy) }
+        if hasAudio { actions.append(.save) }
+        if canPlanToday { actions.append(.planToday) }
+        return actions
     }
 }
 

@@ -177,6 +177,9 @@ least 58 points for the activity title.
   timers keeps the compact capsule free of a Plan icon. Mini has no visible
   Plan control; its configurable shortcut and the menu-bar command open the
   same upper surface.
+- Standard expanded memo state has no More/Back shelf. It shows every applicable
+  action in one row—Play, Insert, Copy, Save, and Plan Today—while preserving
+  the reserved title width and far-right microphone anchor.
 - The recorder remains the bottom-right anchor. Planner expansion grows left
   and upward, preserves the real ten-point transparent gap, and never moves
   the microphone. Reduce Motion replaces geometry emphasis with a short

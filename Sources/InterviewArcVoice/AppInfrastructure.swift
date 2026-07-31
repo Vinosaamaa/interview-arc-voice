@@ -1157,7 +1157,6 @@ struct FloatingRecorderView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var miniSmoothedLevel = 0.0
     @State private var suppressMiniClick = false
-    @State private var memoShelf: FloatingWidgetMemoShelf = .primary
 
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
@@ -1215,15 +1214,6 @@ struct FloatingRecorderView: View {
                 previous: miniSmoothedLevel,
                 current: current
             )
-        }
-        .onChange(of: model.hasTimerInstrument) { _, _ in
-            memoShelf = .primary
-        }
-        .onChange(of: model.lastTranscript) { _, _ in
-            memoShelf = .primary
-        }
-        .onChange(of: model.hasLastAudio) { _, _ in
-            memoShelf = .primary
         }
     }
 
@@ -1377,7 +1367,6 @@ struct FloatingRecorderView: View {
             isBusy: model.isBusy
         )
         let actions = FloatingWidgetMemoActionPolicy.actions(
-            shelf: memoShelf,
             hasTranscript: !model.lastTranscript.isEmpty,
             hasAudio: model.hasLastAudio,
             canPlanToday: canPlanToday
@@ -1407,24 +1396,6 @@ struct FloatingRecorderView: View {
                 label: "Insert last transcript",
                 action: model.reinsertLastTranscript
             )
-        case .more:
-            memoButton(
-                symbol: "ellipsis",
-                label: "More memo actions"
-            ) {
-                withAnimation(memoShelfAnimation) {
-                    memoShelf = .secondary
-                }
-            }
-        case .back:
-            memoButton(
-                symbol: "chevron.right",
-                label: "Back to primary memo actions"
-            ) {
-                withAnimation(memoShelfAnimation) {
-                    memoShelf = .primary
-                }
-            }
         case .copy:
             memoButton(
                 symbol: "doc.on.doc",
@@ -1442,16 +1413,9 @@ struct FloatingRecorderView: View {
                 symbol: "calendar.badge.plus",
                 label: "Plan today"
             ) {
-                memoShelf = .primary
                 model.togglePlanner()
             }
         }
-    }
-
-    private var memoShelfAnimation: Animation? {
-        reduceMotion
-            ? nil
-            : .easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)
     }
 
     @ViewBuilder
