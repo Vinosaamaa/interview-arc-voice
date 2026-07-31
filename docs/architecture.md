@@ -203,8 +203,10 @@ it never adds a planning poll. A structured conflict refreshes the
 authoritative workbench while retaining still-reviewable local selections.
 Successful planning mutations apply the authoritative Today snapshot carried
 by their response immediately, then refresh planning and timer context
-concurrently. The UI exposes the active create/remove operation instead of an
-unlabeled frozen state. Today session cards preserve session/activity hierarchy
+concurrently in the background. The create/remove controls unlock as soon as
+the committed authoritative response arrives instead of waiting on those
+redundant reads. The UI exposes the active create/remove operation instead of
+an unlabeled frozen state. Today session cards preserve session/activity hierarchy
 and provide an animated disclosure without changing server state. The
 borderless panel never uses native whole-window background dragging because it
 steals clicks from SwiftUI controls. Dragging is limited to explicit title

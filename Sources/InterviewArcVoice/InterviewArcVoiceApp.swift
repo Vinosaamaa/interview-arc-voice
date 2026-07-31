@@ -1037,10 +1037,6 @@ final class VoiceBridgeModel: ObservableObject {
         planningMutationInFlight = true
         planningMutationStatus = planningMutationStatus(for: request)
         planningMessage = planningMutationStatus
-        defer {
-            planningMutationInFlight = false
-            planningMutationStatus = nil
-        }
         do {
             let response = try await timerAPIClient().mutatePlanning(request)
             guard response.protocolVersion == 1 else {
@@ -1053,15 +1049,26 @@ final class VoiceBridgeModel: ObservableObject {
                let current = planningResponse {
                 planningResponse = current.applying(authoritative)
             }
-            async let planningRefresh: Void = refreshPlanning(clearMessage: false)
-            async let contextRefresh: Void = refreshContext(showProgress: false)
-            _ = await (planningRefresh, contextRefresh)
             planningMessage = response.duplicate == true
                 ? "Already applied."
                 : planningMutationCompletionMessage(for: request)
+            planningMutationInFlight = false
+            planningMutationStatus = nil
+            reconcilePlanningAfterMutation()
         } catch {
             planningMessage = error.localizedDescription
             await refreshPlanning(clearMessage: false)
+            planningMutationInFlight = false
+            planningMutationStatus = nil
+        }
+    }
+
+    private func reconcilePlanningAfterMutation() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            async let planningRefresh: Void = refreshPlanning(clearMessage: false)
+            async let contextRefresh: Void = refreshContext(showProgress: false)
+            _ = await (planningRefresh, contextRefresh)
         }
     }
 

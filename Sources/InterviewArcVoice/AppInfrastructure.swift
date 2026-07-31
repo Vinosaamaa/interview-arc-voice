@@ -2125,23 +2125,6 @@ private struct FloatingTodayPlannerPanel: View {
                 }
             }
             .frame(maxHeight: .infinity, alignment: .top)
-
-            if let message = model.planningMessage {
-                Text(message)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(
-                        model.planningMutationInFlight
-                            ? palette.linkOff
-                            : planningMessageIsSuccess(message)
-                                ? palette.tealDark
-                                : palette.warning
-                    )
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(palette.timerSurface.opacity(0.5))
-            }
         }
         .background {
             RoundedRectangle(cornerRadius: 19, style: .continuous)
@@ -2165,6 +2148,38 @@ private struct FloatingTodayPlannerPanel: View {
                 .shadow(color: palette.coolShadow, radius: 10, y: 4)
         }
         .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
+        .overlay(alignment: .bottomLeading) {
+            if let message = model.planningMessage {
+                HStack(spacing: 6) {
+                    if model.planningMutationInFlight {
+                        ProgressView().controlSize(.mini)
+                    }
+                    Text(message)
+                        .font(.system(size: 9, weight: .semibold))
+                        .lineLimit(2)
+                }
+                .foregroundStyle(
+                    model.planningMutationInFlight
+                        ? palette.linkOff
+                        : planningMessageIsSuccess(message)
+                            ? palette.tealDark
+                            : palette.warning
+                )
+                .padding(.horizontal, 10)
+                .frame(minHeight: 27)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(palette.timerSurface.opacity(palette.isDark ? 0.96 : 0.92))
+                        .overlay(
+                            Capsule(style: .continuous)
+                                .stroke(palette.coolBorder.opacity(0.72), lineWidth: 0.8)
+                        )
+                        .shadow(color: palette.coolShadow, radius: 5, y: 2)
+                )
+                .padding(10)
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+        }
         .frame(maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Plan today")
