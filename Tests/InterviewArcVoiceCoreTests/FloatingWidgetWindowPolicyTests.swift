@@ -70,6 +70,10 @@ import Foundation
     )
 }
 
+@Test func standardWidgetDoesNotUseNativeBackgroundDragOverItsButtons() {
+    #expect(!FloatingWidgetWindowPolicy.usesNativeBackgroundDrag)
+}
+
 @Test func floatingMemoShelfAvoidsAnEmptyMoreMode() {
     #expect(
         FloatingWidgetMemoActionPolicy.actions(

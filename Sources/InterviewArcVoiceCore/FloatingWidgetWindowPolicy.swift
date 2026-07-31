@@ -56,6 +56,7 @@ public enum FloatingWidgetRecoveryPolicy {
 public enum FloatingWidgetWindowPolicy {
     public static let hostIsOpaque = false
     public static let usesNativeWindowShadow = false
+    public static let usesNativeBackgroundDrag = false
     public static let collapsedWidth: CGFloat = 250
     public static let recordingWidth: CGFloat = 340
     public static let miniMicrophoneWidth: CGFloat = 48

@@ -762,7 +762,7 @@ final class FloatingPanelController {
         // fight, producing under-travel, oscillation, and direction reversals.
         // Standard preserves its established native background drag behavior.
         panel.isMovableByWindowBackground =
-            model.widgetSizeMode == .standard
+            FloatingWidgetWindowPolicy.usesNativeBackgroundDrag
         panel.becomesKeyOnlyIfNeeded = true
         let hostingView = TransparentHostingView(
             rootView: FloatingRecorderView(model: model)
@@ -792,7 +792,7 @@ final class FloatingPanelController {
     func beginPlannerTextEntry() {
         guard let panel else { return }
         panel.becomesKeyOnlyIfNeeded = false
-        panel.makeKey()
+        panel.makeKeyAndOrderFront(nil)
     }
 
     func endPlannerTextEntry() {
@@ -801,11 +801,27 @@ final class FloatingPanelController {
 
     func setSize(width: CGFloat, height: CGFloat, reduceMotion: Bool) {
         guard let panel else { return }
-        guard abs(panel.frame.width - width) > 0.5
-                || abs(panel.frame.height - height) > 0.5 else { return }
-        let frame = FloatingWidgetGeometryPolicy.anchoredFrame(
+        let visibleFrame = panel.screen?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+            ?? panel.frame
+        let inset: CGFloat = 6
+        let targetSize = CGSize(
+            width: min(width, max(1, visibleFrame.width - inset * 2)),
+            height: min(height, max(1, visibleFrame.height - inset * 2))
+        )
+        guard abs(panel.frame.width - targetSize.width) > 0.5
+                || abs(panel.frame.height - targetSize.height) > 0.5 else { return }
+        var frame = FloatingWidgetGeometryPolicy.anchoredFrame(
             currentFrame: panel.frame,
-            targetSize: CGSize(width: width, height: height)
+            targetSize: targetSize
+        )
+        frame.origin.x = min(
+            max(frame.origin.x, visibleFrame.minX + inset),
+            visibleFrame.maxX - inset - frame.width
+        )
+        frame.origin.y = min(
+            max(frame.origin.y, visibleFrame.minY + inset),
+            visibleFrame.maxY - inset - frame.height
         )
         panel.contentView?.layer?.removeAllAnimations()
         if reduceMotion {
@@ -820,7 +836,9 @@ final class FloatingPanelController {
     }
 
     func setNativeBackgroundDragging(for mode: VoiceWidgetSizeMode) {
-        panel?.isMovableByWindowBackground = mode == .standard
+        _ = mode
+        panel?.isMovableByWindowBackground =
+            FloatingWidgetWindowPolicy.usesNativeBackgroundDrag
     }
 
     func beginMiniDrag(pointerLocation: CGPoint) {
@@ -1166,7 +1184,16 @@ struct FloatingRecorderView: View {
                 if model.plannerPresented,
                    !model.isRecording {
                     FloatingTodayPlannerPanel(model: model)
-                        .frame(width: FloatingWidgetWindowPolicy.plannerWidth)
+                        .frame(
+                            width: FloatingWidgetWindowPolicy.plannerWidth,
+                            height: max(
+                                0,
+                                host.size.height
+                                    - FloatingWidgetWindowPolicy.capsuleHeight
+                                    - FloatingWidgetWindowPolicy.timerGap
+                                    - 16
+                            )
+                        )
                         .transition(.opacity)
                 } else if model.widgetSizeMode == .standard,
                    !model.dynamicRecordingInterfaceActive,
@@ -1347,6 +1374,7 @@ struct FloatingRecorderView: View {
                 processingLabel
             } else {
                 activityLabel
+                    .simultaneousGesture(standardDragGesture)
                 if !model.hasTimerInstrument {
                     memoActionShelf
                 }
@@ -1979,6 +2007,25 @@ struct FloatingRecorderView: View {
             }
     }
 
+    private var standardDragGesture: some Gesture {
+        DragGesture(
+            minimumDistance: MiniWidgetPointerPolicy.dragThreshold,
+            coordinateSpace: .global
+        )
+        .onChanged { _ in
+            guard model.widgetSizeMode == .standard else { return }
+            let pointer = NSEvent.mouseLocation
+            FloatingPanelController.shared.beginMiniDrag(pointerLocation: pointer)
+            _ = FloatingPanelController.shared.updateMiniDrag(
+                pointerLocation: pointer
+            )
+        }
+        .onEnded { _ in
+            guard model.widgetSizeMode == .standard else { return }
+            _ = FloatingPanelController.shared.endMiniDrag()
+        }
+    }
+
     private var recordHaloColor: Color {
         if model.isRecording {
             return Color(red: 0.96, green: 0.29, blue: 0.25)
@@ -2075,12 +2122,7 @@ private struct FloatingTodayPlannerPanel: View {
                 .shadow(color: palette.coolShadow, radius: 10, y: 4)
         }
         .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
-        .frame(
-            height: FloatingWidgetWindowPolicy.plannerHostHeight
-                - FloatingWidgetWindowPolicy.capsuleHeight
-                - FloatingWidgetWindowPolicy.timerGap
-                - 16
-        )
+        .frame(maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Plan today")
     }
@@ -2315,6 +2357,11 @@ private struct FloatingTodayPlannerPanel: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 11))
                 .onSubmit(model.applyPlanningQuery)
+                .simultaneousGesture(
+                    TapGesture().onEnded {
+                        FloatingPanelController.shared.beginPlannerTextEntry()
+                    }
+                )
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity)
@@ -2853,6 +2900,7 @@ private struct FloatingTodayPlannerPanel: View {
                     .font(.system(size: 10, weight: .bold))
                     .frame(maxWidth: .infinity)
                     .frame(height: 27)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(PlannerPressButtonStyle())
             .voiceHoverFeedback(cornerRadius: 9, tint: palette.teal)
@@ -2861,6 +2909,7 @@ private struct FloatingTodayPlannerPanel: View {
                 RoundedRectangle(cornerRadius: 9)
                     .stroke(palette.coolBorder, style: StrokeStyle(lineWidth: 0.8, dash: [4]))
             )
+            .contentShape(Rectangle())
             .padding(.horizontal, 10)
         }
     }
@@ -2885,72 +2934,6 @@ private struct FloatingTodayPlannerPanel: View {
 
     private var selectionTray: some View {
         VStack(spacing: 6) {
-            HStack(spacing: 7) {
-                Text(
-                    model.planningSelectionCount == 0
-                        ? "No activities selected"
-                        : "\(model.planningSelectionCount) activities · \(model.planningTotalMinutes) min"
-                )
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                Spacer()
-                HStack(spacing: 0) {
-                    planningDestinationButton("Standalone", value: "standalone")
-                    planningDestinationButton("One session", value: "session")
-                }
-                .padding(2)
-                .frame(width: 170, height: 27)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(palette.glassHighlight.opacity(palette.isDark ? 0.14 : 0.42))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(palette.coolBorder.opacity(0.72), lineWidth: 0.8)
-                        )
-                )
-                Button(action: model.submitPlanningSelection) {
-                    Text(
-                        model.planningSelectionCount == 0
-                            ? "Add activities"
-                            : "Add \(model.planningSelectionCount) activities"
-                    )
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Color.white)
-                    .frame(width: 116, height: 30)
-                    .contentShape(Rectangle())
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(palette.linkOff)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(palette.linkOff.opacity(0.92), lineWidth: 0.8)
-                            )
-                    )
-                }
-                    .frame(width: 116)
-                    .layoutPriority(1)
-                    .buttonStyle(PlannerPressButtonStyle())
-                    .voiceHoverFeedback(
-                        enabled: !model.planningState.selections.isEmpty
-                            && !model.planningMutationInFlight
-                            && model.planningResponse?.workbench != nil,
-                        cornerRadius: 8,
-                        tint: palette.linkOff
-                    )
-                    .opacity(
-                        model.planningState.selections.isEmpty
-                            || model.planningMutationInFlight
-                            || model.planningResponse?.workbench == nil
-                            ? 0.46 : 1
-                    )
-                    .disabled(
-                        model.planningState.selections.isEmpty
-                            || model.planningMutationInFlight
-                            || model.planningResponse?.workbench == nil
-                    )
-            }
-            .frame(height: 30)
-
             Group {
                 if model.planningState.selections.isEmpty {
                     Text("Selected activities will appear here")
@@ -3015,6 +2998,65 @@ private struct FloatingTodayPlannerPanel: View {
                             )
                     )
             )
+
+            HStack(spacing: 7) {
+                Spacer(minLength: 0)
+                HStack(spacing: 0) {
+                    planningDestinationButton("Standalone", value: "standalone")
+                    planningDestinationButton("One session", value: "session")
+                }
+                .padding(2)
+                .frame(width: 170, height: 27)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(palette.glassHighlight.opacity(palette.isDark ? 0.14 : 0.42))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(palette.coolBorder.opacity(0.72), lineWidth: 0.8)
+                        )
+                )
+                Button(action: model.submitPlanningSelection) {
+                    Text(
+                        model.planningSelectionCount == 0
+                            ? "Add activities"
+                            : "Add \(model.planningSelectionCount) activities"
+                    )
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.white)
+                    .frame(width: 116, height: 30)
+                    .contentShape(Rectangle())
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(palette.linkOff)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(palette.linkOff.opacity(0.92), lineWidth: 0.8)
+                            )
+                    )
+                }
+                    .frame(width: 116)
+                    .layoutPriority(1)
+                    .buttonStyle(PlannerPressButtonStyle())
+                    .voiceHoverFeedback(
+                        enabled: !model.planningState.selections.isEmpty
+                            && !model.planningMutationInFlight
+                            && model.planningResponse?.workbench != nil,
+                        cornerRadius: 8,
+                        tint: palette.linkOff
+                    )
+                    .opacity(
+                        model.planningState.selections.isEmpty
+                            || model.planningMutationInFlight
+                            || model.planningResponse?.workbench == nil
+                            ? 0.46 : 1
+                    )
+                    .disabled(
+                        model.planningState.selections.isEmpty
+                            || model.planningMutationInFlight
+                            || model.planningResponse?.workbench == nil
+                    )
+            }
+            .frame(height: 30)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

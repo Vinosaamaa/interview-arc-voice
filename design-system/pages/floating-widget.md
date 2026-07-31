@@ -188,9 +188,11 @@ least 58 points for the activity title.
   cards, and one persistent review tray. Selected cards use a tinted border
   and fill; they do not add a checkbox before the title or copy their title
   into search.
-- The review tray keeps its summary, destination, and Add action together in a
-  fixed top row. Its selected-chip rail owns the full-width row beneath those
-  controls and clips at its own rounded boundary. Trackpad scrolling, vertical
+- The review tray gives its full-width top row to the selected-chip rail. The
+  Standalone, One session, and Add activities controls share one fixed bottom
+  row aligned with the other planner surfaces' primary actions. Empty state
+  copy stays inside the rail instead of adding a separate summary label. The
+  rail clips at its own rounded boundary. Trackpad scrolling, vertical
   mouse-wheel scrolling,
   and click-dragging all pan the rail horizontally. A stationary click
   deselects a chip; crossing the native drag threshold must never deselect it.
@@ -387,6 +389,11 @@ least 58 points for the activity title.
 - Plan Today preserves a stationary microphone, independent specialty
   filters, selected work, and the exact previous Focus/collapsed disclosure
   through open, close, Mini entry, recording, and server-conflict refresh.
+- The native panel background never owns the whole standard widget's mouse
+  handling. Buttons keep full hit testing, while a thresholded title-region drag
+  moves the widget without converting clicks into drags. Planner text fields
+  make the nonactivating panel key only after the user clicks a field; the last
+  eligible external editor remains the insertion destination.
 - Standard idle memo actions use one in-place shelf containing every applicable
   action—Play, Insert, Copy, Save, and Plan Today—while the title viewport and
   trailing microphone remain fixed. There is no More or Back mode. Active timer
