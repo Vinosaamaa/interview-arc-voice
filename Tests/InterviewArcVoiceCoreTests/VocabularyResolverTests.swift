@@ -162,7 +162,7 @@ import Testing
     #expect(envelope.editorText.hasSuffix("-->\n"))
 }
 
-@Test func generalDictationDeletesTemporaryRecording() async throws {
+@Test func generalDictationLeavesFinalizedRecordingForHistoryArchival() async throws {
     let root = FileManager.default.temporaryDirectory.appending(path: "interview-arc-general-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -177,7 +177,7 @@ import Testing
     let result = try await pipeline.process(recordingURL: recording, durationSeconds: 1)
 
     #expect(result.transcription.text == "verbatim test transcript")
-    #expect(!FileManager.default.fileExists(atPath: recording.path))
+    #expect(FileManager.default.fileExists(atPath: recording.path))
 }
 
 @Test func generalDictationVocabularyIncludesUniversalInterviewTerms() throws {

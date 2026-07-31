@@ -223,12 +223,39 @@ general route:
    guarded paste-event path described above. If paste dispatch is unavailable,
    use direct Accessibility replacement only when the resulting `AXValue`
    exactly matches the expected UTF-16 edit.
-4. Delete the temporary audio after a trustworthy result. Preserve it for
-   explicit recovery when recording or transcription integrity fails.
+4. After foreground insertion settles, atomically move the trustworthy
+   finalized M4A into private `RecentHistory/` and bind it to the visible
+   transcript through a relative storage identity. Preserve failures in
+   `Recovery/` instead.
 
 This route never calls the Interview Arc capture, audio, delivery-analysis, or
 Codex APIs. Server events keep the next routing snapshot current without
 delaying microphone start.
+
+## Local recording ownership
+
+Voice separates private local audio by lifecycle:
+
+- `LinkedPending/` owns linked audio and permission-0600 intent metadata while a
+  capture is pending, uncertain, excluded within grace, or delivering.
+- `RecentHistory/` owns completed General Dictation and linked M4As that remain
+  eligible for the combined newest-20/24-hour transcript window.
+- `Recovery/` owns the durable pointer for a failed recording that exposes Play,
+  Save, or Retry.
+
+One M4A moves between lifecycle owners; it is never copied for history. An
+accepted linked capture uploads that same file to private R2, completes Delivery
+Coach, and only then moves it into Recent History when its transcript is still
+eligible. Count, age, explicit deletion, Clear History, and a bounded disk
+budget evict history-only pairs oldest first. They cannot delete an unresolved
+linked source. The metadata stores a validated relative filename rather than an
+absolute path, and local directories/files remain permission 0700/0600.
+
+Cleanup runs on launch, after archival, when Recent Transcripts opens, and when
+linked reconciliation completes. One deadline task wakes for the next known
+expiry; there is no cleanup poll or cron. Recent history loads before Keychain,
+remote context, pending reconciliation, and live updates, so cold startup does
+not render an empty panel while remote initialization is slow.
 
 ## Vocabulary resolution without runtime AI
 

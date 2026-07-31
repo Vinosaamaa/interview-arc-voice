@@ -219,3 +219,45 @@ private func writeAudio(
     )
     #expect(await store.audioURL(for: repaired) == interruptedDestination)
 }
+
+@Test func recordingStoreCreatesPrivateLifecycleDirectoriesAndMigratesMetadata() throws {
+    let root = try retentionRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let legacyPending = root.appending(
+        path: "PendingCaptures",
+        directoryHint: .isDirectory
+    )
+    try FileManager.default.createDirectory(
+        at: legacyPending,
+        withIntermediateDirectories: true
+    )
+    let legacyMetadata = legacyPending.appending(path: "capture-legacy.json")
+    try Data("{}".utf8).write(to: legacyMetadata)
+
+    let store = try RecordingStore(rootDirectory: root)
+    let migrated = store.linkedPendingDirectory
+        .appending(path: legacyMetadata.lastPathComponent)
+
+    #expect(store.recordingsDirectory == store.linkedPendingDirectory)
+    #expect(store.pendingCapturesDirectory == store.linkedPendingDirectory)
+    #expect(FileManager.default.fileExists(atPath: migrated.path))
+    #expect(!FileManager.default.fileExists(atPath: legacyMetadata.path))
+    for directory in [
+        store.linkedPendingDirectory,
+        store.recentHistoryDirectory,
+        store.recoveryDirectory,
+    ] {
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: directory.path
+        )
+        #expect(
+            (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700
+        )
+    }
+    let metadataAttributes = try FileManager.default.attributesOfItem(
+        atPath: migrated.path
+    )
+    #expect(
+        (metadataAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o600
+    )
+}

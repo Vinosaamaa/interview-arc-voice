@@ -35,7 +35,9 @@ public actor GeneralDictationPipeline {
             speechEvidence: speechEvidence,
             protectionMode: protectionMode
         )
-        try? fileManager.removeItem(at: recordingURL)
+        // The caller owns the finalized recording lifecycle. Successful
+        // General Dictation audio is atomically archived only after foreground
+        // insertion settles; failures remain available to Recovery.
         return result
     }
 }

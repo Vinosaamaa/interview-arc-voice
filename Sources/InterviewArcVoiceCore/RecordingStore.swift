@@ -2,6 +2,9 @@ import Foundation
 
 public struct RecordingStore: Sendable {
     public let recordingsDirectory: URL
+    public let legacyRecordingsDirectory: URL
+    public let linkedPendingDirectory: URL
+    public let recentHistoryDirectory: URL
     public let temporaryDirectory: URL
     public let queueDirectory: URL
     public let pendingCapturesDirectory: URL
@@ -26,10 +29,26 @@ public struct RecordingStore: Sendable {
         rootDirectory root: URL,
         fileManager: FileManager = .default
     ) throws {
-        recordingsDirectory = root.appending(path: "Recordings", directoryHint: .isDirectory)
+        legacyRecordingsDirectory = root.appending(
+            path: "Recordings",
+            directoryHint: .isDirectory
+        )
+        linkedPendingDirectory = root.appending(
+            path: "LinkedPending",
+            directoryHint: .isDirectory
+        )
+        recentHistoryDirectory = root.appending(
+            path: "RecentHistory",
+            directoryHint: .isDirectory
+        )
+        recordingsDirectory = linkedPendingDirectory
         temporaryDirectory = root.appending(path: "Transcription", directoryHint: .isDirectory)
         queueDirectory = root.appending(path: "RetryQueue", directoryHint: .isDirectory)
-        pendingCapturesDirectory = root.appending(path: "PendingCaptures", directoryHint: .isDirectory)
+        pendingCapturesDirectory = linkedPendingDirectory
+        let legacyPendingCapturesDirectory = root.appending(
+            path: "PendingCaptures",
+            directoryHint: .isDirectory
+        )
         diagnosticsDirectory = root.appending(path: "Diagnostics", directoryHint: .isDirectory)
         transcriptHistoryDirectory = root.appending(
             path: "TranscriptHistory",
@@ -41,6 +60,8 @@ public struct RecordingStore: Sendable {
         )
         for directory in [
             recordingsDirectory,
+            legacyRecordingsDirectory,
+            recentHistoryDirectory,
             temporaryDirectory,
             queueDirectory,
             pendingCapturesDirectory,
@@ -50,6 +71,39 @@ public struct RecordingStore: Sendable {
         ] {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
             try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        }
+        try Self.migrateLegacyPendingMetadata(
+            from: legacyPendingCapturesDirectory,
+            to: linkedPendingDirectory,
+            fileManager: fileManager
+        )
+    }
+
+    private static func migrateLegacyPendingMetadata(
+        from legacyDirectory: URL,
+        to destinationDirectory: URL,
+        fileManager: FileManager
+    ) throws {
+        guard fileManager.fileExists(atPath: legacyDirectory.path) else {
+            return
+        }
+        let files = try fileManager.contentsOfDirectory(
+            at: legacyDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        for source in files where source.pathExtension == "json" {
+            let destination = destinationDirectory.appending(
+                path: source.lastPathComponent
+            )
+            guard !fileManager.fileExists(atPath: destination.path) else {
+                continue
+            }
+            try fileManager.moveItem(at: source, to: destination)
+            try fileManager.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: destination.path
+            )
         }
     }
 
