@@ -167,6 +167,35 @@ least 58 points for the activity title.
 - Timer digits advance locally from the latest server timestamp. D1 receives
   state transitions, not one write per displayed second.
 
+## Today planner
+
+- Plan Today reuses the expanded instrument's one frosted upper surface. When
+  timers exist, `Focus` and `Plan today` are mutually exclusive tabs in that
+  surface; they never stack and switching never mutates either timer.
+- Standard idle may expose one quiet calendar-plus entry after existing
+  previous-capture actions only when the title remains readable. Standard with
+  timers keeps the compact capsule free of a Plan icon. Mini has no visible
+  Plan control; its configurable shortcut and the menu-bar command open the
+  same upper surface.
+- The recorder remains the bottom-right anchor. Planner expansion grows left
+  and upward, preserves the real ten-point transparent gap, and never moves
+  the microphone. Reduce Motion replaces geometry emphasis with a short
+  crossfade.
+- The planner uses native system typography, theme palette tokens, compact
+  cards, and one persistent review tray. Selected cards use a tinted border
+  and fill; they do not add a checkbox before the title or copy their title
+  into search.
+- Coding, System design, and Behavioral each own independent search, favorite,
+  difficulty, and sort state. Career contains the Job applications focus block
+  inside Activities, never inside Full session.
+- Voice caches selection and presentation only. Eligibility, current Today
+  work, removability, mutation identity, and conflict decisions come from the
+  authenticated Worker. Exact retries reuse one mutation ID; changed work
+  receives a new ID.
+- Starting a recording hides the planner without clearing selection, filters,
+  scroll state, or the remembered Focus/collapsed disclosure. Stop restores
+  the exact upper surface after capture state settles.
+
 ## Link icon family
 
 - All states use the same hollow chain geometry, size, orientation,
@@ -311,6 +340,9 @@ least 58 points for the activity title.
 - Session and activity overtime remain legible and do not resize their columns.
 - Both compact clocks remain on one line while the title keeps a readable
   viewport; the clock cluster never consumes more than 84 points.
+- Plan Today preserves a stationary microphone, independent specialty
+  filters, selected work, and the exact previous Focus/collapsed disclosure
+  through open, close, Mini entry, recording, and server-conflict refresh.
 - Intermediate expansion and collapse frames visibly resize the capsule; no
   target-width snap may be hidden inside an otherwise animated native panel.
 - Expand and collapse keep the capsule on one bottom baseline with no vertical

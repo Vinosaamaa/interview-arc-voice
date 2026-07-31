@@ -183,6 +183,18 @@ remains authoritative. Voice stays
 an `LSUIElement` accessory app: it does not occupy the Dock or Command-Tab, and
 Settings explicitly raises its existing window.
 
+The Today planner is another view of that same upper instrument surface, not a
+Voice-owned planning database. It reads the owner-scoped workbench and
+specialty catalog from `GET /voice/planning`, keeps only ephemeral selection
+and per-specialty query state, and sends stable, idempotent commands to
+`POST /voice/planning/mutations`. The Worker validates eligibility and the
+workbench identity, commits a batch plus its mutation receipt atomically in
+D1, and emits one owner-scoped live revision. Voice refreshes from that push;
+it never adds a planning poll. A structured conflict refreshes the
+authoritative workbench while retaining still-reviewable local selections.
+Focus and Plan Today are exclusive presentations of one top surface. Recording
+hides and restores the exact disclosure without delaying microphone startup.
+
 Background-audio lowering is one recording-scoped session rather than one
 device write. Voice records the pre-capture route signature before acquiring
 the microphone, treats Bluetooth stereo and hands-free profiles as distinct
