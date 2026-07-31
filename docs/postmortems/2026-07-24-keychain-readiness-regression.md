@@ -75,3 +75,38 @@ Future packaged verification must run `--credential-status` in the same normal
 user context as the installed application. A sandboxed Security-framework
 result must be labeled as an environment limitation and cannot establish a
 credential regression.
+
+## 2026-07-31 ad-hoc identity recurrence
+
+Two consecutive merged-main artifacts reproduced a separate authorization
+boundary in the normal GUI context. The working installed application loaded
+the existing credentials and enabled Record. Replacing it with a newer CI
+artifact disabled Record; restoring the prior application restored access
+without changing the Keychain items. The same result occurred when the newer
+artifact launched from temporary staging and when it temporarily occupied the
+normal installation path.
+
+Both bundles used `app.interviewarc.voice` and embedded the text requirement
+`designated => identifier "app.interviewarc.voice"`, but both were ad-hoc
+signed. An ad-hoc signature contains no certificate and identifies only that
+specific program. A caller-supplied text requirement does not turn it into a
+persistent cryptographic update identity.
+
+The release repair separates transport packaging from local installation:
+
+1. CI continues to produce a credential-free, ad-hoc-signed artifact.
+2. The Mac creates one user-scoped code-signing certificate whose private key
+   is non-extractable and remains in the login Keychain.
+3. Before installation, the exact merged-main artifact is re-signed locally
+   with that certificate and a designated requirement binding both its bundle
+   identifier and the certificate fingerprint.
+4. The release check verifies the non-ad-hoc signature, designated
+   requirement, pre-sign source hash, post-sign package integrity, and Keychain
+   readiness in the normal GUI context. The whole executable hash changes
+   because the Mach-O signature is embedded in that file; this expected change
+   is recorded rather than mistaken for a source-code mutation.
+
+The first transition from an older ad-hoc authorization may require one
+explicit macOS approval or one credential re-save. Future releases must reuse
+the same certificate; generating a replacement identity for every build would
+recreate the original failure.

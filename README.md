@@ -186,10 +186,16 @@ your Interview Arc personal connection token.
 6. Allow Accessibility when prompted so Voice can activate the captured app and
    insert at its focused cursor.
 
-The packaged app carries a stable local designated requirement for
-`app.interviewarc.voice`. After the first Accessibility grant, replacing the
-app with a newer package from this repository preserves the same macOS privacy
-identity instead of requiring permission again after every build.
+CI artifacts carry an ad-hoc transport signature and must not directly replace
+the installed app. On a new Mac, run
+`./scripts/bootstrap-local-signing-identity.sh` once. Before every install, run
+`./scripts/sign-app-for-install.sh '/path/to/Interview Arc Voice.app'` against
+the exact merged-main artifact. The install signature is backed by one
+persistent, non-extractable certificate in the user's Keychain, so later app
+versions share one macOS privacy and Keychain identity. The first transition
+from an older ad-hoc build may still require one macOS Keychain approval or one
+credential re-save; subsequent replacements signed by the same certificate do
+not.
 7. For interview practice, focus an activity on Today. Keep **Link to Interview Arc** on.
    The activity title appears in the floating recorder.
 8. Select the microphone or press `Control-Option-Space`. Voice uses the
