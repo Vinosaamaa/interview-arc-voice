@@ -75,6 +75,24 @@ import Foundation
     #expect(!FloatingWidgetWindowPolicy.usesNativeBackgroundDrag(for: .mini))
 }
 
+@Test func floatingWidgetClipsDisclosuresAtTheRecorderBoundary() {
+    #expect(
+        FloatingWidgetWindowPolicy.upperSurfaceViewportHeight(
+            hostHeight: FloatingWidgetWindowPolicy.plannerHostHeight
+        ) == 592
+    )
+    #expect(
+        FloatingWidgetWindowPolicy.upperSurfaceContentHeight(
+            hostHeight: FloatingWidgetWindowPolicy.plannerHostHeight
+        ) == 582
+    )
+    #expect(
+        FloatingWidgetWindowPolicy.upperSurfaceViewportHeight(
+            hostHeight: FloatingWidgetWindowPolicy.hostHeight
+        ) == 0
+    )
+}
+
 @Test func plannerSelectionTrayMakesOverflowExplicit() {
     #expect(PlannerSelectionTrayPolicy.hiddenCount(selectionCount: 2) == 0)
     #expect(PlannerSelectionTrayPolicy.hiddenCount(selectionCount: 11) == 8)

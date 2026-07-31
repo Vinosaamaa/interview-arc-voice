@@ -720,6 +720,19 @@ private struct PasteboardSnapshot {
 @MainActor
 private final class VoiceFloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown || event.type == .rightMouseDown {
+            // A nonactivating panel must remain usable with a real pointer even
+            // while another app owns the menu bar. Making only this panel key
+            // lets SwiftUI controls and TextFields receive the click without
+            // activating Interview Arc Voice as the frontmost application.
+            if !isKeyWindow {
+                makeKey()
+            }
+        }
+        super.sendEvent(event)
+    }
 }
 
 @MainActor
@@ -760,7 +773,8 @@ final class FloatingPanelController {
         panel.isReleasedWhenClosed = false
         panel.isMovableByWindowBackground =
             FloatingWidgetWindowPolicy.usesNativeBackgroundDrag(for: model.widgetSizeMode)
-        panel.becomesKeyOnlyIfNeeded = true
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.acceptsMouseMovedEvents = true
         let hostingView = TransparentHostingView(
             rootView: FloatingRecorderView(model: model)
         )
@@ -798,7 +812,7 @@ final class FloatingPanelController {
     }
 
     func endPlannerTextEntry() {
-        panel?.becomesKeyOnlyIfNeeded = true
+        panel?.becomesKeyOnlyIfNeeded = false
         if let previousFrontmostApplication,
            !previousFrontmostApplication.isTerminated {
             previousFrontmostApplication.activate(options: [.activateIgnoringOtherApps])
@@ -1193,46 +1207,65 @@ struct FloatingRecorderView: View {
 
     var body: some View {
         GeometryReader { host in
-            VStack(alignment: .trailing, spacing: FloatingWidgetWindowPolicy.timerGap) {
-                if model.plannerPresented,
-                   !model.isRecording {
-                    FloatingTodayPlannerPanel(model: model)
-                        .frame(
-                            width: FloatingWidgetWindowPolicy.plannerWidth,
-                            height: max(
-                                0,
-                                host.size.height
-                                    - FloatingWidgetWindowPolicy.capsuleHeight
-                                    - FloatingWidgetWindowPolicy.timerGap
-                                    - 16
+            let upperSurfaceViewportHeight =
+                FloatingWidgetWindowPolicy.upperSurfaceViewportHeight(
+                    hostHeight: host.size.height
+                )
+            let upperSurfaceContentHeight =
+                FloatingWidgetWindowPolicy.upperSurfaceContentHeight(
+                    hostHeight: host.size.height
+                )
+
+            VStack(alignment: .trailing, spacing: 0) {
+                ZStack(alignment: .bottomTrailing) {
+                    if model.plannerPresented,
+                       !model.isRecording {
+                        FloatingTodayPlannerPanel(model: model)
+                            .frame(
+                                width: FloatingWidgetWindowPolicy.plannerWidth,
+                                height: upperSurfaceContentHeight
                             )
+                            .padding(.bottom, FloatingWidgetWindowPolicy.timerGap)
+                            .transition(
+                                .asymmetric(
+                                    insertion: .move(edge: .bottom)
+                                        .combined(with: .opacity),
+                                    removal: .move(edge: .bottom)
+                                )
+                            )
+                    } else if model.widgetSizeMode == .standard,
+                              !model.dynamicRecordingInterfaceActive,
+                              model.timerPanelExpanded,
+                              model.hasTimerInstrument,
+                              let instrument = model.timerInstrument {
+                        FloatingTimerInstrumentPanel(
+                            model: model,
+                            instrument: instrument
                         )
-                        .transition(
-                            .move(edge: .bottom)
-                                .combined(with: .opacity)
-                        )
-                } else if model.widgetSizeMode == .standard,
-                   !model.dynamicRecordingInterfaceActive,
-                   model.timerPanelExpanded,
-                   model.hasTimerInstrument,
-                   let instrument = model.timerInstrument {
-                    FloatingTimerInstrumentPanel(
-                        model: model,
-                        instrument: instrument
-                    )
-                    .frame(width: FloatingWidgetWindowPolicy.expandedWidth)
-                    // The AppKit panel already animates the bottom-anchored frame.
-                    // A second SwiftUI move transition made the capsule hop
-                    // vertically while the host was resizing.
-                    .transition(.opacity)
+                        .frame(width: FloatingWidgetWindowPolicy.expandedWidth)
+                        .padding(.bottom, FloatingWidgetWindowPolicy.timerGap)
+                        // The AppKit panel already animates the bottom-anchored frame.
+                        // A second SwiftUI move transition made the capsule hop
+                        // vertically while the host was resizing.
+                        .transition(.opacity)
+                    }
                 }
+                .frame(
+                    width: host.size.width,
+                    height: upperSurfaceViewportHeight,
+                    alignment: .bottomTrailing
+                )
+                // The stable viewport ends at the recorder capsule's top edge.
+                // During removal it clips planner pixels before they can show
+                // through the translucent microphone control.
+                .clipped()
                 recorderCapsule(
                     width: FloatingWidgetGeometryPolicy.visibleCapsuleWidth(
                         hostWidth: host.size.width
                     )
                 )
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, FloatingWidgetWindowPolicy.hostVerticalInset)
             .frame(
                 width: host.size.width,
                 height: host.size.height,
@@ -1569,7 +1602,10 @@ struct FloatingRecorderView: View {
     }
 
     private var linkButton: some View {
-        Button(action: model.toggleLinkMode) {
+        Button {
+            guard !suppressStandardClick else { return }
+            model.toggleLinkMode()
+        } label: {
             LinkStatusIcon(
                 state: model.linkPresentationState,
                 color: model.linkStatusColor,
@@ -1857,7 +1893,10 @@ struct FloatingRecorderView: View {
         label: String,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        Button {
+            guard !suppressStandardClick else { return }
+            action()
+        } label: {
             Image(systemName: symbol)
                 .font(.system(size: 11, weight: .semibold))
                 .frame(width: 22, height: 22)
@@ -1904,6 +1943,9 @@ struct FloatingRecorderView: View {
             guard !(
                 model.widgetSizeMode == .mini
                     && suppressMiniClick
+            ), !(
+                model.widgetSizeMode == .standard
+                    && suppressStandardClick
             ) else { return }
             model.toggleRecording()
         } label: {
@@ -2044,8 +2086,7 @@ struct FloatingRecorderView: View {
     private var standardDragGesture: some Gesture {
         DragGesture(minimumDistance: 5, coordinateSpace: .global)
             .onChanged { _ in
-                guard model.widgetSizeMode == .standard,
-                      !model.plannerPresented else { return }
+                guard model.widgetSizeMode == .standard else { return }
                 let pointer = NSEvent.mouseLocation
                 FloatingPanelController.shared.beginMiniDrag(
                     pointerLocation: pointer
@@ -2129,7 +2170,10 @@ private struct FloatingTodayPlannerPanel: View {
                     fullSessionComposer
                 }
             }
+            .id(model.planningState.surface)
+            .transition(.opacity)
             .frame(maxHeight: .infinity, alignment: .top)
+            .clipped()
         }
         .background {
             RoundedRectangle(cornerRadius: 19, style: .continuous)
@@ -2241,7 +2285,9 @@ private struct FloatingTodayPlannerPanel: View {
         HStack(spacing: 0) {
             ForEach(VoicePlanningSurface.allCases, id: \.rawValue) { surface in
                 Button {
-                    model.setPlanningSurface(surface)
+                    withAnimation(plannerAnimation) {
+                        model.setPlanningSurface(surface)
+                    }
                 } label: {
                     Text(surface.rawValue)
                         .font(.system(size: 10, weight: .bold))
@@ -2390,11 +2436,6 @@ private struct FloatingTodayPlannerPanel: View {
             if model.planningState.selectedCategory == .career {
                 careerFocus
                     .frame(maxHeight: .infinity, alignment: .top)
-            } else if model.planningCustomPresented {
-                VStack(spacing: 8) {
-                    catalogControls
-                    catalogList
-                }
             } else {
                 VStack(spacing: 8) {
                     catalogControls
@@ -2830,10 +2871,7 @@ private struct FloatingTodayPlannerPanel: View {
         // The catalog owns the flexible middle of the Activities surface. Letting
         // it absorb the available height keeps Custom activity attached to the
         // fixed selection tray instead of leaving a dead band beneath it.
-        .frame(
-            minHeight: model.planningCustomPresented ? 64 : 176,
-            maxHeight: model.planningCustomPresented ? 64 : .infinity
-        )
+        .frame(minHeight: 64, maxHeight: .infinity)
     }
 
     private var careerFocus: some View {
