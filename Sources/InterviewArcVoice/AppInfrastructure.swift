@@ -967,6 +967,96 @@ private struct InstrumentBlurView: NSViewRepresentable {
     }
 }
 
+private final class HorizontalDragScrollNSView: NSScrollView {
+    private var dragStartOrigin: NSPoint?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        drawsBackground = false
+        borderType = .noBorder
+        hasHorizontalScroller = false
+        hasVerticalScroller = false
+        horizontalScrollElasticity = .automatic
+        verticalScrollElasticity = .none
+
+        let pan = NSPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        pan.buttonMask = 0x1
+        pan.delaysPrimaryMouseButtonEvents = false
+        addGestureRecognizer(pan)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let horizontalDelta = abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY)
+            ? event.scrollingDeltaX
+            : event.scrollingDeltaY
+        guard abs(horizontalDelta) > 0.01 else {
+            super.scrollWheel(with: event)
+            return
+        }
+        scrollDocument(to: contentView.bounds.origin.x + horizontalDelta)
+    }
+
+    @objc private func handlePan(_ recognizer: NSPanGestureRecognizer) {
+        switch recognizer.state {
+        case .began:
+            dragStartOrigin = contentView.bounds.origin
+        case .changed:
+            guard let dragStartOrigin else { return }
+            let translation = recognizer.translation(in: self)
+            scrollDocument(to: dragStartOrigin.x - translation.x)
+        case .ended, .cancelled, .failed:
+            dragStartOrigin = nil
+        default:
+            break
+        }
+    }
+
+    private func scrollDocument(to proposedX: CGFloat) {
+        guard let documentView else { return }
+        let maximumX = max(0, documentView.frame.width - contentView.bounds.width)
+        let clampedX = min(max(0, proposedX), maximumX)
+        contentView.scroll(to: NSPoint(x: clampedX, y: contentView.bounds.origin.y))
+        reflectScrolledClipView(contentView)
+    }
+}
+
+private struct HorizontalDragScrollView<Content: View>: NSViewRepresentable {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    func makeNSView(context: Context) -> HorizontalDragScrollNSView {
+        let scrollView = HorizontalDragScrollNSView()
+        let hostingView = TransparentHostingView(rootView: content)
+        hostingView.frame = NSRect(origin: .zero, size: hostingView.fittingSize)
+        scrollView.documentView = hostingView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: HorizontalDragScrollNSView, context: Context) {
+        guard let hostingView = scrollView.documentView as? TransparentHostingView<Content> else {
+            return
+        }
+        hostingView.rootView = content
+        hostingView.layoutSubtreeIfNeeded()
+        let fittingSize = hostingView.fittingSize
+        hostingView.frame = NSRect(
+            origin: .zero,
+            size: NSSize(
+                width: max(fittingSize.width, scrollView.contentSize.width),
+                height: max(fittingSize.height, scrollView.contentSize.height)
+            )
+        )
+    }
+}
+
 private struct MarqueeTextWidthKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
 
@@ -1962,7 +2052,7 @@ private struct FloatingTodayPlannerPanel: View {
                     fullSessionComposer
                 }
             }
-            .frame(maxHeight: .infinity)
+            .frame(maxHeight: .infinity, alignment: .top)
 
             if let message = model.planningMessage {
                 Text(message)
@@ -2194,6 +2284,7 @@ private struct FloatingTodayPlannerPanel: View {
             selectionTray
         }
         .padding(.top, 2)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var categoryTabs: some View {
@@ -2630,7 +2721,6 @@ private struct FloatingTodayPlannerPanel: View {
             Spacer()
         }
         .padding(.horizontal, 10)
-        .padding(.top, 2)
         .frame(minHeight: 220)
     }
 
@@ -2715,7 +2805,7 @@ private struct FloatingTodayPlannerPanel: View {
                             .foregroundStyle(palette.secondaryInk)
                             .frame(maxWidth: .infinity, alignment: .center)
                     } else {
-                        ScrollView(.horizontal, showsIndicators: false) {
+                        HorizontalDragScrollView {
                             HStack(spacing: 5) {
                                 ForEach(model.planningState.selections) { selection in
                                     Button {
@@ -2752,13 +2842,14 @@ private struct FloatingTodayPlannerPanel: View {
                                     .accessibilityLabel("Deselect \(selection.title)")
                                 }
                             }
+                            .fixedSize(horizontal: true, vertical: false)
                         }
-                        .scrollClipDisabled()
-                        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                         .accessibilityLabel("Selected activities")
                     }
                 }
                 .frame(maxWidth: .infinity)
+                .layoutPriority(0)
                 .frame(height: 30)
                 .background(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -2782,6 +2873,8 @@ private struct FloatingTodayPlannerPanel: View {
                     .frame(width: 116, height: 30)
                     .contentShape(Rectangle())
                 }
+                    .frame(width: 116)
+                    .layoutPriority(1)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .disabled(

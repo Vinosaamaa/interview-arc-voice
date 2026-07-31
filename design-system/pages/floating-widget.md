@@ -185,9 +185,17 @@ least 58 points for the activity title.
   cards, and one persistent review tray. Selected cards use a tinted border
   and fill; they do not add a checkbox before the title or copy their title
   into search.
+- The review tray keeps its summary, destination, and Add action in fixed
+  geometry. Its selected-chip rail ends before the Add action and clips at its
+  own rounded boundary. Trackpad scrolling, vertical mouse-wheel scrolling,
+  and click-dragging all pan the rail horizontally. A stationary click
+  deselects a chip; crossing the native drag threshold must never deselect it.
 - Coding, System design, and Behavioral each own independent search, favorite,
   difficulty, and sort state. Career contains the Job applications focus block
   inside Activities, never inside Full session.
+- The surface tabs and specialty chips are top-anchored. Switching among
+  Coding, System design, Behavioral, and Career preserves the exact vertical
+  gap between those two control families even when their content heights differ.
 - Voice caches selection and presentation only. Eligibility, current Today
   work, removability, mutation identity, and conflict decisions come from the
   authenticated Worker. Exact retries reuse one mutation ID; changed work
