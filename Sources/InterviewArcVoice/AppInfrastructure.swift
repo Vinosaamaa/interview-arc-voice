@@ -974,6 +974,10 @@ private final class HorizontalDragScrollNSView: NSScrollView {
         super.init(frame: frameRect)
         drawsBackground = false
         borderType = .noBorder
+        wantsLayer = true
+        layer?.masksToBounds = true
+        contentView.wantsLayer = true
+        contentView.layer?.masksToBounds = true
         hasHorizontalScroller = false
         hasVerticalScroller = false
         horizontalScrollElasticity = .automatic
@@ -2274,13 +2278,18 @@ private struct FloatingTodayPlannerPanel: View {
     private var activityComposer: some View {
         VStack(spacing: 8) {
             categoryTabs
-            if model.planningState.selectedCategory == .career {
-                careerFocus
-            } else {
-                catalogControls
-                catalogList
+            Group {
+                if model.planningState.selectedCategory == .career {
+                    careerFocus
+                } else {
+                    VStack(spacing: 8) {
+                        catalogControls
+                        catalogList
+                        customComposer
+                    }
+                }
             }
-            customComposer
+            .frame(maxHeight: .infinity, alignment: .top)
             selectionTray
         }
         .padding(.top, 2)
@@ -2349,6 +2358,7 @@ private struct FloatingTodayPlannerPanel: View {
                 }
             }
             .buttonStyle(PlannerPressButtonStyle())
+            .voiceHoverFeedback(cornerRadius: 10, tint: palette.linkOff)
             .help("Filter activities")
             .accessibilityLabel("Filter activities")
             .accessibilityValue("\(model.activePlanningQuery.activeFilterCount) active")
@@ -2371,6 +2381,7 @@ private struct FloatingTodayPlannerPanel: View {
                 }
             }
             .buttonStyle(PlannerPressButtonStyle())
+            .voiceHoverFeedback(cornerRadius: 10, tint: palette.linkOff)
             .help("Sort activities")
             .accessibilityLabel(
                 "Sort activities by \(model.activePlanningQuery.sort.title), "
@@ -2427,22 +2438,20 @@ private struct FloatingTodayPlannerPanel: View {
 
             Divider()
             HStack(spacing: 8) {
-                Button("Clear") {
+                plannerPopoverFooterButton(
+                    "Clear",
+                    enabled: model.activePlanningQuery.activeFilterCount > 0
+                ) {
                     model.updatePlanningQuery { query in
                         query.attention.removeAll()
                         query.difficulty.removeAll()
                     }
                     model.applyPlanningQuery()
                 }
-                .buttonStyle(PlannerPressButtonStyle())
-                .foregroundStyle(palette.linkOff)
-                .frame(maxWidth: .infinity, minHeight: 30)
-                .disabled(model.activePlanningQuery.activeFilterCount == 0)
 
-                Button("Done") { filterPresented = false }
-                    .buttonStyle(.borderedProminent)
-                    .tint(palette.linkOff)
-                    .frame(maxWidth: .infinity)
+                plannerPopoverFooterButton("Done", prominent: true) {
+                    filterPresented = false
+                }
             }
         }
         .padding(12)
@@ -2520,25 +2529,58 @@ private struct FloatingTodayPlannerPanel: View {
 
             Divider()
             HStack(spacing: 8) {
-                Button("Reset") {
+                plannerPopoverFooterButton("Reset") {
                     model.updatePlanningQuery { query in
                         query.sort = .frequency
                         query.direction = .descending
                     }
                     model.applyPlanningQuery()
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(palette.linkOff)
-                .frame(maxWidth: .infinity, minHeight: 30)
 
-                Button("Done") { sortPresented = false }
-                    .buttonStyle(.borderedProminent)
-                    .tint(palette.linkOff)
-                    .frame(maxWidth: .infinity)
+                plannerPopoverFooterButton("Done", prominent: true) {
+                    sortPresented = false
+                }
             }
         }
         .padding(12)
         .frame(width: 280)
+    }
+
+    private func plannerPopoverFooterButton(
+        _ title: String,
+        prominent: Bool = false,
+        enabled: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(prominent ? Color.white : palette.linkOff)
+                .frame(maxWidth: .infinity)
+                .frame(height: 31)
+                .contentShape(Rectangle())
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(
+                            prominent
+                                ? palette.linkOff
+                                : palette.glassHighlight.opacity(palette.isDark ? 0.14 : 0.46)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(
+                                    prominent
+                                        ? palette.linkOff.opacity(0.92)
+                                        : palette.coolBorder.opacity(0.78),
+                                    lineWidth: 0.8
+                                )
+                        )
+                )
+        }
+        .buttonStyle(PlannerPressButtonStyle())
+        .voiceHoverFeedback(enabled: enabled, cornerRadius: 8, tint: palette.linkOff)
+        .opacity(enabled ? 1 : 0.48)
+        .disabled(!enabled)
     }
 
     private func planningFilterSection<Content: View>(
@@ -2787,13 +2829,20 @@ private struct FloatingTodayPlannerPanel: View {
                     .font(.system(size: 10, weight: .bold, design: .rounded))
                     .monospacedDigit()
                 Spacer()
-                Picker("", selection: $model.planningDestination) {
-                    Text("Standalone").tag("standalone")
-                    Text("One session").tag("session")
+                HStack(spacing: 0) {
+                    planningDestinationButton("Standalone", value: "standalone")
+                    planningDestinationButton("One session", value: "session")
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 170)
+                .padding(2)
+                .frame(width: 170, height: 27)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(palette.glassHighlight.opacity(palette.isDark ? 0.14 : 0.42))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(palette.coolBorder.opacity(0.72), lineWidth: 0.8)
+                        )
+                )
             }
             .frame(height: 25)
 
@@ -2844,6 +2893,7 @@ private struct FloatingTodayPlannerPanel: View {
                             }
                             .fixedSize(horizontal: true, vertical: false)
                         }
+                        .padding(.trailing, 6)
                         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                         .accessibilityLabel("Selected activities")
                     }
@@ -2870,13 +2920,34 @@ private struct FloatingTodayPlannerPanel: View {
                             : "Add \(model.planningSelectionCount) activities"
                     )
                     .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.white)
                     .frame(width: 116, height: 30)
                     .contentShape(Rectangle())
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(palette.linkOff)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(palette.linkOff.opacity(0.92), lineWidth: 0.8)
+                            )
+                    )
                 }
                     .frame(width: 116)
                     .layoutPriority(1)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .buttonStyle(PlannerPressButtonStyle())
+                    .voiceHoverFeedback(
+                        enabled: !model.planningState.selections.isEmpty
+                            && !model.planningMutationInFlight
+                            && model.planningResponse?.workbench != nil,
+                        cornerRadius: 8,
+                        tint: palette.linkOff
+                    )
+                    .opacity(
+                        model.planningState.selections.isEmpty
+                            || model.planningMutationInFlight
+                            || model.planningResponse?.workbench == nil
+                            ? 0.46 : 1
+                    )
                     .disabled(
                         model.planningState.selections.isEmpty
                             || model.planningMutationInFlight
@@ -2889,6 +2960,28 @@ private struct FloatingTodayPlannerPanel: View {
         .padding(.vertical, 8)
         .frame(height: 86)
         .background(palette.timerSurface.opacity(palette.isDark ? 0.72 : 0.48))
+    }
+
+    private func planningDestinationButton(_ title: String, value: String) -> some View {
+        let selected = model.planningDestination == value
+        return Button {
+            withAnimation(plannerAnimation) {
+                model.planningDestination = value
+            }
+        } label: {
+            Text(title)
+                .font(.system(size: 9, weight: selected ? .bold : .semibold))
+                .foregroundStyle(selected ? Color.white : palette.secondaryInk)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(selected ? palette.linkOff : Color.clear)
+                )
+        }
+        .buttonStyle(PlannerPressButtonStyle())
+        .voiceHoverFeedback(cornerRadius: 6, tint: palette.linkOff)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private var fullSessionComposer: some View {

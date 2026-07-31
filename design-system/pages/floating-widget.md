@@ -187,15 +187,24 @@ least 58 points for the activity title.
   into search.
 - The review tray keeps its summary, destination, and Add action in fixed
   geometry. Its selected-chip rail ends before the Add action and clips at its
-  own rounded boundary. Trackpad scrolling, vertical mouse-wheel scrolling,
+  own rounded boundary, with a visible gutter separating the moving rail from
+  the fixed action. Trackpad scrolling, vertical mouse-wheel scrolling,
   and click-dragging all pan the rail horizontally. A stationary click
   deselects a chip; crossing the native drag threshold must never deselect it.
+  The entire tray is bottom-pinned at the same vertical position for every
+  specialty, regardless of the category content height above it.
 - Coding, System design, and Behavioral each own independent search, favorite,
   difficulty, and sort state. Career contains the Job applications focus block
   inside Activities, never inside Full session.
 - The surface tabs and specialty chips are top-anchored. Switching among
   Coding, System design, Behavioral, and Career preserves the exact vertical
   gap between those two control families even when their content heights differ.
+- Favorite, Filter, and Sort are full hit-target controls with consistent hover
+  and press feedback. Filter and Sort popover footer actions are surfaced
+  buttons, not bare text; Clear, Reset, and Done expose the same feedback.
+- Standalone, One session, and Add activities use the same planner hover and
+  press language. Destination buttons expose an unmistakable selected state;
+  Add activities exposes distinct enabled and disabled states without moving.
 - Voice caches selection and presentation only. Eligibility, current Today
   work, removability, mutation identity, and conflict decisions come from the
   authenticated Worker. Exact retries reuse one mutation ID; changed work
