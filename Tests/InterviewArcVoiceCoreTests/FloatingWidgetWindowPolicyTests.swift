@@ -78,6 +78,15 @@ import Foundation
 @Test func plannerSelectionTrayMakesOverflowExplicit() {
     #expect(PlannerSelectionTrayPolicy.hiddenCount(selectionCount: 2) == 0)
     #expect(PlannerSelectionTrayPolicy.hiddenCount(selectionCount: 11) == 8)
+    #expect(PlannerSelectionTrayPolicy.expandedRowCount(selectionCount: 6) == 2)
+    #expect(PlannerSelectionTrayPolicy.expandedRowCount(selectionCount: 16) == 4)
+    #expect(PlannerSelectionTrayPolicy.expandedRowCount(selectionCount: 24) == 4)
+    #expect(
+        PlannerSelectionTrayPolicy.expandedRailHeight(selectionCount: 6)
+            < PlannerSelectionTrayPolicy.expandedRailHeight(selectionCount: 16)
+    )
+    #expect(!PlannerSelectionTrayPolicy.expandedContentScrolls(selectionCount: 16))
+    #expect(PlannerSelectionTrayPolicy.expandedContentScrolls(selectionCount: 17))
 }
 
 @Test func floatingMemoShelfAvoidsAnEmptyMoreMode() {
