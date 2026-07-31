@@ -69,6 +69,53 @@ behind credential and network work even though history requires neither.
 - Relaunch testing emphasized failure recovery rather than successful-history
   playback.
 
+## Timeline
+
+- **2026-07-30:** A provider-omission investigation established that the
+  successful General Dictation transcript remained but its finalized M4A had
+  already been deleted.
+- **2026-07-30:** Issue #107 defined lifecycle-separated local storage, bounded
+  retention, and the Reliability verification matrix.
+- **2026-07-30:** Regression tests for General archival, linked transfer,
+  protected unresolved audio, pruning, permissions, and interrupted moves were
+  committed before the production repair.
+- **2026-07-30:** A cold-launch report showed Recent Transcripts as empty even
+  though the permission-0600 metadata file still contained 20 records. The
+  investigation added startup ordering to #107 rather than treating it as
+  deletion.
+- **2026-07-31:** PR #111 merged as
+  `3fc1a27f9534936a487c29619f1bb0abe4b23edf`.
+- **2026-07-31:** Merged-main workflow `30600336860` passed the complete test
+  and package lane. The exact artifact was downloaded, signature-checked,
+  package-checked, installed, and cold-launched.
+- **2026-07-31:** Issue #107 was reopened after an early automatic closure so
+  the post-merge Reliability evidence could be completed before final
+  resolution.
+
+## Resulting architecture
+
+```text
+recording starts
+      |
+      +-- General Dictation --> temporary M4A --> transcript + insertion
+      |                                             |
+      |                                             v
+      |                                      RecentHistory/
+      |
+      +-- linked capture ----> LinkedPending/ --> D1 + private R2 + coach
+                                                    |
+                                    completed + still recent?
+                                      |                     |
+                                      v                     v
+                               RecentHistory/          local delete
+
+TranscriptHistory/transcript-history.json
+      |
+      +-- relative audio identity --> exact visible M4A
+      +-- newest 20 / 24 hours / disk budget
+      +-- cannot evict LinkedPending lifecycle evidence
+```
+
 ## Resolution
 
 - Introduce private lifecycle-separated `LinkedPending/`, `RecentHistory/`, and
@@ -96,6 +143,20 @@ behind credential and network work even though history requires neither.
   `main`, then exercise General Dictation, linked pending/accepted transitions,
   relaunch loading, navigation, Play, Save, Delete, and Clear History.
 
+## Failed or insufficient approaches
+
+- Keeping transcript-only history was privacy-bounded but did not preserve the
+  evidence required to diagnose provider omissions.
+- Copying a second M4A into history would have created ambiguous ownership and
+  doubled storage. The repair transfers one canonical file between lifecycle
+  owners instead.
+- Treating all local audio as one queue would allow the 20-item history limit
+  to delete an unresolved linked capture. `LinkedPending/` and
+  `RecentHistory/` therefore have independent deletion rules.
+- Loading history after secure settings eventually populated the UI but left a
+  false empty state whenever Keychain or network initialization was slow.
+  Local history now loads first and refreshes again whenever the menu opens.
+
 ## Privacy and performance
 
 - No raw audio, transcript, credential, or token is added to Git.
@@ -109,8 +170,39 @@ behind credential and network work even though history requires neither.
 
 ## Release verification
 
-Pending completion of the merged-main package and installed-artifact Reliability
-check required by issue #107.
+- PR [#111](https://github.com/Vinosaamaa/interview-arc-voice/pull/111)
+  merged as `3fc1a27f9534936a487c29619f1bb0abe4b23edf`.
+- Merged-main workflow
+  [30600336860](https://github.com/Vinosaamaa/interview-arc-voice/actions/runs/30600336860)
+  passed 156 Swift Testing tests, 13 XCTest tests, packaging, and the embedded
+  21-vocabulary-pack verification.
+- The downloaded artifact passed strict deep code-signature verification. Its
+  executable SHA-256 was
+  `8f1df29a0e4cde256160e59ce8a59a0dc5d01c36d1803617bf9ce204aac33a0c`.
+  The installed executable produced the same hash and passed the same package
+  self-check.
+- The exact merged-main app was staged, installed at
+  `~/Applications/Interview Arc Voice.app`, and cold-launched with the
+  persistent Mini preference. Its recording control was available immediately.
+- The installed cold launch preserved all 20 existing transcript records,
+  retained permission `0600` on transcript metadata, and created private
+  `RecentHistory/` with permission `0700`. Source and installed-state evidence
+  confirmed that this local load occurs before Keychain, network context,
+  pending reconciliation, and live updates.
+- The merged-main deterministic suite exercised successful General archival,
+  accepted linked transfer, 30 unresolved linked files, count/age/disk/delete
+  and Clear History pruning, lifecycle protection, permissions, and
+  interrupted-move repair. No synthetic capture was uploaded to the user's
+  production D1 or R2 during release verification.
+
+## Follow-up
+
+- Existing transcript records created before this release intentionally remain
+  transcript-only; the repair does not guess which older M4A belongs to which
+  transcript.
+- Normal use of the first post-release General and linked recordings provides
+  final user-facing acceptance of the new Play and Save controls. A recurrence
+  should reopen #107 with the affected transcript and release evidence.
 
 ## Technical glossary
 
