@@ -337,6 +337,37 @@ public struct VoicePlanningResponse: Codable, Equatable, Sendable {
     public let summary: VoicePlanningSummary
     public let current: VoicePlanningCurrent
     public let catalog: VoicePlanningCatalog
+
+    public func applying(_ authoritative: VoicePlanningAuthoritative) -> Self {
+        Self(
+            protocolVersion: protocolVersion,
+            date: date,
+            workbench: authoritative.workbench,
+            summary: VoicePlanningSummary(
+                sessionCount: authoritative.sessions.count,
+                activityCount: authoritative.activities.count,
+                focusBlockCount: authoritative.focusBlocks.count,
+                plannedSeconds: authoritative.sessions.reduce(0) { $0 + $1.allocatedSeconds }
+                    + authoritative.activities
+                        .filter { $0.sessionId == nil }
+                        .reduce(0) { $0 + $1.allocatedSeconds }
+                    + authoritative.focusBlocks.reduce(0) { $0 + $1.plannedSeconds }
+            ),
+            current: VoicePlanningCurrent(
+                sessions: authoritative.sessions,
+                activities: authoritative.activities,
+                focusBlocks: authoritative.focusBlocks
+            ),
+            catalog: catalog
+        )
+    }
+}
+
+public struct VoicePlanningAuthoritative: Decodable, Sendable {
+    public let workbench: VoicePlanningWorkbench?
+    public let sessions: [VoicePlanningCurrentSession]
+    public let activities: [VoicePlanningCurrentActivity]
+    public let focusBlocks: [VoicePlanningCurrentFocus]
 }
 
 public struct VoicePlanningMutationRequest: Encodable, Equatable, Sendable {
@@ -473,4 +504,5 @@ public struct VoicePlanningSelectionPayload: Encodable, Equatable, Sendable {
 public struct VoicePlanningMutationResponse: Decodable, Sendable {
     public let protocolVersion: Int
     public let duplicate: Bool?
+    public let authoritative: VoicePlanningAuthoritative?
 }

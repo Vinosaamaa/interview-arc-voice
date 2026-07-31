@@ -188,10 +188,12 @@ least 58 points for the activity title.
   cards, and one persistent review tray. Selected cards use a tinted border
   and fill; they do not add a checkbox before the title or copy their title
   into search.
-- The review tray keeps its summary, destination, and Add action in fixed
-  geometry. Its selected-chip rail ends before the Add action and clips at its
-  own rounded boundary, with a visible gutter separating the moving rail from
-  the fixed action. Trackpad scrolling, vertical mouse-wheel scrolling,
+- The review tray gives its full-width top row to the selected-chip rail. The
+  Standalone, One session, and Add activities controls share one fixed bottom
+  row aligned with the other planner surfaces' primary actions. Empty state
+  copy stays inside the rail instead of adding a separate summary label. The
+  rail clips at its own rounded boundary. Trackpad scrolling, vertical
+  mouse-wheel scrolling,
   and click-dragging all pan the rail horizontally. A stationary click
   deselects a chip; crossing the native drag threshold must never deselect it.
   The entire tray is bottom-pinned at the same vertical position for every
@@ -226,8 +228,10 @@ least 58 points for the activity title.
 - Full session keeps its Create action directly beneath the three specialty
   cards' supporting content and anchored at the bottom of the panel. Beneath
   the cards, a high-contrast Session countdown summarizes the live specialty
-  minute breakdown and total duration, followed by concise recipe/eligibility
-  guidance. Cards, count controls, and the primary action expose consistent
+  minute breakdown and total duration. The header does not repeat that total.
+  A compact three-step assembly guide fills the remaining working area with
+  review-first, frequency-fill, and recipe-locking rules. Cards, count controls,
+  and the primary action expose consistent
   hover and press feedback; empty space must not replace useful session context.
 - Voice caches selection and presentation only. Eligibility, current Today
   work, removability, mutation identity, and conflict decisions come from the
@@ -385,10 +389,15 @@ least 58 points for the activity title.
 - Plan Today preserves a stationary microphone, independent specialty
   filters, selected work, and the exact previous Focus/collapsed disclosure
   through open, close, Mini entry, recording, and server-conflict refresh.
-- Standard idle memo actions use one in-place shelf: Play, Insert, and More.
-  More swaps those controls for Back, Copy, Save, and Plan Today while the
-  title viewport and trailing microphone remain fixed. Active timer capsules
-  never expose this memo shelf.
+- The native panel background never owns the whole standard widget's mouse
+  handling. Buttons keep full hit testing, while a thresholded title-region drag
+  moves the widget without converting clicks into drags. Planner text fields
+  make the nonactivating panel key only after the user clicks a field; the last
+  eligible external editor remains the insertion destination.
+- Standard idle memo actions use one in-place shelf containing every applicable
+  action—Play, Insert, Copy, Save, and Plan Today—while the title viewport and
+  trailing microphone remain fixed. There is no More or Back mode. Active timer
+  capsules never expose this memo shelf.
 - Plan Today uses an outer Focus/Plan Today switcher and an independent inner
   Today/Activities/Full session tab row. Today is the default and highlights
   the authoritative running item with its live clock.

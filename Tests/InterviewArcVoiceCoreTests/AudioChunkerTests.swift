@@ -2,17 +2,15 @@ import Foundation
 import Testing
 @testable import InterviewArcVoiceCore
 
-@Test func smallLongRecordingIsSplitAtWhisperContextBoundary() {
+@Test func smallLongRecordingRemainsOneDirectUpload() {
     let windows = AudioChunkPlan.windows(
         durationSeconds: 45,
         fileSizeBytes: 300_000
     )
 
-    #expect(windows.count == 2)
-    #expect(windows[0].startSeconds == 0)
-    #expect(windows[0].durationSeconds == 23.25)
-    #expect(windows[1].startSeconds == 21.75)
-    #expect(windows[1].durationSeconds == 23.25)
+    #expect(windows == [
+        AudioChunkWindow(startSeconds: 0, durationSeconds: 45),
+    ])
 }
 
 @Test func shortRecordingRemainsOneDirectUpload() {
@@ -26,29 +24,32 @@ import Testing
     ])
 }
 
-@Test func durationChunkingKeepsEveryWindowWithinThirtySeconds() {
+@Test func multiMinuteRecordingRemainsOneUploadWhenFileIsProviderSafe() {
     let windows = AudioChunkPlan.windows(
         durationSeconds: 95,
         fileSizeBytes: 1_000_000
     )
 
-    #expect(windows.count == 4)
-    #expect(windows.allSatisfy { $0.durationSeconds <= 30 })
-    #expect(windows.allSatisfy { $0.durationSeconds >= 10 })
-    #expect(windows[0].durationSeconds == 24.875)
-    #expect(windows.map(\.startSeconds) == [0, 23.375, 46.75, 70.125])
+    #expect(windows == [
+        AudioChunkWindow(startSeconds: 0, durationSeconds: 95),
+    ])
 }
 
-@Test func recordingJustPastBoundaryDoesNotCreateTinyTailWindow() {
+@Test func recordingAboveProviderSizeLimitUsesBalancedOverlappingChunks() {
     let windows = AudioChunkPlan.windows(
-        durationSeconds: 31,
-        fileSizeBytes: 300_000
+        durationSeconds: 100,
+        fileSizeBytes: 50 * 1024 * 1024
     )
 
-    #expect(windows == [
-        AudioChunkWindow(startSeconds: 0, durationSeconds: 16.25),
-        AudioChunkWindow(startSeconds: 14.75, durationSeconds: 16.25),
-    ])
+    #expect(windows.count == 3)
+    #expect(windows[0].startSeconds == 0)
+    #expect(abs(windows[0].durationSeconds - 34.333333333333336) < 0.000_001)
+    #expect(abs(windows[1].startSeconds - 32.833333333333336) < 0.000_001)
+    #expect(abs(windows[2].startSeconds - 65.66666666666667) < 0.000_001)
+    #expect(windows.allSatisfy { window in
+        let estimatedBytes = Double(50 * 1024 * 1024) * window.durationSeconds / 100
+        return estimatedBytes < Double(20 * 1024 * 1024)
+    })
 }
 
 @Test func overlappingDurationChunksMergeWithoutDuplicatingBoundaryWords() {

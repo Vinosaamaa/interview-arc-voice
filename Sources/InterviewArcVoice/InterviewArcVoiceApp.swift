@@ -174,6 +174,7 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var planningResponse: VoicePlanningResponse?
     @Published private(set) var planningLoading = false
     @Published private(set) var planningMutationInFlight = false
+    @Published private(set) var planningMutationStatus: String?
     @Published var planningMessage: String?
     @Published var planningDestination = "standalone"
     @Published var planningCustomPresented = false
@@ -1012,10 +1013,10 @@ final class VoiceBridgeModel: ObservableObject {
         Task { await performPlanningMutation(request) }
     }
 
-    func refreshPlanning() async {
+    func refreshPlanning(clearMessage: Bool = true) async {
         guard plannerPresented else { return }
         planningLoading = true
-        planningMessage = nil
+        if clearMessage { planningMessage = nil }
         defer { planningLoading = false }
         do {
             let client = try timerAPIClient()
@@ -1034,8 +1035,8 @@ final class VoiceBridgeModel: ObservableObject {
         clearSelection: Bool = false
     ) async {
         planningMutationInFlight = true
-        planningMessage = nil
-        defer { planningMutationInFlight = false }
+        planningMutationStatus = planningMutationStatus(for: request)
+        planningMessage = planningMutationStatus
         do {
             let response = try await timerAPIClient().mutatePlanning(request)
             guard response.protocolVersion == 1 else {
@@ -1044,12 +1045,54 @@ final class VoiceBridgeModel: ObservableObject {
             if clearSelection {
                 planningState.clearSelections()
             }
-            planningMessage = response.duplicate == true ? "Already applied." : "Added to Today."
-            await refreshPlanning()
-            await refreshContext(showProgress: false)
+            if let authoritative = response.authoritative,
+               let current = planningResponse {
+                planningResponse = current.applying(authoritative)
+            }
+            planningMessage = response.duplicate == true
+                ? "Already applied."
+                : planningMutationCompletionMessage(for: request)
+            planningMutationInFlight = false
+            planningMutationStatus = nil
+            reconcilePlanningAfterMutation()
         } catch {
             planningMessage = error.localizedDescription
-            await refreshPlanning()
+            await refreshPlanning(clearMessage: false)
+            planningMutationInFlight = false
+            planningMutationStatus = nil
+        }
+    }
+
+    private func reconcilePlanningAfterMutation() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            async let planningRefresh: Void = refreshPlanning(clearMessage: false)
+            async let contextRefresh: Void = refreshContext(showProgress: false)
+            _ = await (planningRefresh, contextRefresh)
+        }
+    }
+
+    private func planningMutationStatus(
+        for request: VoicePlanningMutationRequest
+    ) -> String {
+        switch request.type {
+        case "create_full_session": "Creating full session…"
+        case "remove": request.kind == "session" ? "Deleting session…" : "Removing item…"
+        case "start_fresh_today": "Starting fresh Today…"
+        case "problem_star": "Updating favorite…"
+        default: "Adding to Today…"
+        }
+    }
+
+    private func planningMutationCompletionMessage(
+        for request: VoicePlanningMutationRequest
+    ) -> String {
+        switch request.type {
+        case "create_full_session": "Full session created."
+        case "remove": request.kind == "session" ? "Session deleted." : "Item removed."
+        case "start_fresh_today": "Today is fresh."
+        case "problem_star": "Favorite updated."
+        default: "Added to Today."
         }
     }
 

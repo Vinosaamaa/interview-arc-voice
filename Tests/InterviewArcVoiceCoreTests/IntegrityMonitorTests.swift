@@ -181,6 +181,44 @@ import Testing
     ])
 }
 
+@Test func transcriptEndingBeforeSustainedTailSpeechRetriesInsteadOfDeliveringPartialText() async throws {
+    let partial = TranscriptionResult(
+        text: "The first chunk was transcribed, but the ending was lost.",
+        words: [],
+        segments: [
+            TranscriptSegment(start: 0, end: 18, text: "The first chunk was transcribed."),
+        ],
+        durationSeconds: 36,
+        chunkCount: 2
+    )
+    let complete = TranscriptionResult(
+        text: "The first chunk was transcribed, and the complete ending is present.",
+        words: [],
+        segments: [
+            TranscriptSegment(start: 0, end: 18, text: "The first chunk was transcribed,"),
+            TranscriptSegment(start: 18, end: 35.5, text: "and the complete ending is present."),
+        ],
+        durationSeconds: 36,
+        chunkCount: 2
+    )
+    let transcriber = CountingTranscriber(results: [partial, complete])
+    let reliable = ReliableSpeechTranscriber(base: transcriber)
+
+    let result = try await reliable.transcribe(
+        fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+        prompt: "Context vocabulary",
+        temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+        audioDurationSeconds: 36,
+        expectedChunkCount: 2,
+        speechEvidence: sustainedSpeechEvidence(durationSeconds: 36)
+    )
+
+    #expect(result.wasRetried)
+    #expect(result.transcription.text.contains("complete ending"))
+    let callCount = await transcriber.callCount
+    #expect(callCount == 2)
+}
+
 @Test func promptLeakageIsTreatedAsSuspicious() {
     let result = TranscriptionIntegrityEvaluator.evaluate(
         TranscriptionIntegrityEvidence(
@@ -231,4 +269,25 @@ private actor CountingTranscriber: SpeechTranscribing {
         guard !results.isEmpty else { throw VoiceBridgeError.emptyTranscript }
         return results.removeFirst()
     }
+}
+
+private func sustainedSpeechEvidence(durationSeconds: Double) -> SpeechEvidenceResult {
+    let frameDuration = 0.02
+    let frameCount = Int(durationSeconds / frameDuration)
+    let levels = (0..<frameCount).map { index in
+        Float(index.isMultiple(of: 2) ? -24 : -34)
+    }
+    return SpeechEvidenceResult(
+        containsSpeech: true,
+        analyzedDurationSeconds: durationSeconds,
+        speechLikeFrameCount: frameCount,
+        longestSpeechRunFrames: frameCount,
+        noiseFloorDecibels: -48,
+        peakFrameDecibels: -24,
+        vadSpeechFrameCount: frameCount,
+        vadLongestSpeechRunFrames: frameCount,
+        frameDurationSeconds: frameDuration,
+        speechLikeFrames: Array(repeating: true, count: frameCount),
+        frameDecibels: levels
+    )
 }

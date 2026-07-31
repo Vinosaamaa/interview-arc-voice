@@ -201,6 +201,17 @@ workbench identity, commits a batch plus its mutation receipt atomically in
 D1, and emits one owner-scoped live revision. Voice refreshes from that push;
 it never adds a planning poll. A structured conflict refreshes the
 authoritative workbench while retaining still-reviewable local selections.
+Successful planning mutations apply the authoritative Today snapshot carried
+by their response immediately, then refresh planning and timer context
+concurrently in the background. The create/remove controls unlock as soon as
+the committed authoritative response arrives instead of waiting on those
+redundant reads. The UI exposes the active create/remove operation instead of
+an unlabeled frozen state. Today session cards preserve session/activity hierarchy
+and provide an animated disclosure without changing server state. The
+borderless panel never uses native whole-window background dragging because it
+steals clicks from SwiftUI controls. Dragging is limited to explicit title
+surfaces; opening Plan Today activates the accessory app for TextField input,
+and closing it restores the previously foreground application.
 Focus and Plan Today are exclusive presentations of one top surface. Recording
 hides and restores the exact disclosure without delaying microphone startup.
 
@@ -316,12 +327,13 @@ state. Unknown versions fail closed with a user-visible update prompt.
 
 ## Audio model
 
-One stop action produces one canonical clip. Long clips may be divided into
-overlapping transcription chunks and processed concurrently. Those derivatives
-are deleted after the transcript is assembled. The original recording is
-uploaded as one R2 object and remains a single seekable player in Past. At the
-current 48-kbps capture rate, a 30-minute answer is far below the 100-MB private
-upload boundary.
+One stop action produces one canonical clip. Provider-safe recordings are sent
+as one transcription upload; Whisper owns its internal acoustic windows. A clip
+is divided into balanced overlapping transcription chunks only when its encoded
+file size approaches the provider upload limit. Those derivatives are deleted
+after the transcript is assembled. The original recording is uploaded as one R2
+object and remains a single seekable player in Past. At the current 48-kbps
+capture rate, a 30-minute answer is far below the 100-MB private upload boundary.
 
 ## Delivery analysis
 
@@ -389,6 +401,12 @@ state to the owner-scoped Worker. D1 remains authoritative for eligibility,
 attention/result filters, mutations, the guarded fresh-workbench transition,
 and live invalidation. The native client never clears or reconstructs a
 workbench locally.
+
+The floating AppKit panel accepts the first physical mouse event and becomes
+key while Plan Today is open, so SwiftUI buttons and text fields behave like
+ordinary controls without a throwaway activation click. Selection overflow is
+collapsed into an explicit `+N more` disclosure; expanding it grows only the
+selection rail while keeping destination and submit controls anchored.
 
 ## Provider credential rejection
 

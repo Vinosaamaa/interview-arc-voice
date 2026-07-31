@@ -82,6 +82,17 @@ public enum FloatingWidgetWindowPolicy {
     public static let contentFillsAnimatedHost = true
     public static let contentAlignment: FloatingWidgetContentAlignment = .bottomTrailing
 
+    public static func usesNativeBackgroundDrag(
+        for mode: VoiceWidgetSizeMode
+    ) -> Bool {
+        // NSPanel's native background dragging treats large portions of a
+        // borderless SwiftUI hosting view as window chrome. That steals the
+        // first click from Buttons and TextFields. Both widget modes use an
+        // explicit drag gesture on non-control surfaces instead.
+        _ = mode
+        return false
+    }
+
     public static func recordingWaveformBarWidth(
         availableWidth: CGFloat
     ) -> CGFloat {
@@ -109,6 +120,14 @@ public enum FloatingWidgetWindowPolicy {
             finishingActivityID: nil,
             activityPickerExpanded: false
         )
+    }
+}
+
+public enum PlannerSelectionTrayPolicy {
+    public static let collapsedVisibleCount = 3
+
+    public static func hiddenCount(selectionCount: Int) -> Int {
+        max(0, selectionCount - collapsedVisibleCount)
     }
 }
 

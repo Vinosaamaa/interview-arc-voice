@@ -70,6 +70,16 @@ import Foundation
     )
 }
 
+@Test func floatingWidgetUsesExplicitDragSurfacesSoControlsReceiveClicks() {
+    #expect(!FloatingWidgetWindowPolicy.usesNativeBackgroundDrag(for: .standard))
+    #expect(!FloatingWidgetWindowPolicy.usesNativeBackgroundDrag(for: .mini))
+}
+
+@Test func plannerSelectionTrayMakesOverflowExplicit() {
+    #expect(PlannerSelectionTrayPolicy.hiddenCount(selectionCount: 2) == 0)
+    #expect(PlannerSelectionTrayPolicy.hiddenCount(selectionCount: 11) == 8)
+}
+
 @Test func floatingMemoShelfAvoidsAnEmptyMoreMode() {
     #expect(
         FloatingWidgetMemoActionPolicy.actions(

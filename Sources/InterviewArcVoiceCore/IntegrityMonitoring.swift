@@ -144,6 +144,7 @@ public enum TranscriptionIntegrityReason: String, Codable, Equatable, Sendable {
     case missingChunks
     case providerDurationMismatch
     case implausiblyShortTranscript
+    case missingSpeechCoverage
     case promptLeakage
 }
 
@@ -154,6 +155,7 @@ public struct TranscriptionIntegrityEvidence: Equatable, Sendable {
     public let returnedChunkCount: Int
     public let transcript: String
     public let prompt: String
+    public let hasSustainedSpeechAfterProviderCoverage: Bool
 
     public init(
         audioDurationSeconds: Double,
@@ -161,7 +163,8 @@ public struct TranscriptionIntegrityEvidence: Equatable, Sendable {
         expectedChunkCount: Int,
         returnedChunkCount: Int,
         transcript: String,
-        prompt: String
+        prompt: String,
+        hasSustainedSpeechAfterProviderCoverage: Bool = false
     ) {
         self.audioDurationSeconds = audioDurationSeconds
         self.providerDurationSeconds = providerDurationSeconds
@@ -169,6 +172,8 @@ public struct TranscriptionIntegrityEvidence: Equatable, Sendable {
         self.returnedChunkCount = returnedChunkCount
         self.transcript = transcript
         self.prompt = prompt
+        self.hasSustainedSpeechAfterProviderCoverage =
+            hasSustainedSpeechAfterProviderCoverage
     }
 }
 
@@ -191,6 +196,9 @@ public enum TranscriptionIntegrityEvaluator {
         }
         if evidence.audioDurationSeconds >= 8, trimmed.count < 8 {
             reasons.append(.implausiblyShortTranscript)
+        }
+        if evidence.hasSustainedSpeechAfterProviderCoverage {
+            reasons.append(.missingSpeechCoverage)
         }
         if containsPromptLeakage(transcript: trimmed, prompt: evidence.prompt) {
             reasons.append(.promptLeakage)
@@ -294,7 +302,8 @@ public actor ReliableSpeechTranscriber {
                 retry,
                 prompt: "",
                 audioDurationSeconds: audioDurationSeconds,
-                expectedChunkCount: expectedChunkCount
+                expectedChunkCount: expectedChunkCount,
+                speechEvidence: speechEvidence
             )
             guard !retryCheck.isSuspicious else {
                 throw VoiceBridgeError.suspiciousTranscript(retryCheck.reasons)
@@ -310,7 +319,8 @@ public actor ReliableSpeechTranscriber {
             first,
             prompt: prompt,
             audioDurationSeconds: audioDurationSeconds,
-            expectedChunkCount: expectedChunkCount
+            expectedChunkCount: expectedChunkCount,
+            speechEvidence: speechEvidence
         )
         guard firstCheck.isSuspicious else {
             return try protectedResult(
@@ -330,7 +340,8 @@ public actor ReliableSpeechTranscriber {
             retry,
             prompt: "",
             audioDurationSeconds: audioDurationSeconds,
-            expectedChunkCount: expectedChunkCount
+            expectedChunkCount: expectedChunkCount,
+            speechEvidence: speechEvidence
         )
         guard !retryCheck.isSuspicious else {
             throw VoiceBridgeError.suspiciousTranscript(retryCheck.reasons)
@@ -383,16 +394,37 @@ public actor ReliableSpeechTranscriber {
         _ result: TranscriptionResult,
         prompt: String,
         audioDurationSeconds: Double,
-        expectedChunkCount: Int
+        expectedChunkCount: Int,
+        speechEvidence: SpeechEvidenceResult?
     ) -> TranscriptionIntegrityResult {
-        TranscriptionIntegrityEvaluator.evaluate(
+        let providerCoverageEnd = result.segments?.map(\.end).max()
+        let hasSustainedSpeechAfterProviderCoverage: Bool
+        if let speechEvidence,
+           let providerCoverageEnd,
+           audioDurationSeconds >= 8,
+           providerCoverageEnd + 1 < audioDurationSeconds {
+            let tail = speechEvidence.evidence(
+                from: providerCoverageEnd + 0.25,
+                to: min(
+                    audioDurationSeconds,
+                    speechEvidence.analyzedDurationSeconds
+                )
+            )
+            hasSustainedSpeechAfterProviderCoverage =
+                tail.hasSustainedSpeech && tail.speechLikeFraction >= 0.05
+        } else {
+            hasSustainedSpeechAfterProviderCoverage = false
+        }
+        return TranscriptionIntegrityEvaluator.evaluate(
             TranscriptionIntegrityEvidence(
                 audioDurationSeconds: audioDurationSeconds,
                 providerDurationSeconds: result.durationSeconds,
                 expectedChunkCount: expectedChunkCount,
                 returnedChunkCount: result.chunkCount,
                 transcript: result.text,
-                prompt: prompt
+                prompt: prompt,
+                hasSustainedSpeechAfterProviderCoverage:
+                    hasSustainedSpeechAfterProviderCoverage
             )
         )
     }
