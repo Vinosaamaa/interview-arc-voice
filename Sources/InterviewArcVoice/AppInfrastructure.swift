@@ -2266,7 +2266,7 @@ private struct FloatingTodayPlannerPanel: View {
     private var startFreshControl: some View {
         Button(action: model.startFreshPlanningDay) {
             HStack(spacing: 6) {
-                Image(systemName: "arrow.counterclockwise")
+                Image(systemName: "sunrise.fill")
                 Text("Start fresh today")
                 Spacer()
                 Text("Available after active work is finished")
@@ -2278,12 +2278,20 @@ private struct FloatingTodayPlannerPanel: View {
             .padding(.horizontal, 11)
             .frame(height: 32)
             .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(palette.glassHighlight.opacity(palette.isDark ? 0.14 : 0.44))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(palette.coolBorder.opacity(0.76), lineWidth: 0.8)
+                    )
+            )
         }
         .buttonStyle(PlannerPressButtonStyle())
         .voiceHoverFeedback(
             enabled: !model.planningMutationInFlight
                 && model.planningResponse?.workbench != nil,
-            cornerRadius: 0,
+            cornerRadius: 9,
             tint: palette.linkOff
         )
         .disabled(
@@ -2291,6 +2299,8 @@ private struct FloatingTodayPlannerPanel: View {
                 || model.planningResponse?.workbench == nil
         )
         .help("Start fresh after every started activity has a result")
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
     }
 
     private var activityComposer: some View {

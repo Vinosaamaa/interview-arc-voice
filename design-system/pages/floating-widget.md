@@ -213,6 +213,10 @@ least 58 points for the activity title.
   an inset child stack with a visible hierarchy rail and their own quiet row
   surfaces; standalone work stays outside beneath its own heading. Parent and
   child rows must never share one visually flat list treatment.
+- Start fresh today is one surfaced footer button containing its action label
+  and eligibility message. It exposes hover, press, and disabled feedback and
+  uses a sunrise icon rather than the header's refresh symbol; it must never
+  render as loose footer text.
 - Switching Today, Activities, and Full session never cross-composites their
   content trees. Only the selected tab and direct controls animate, preventing
   ghost images when a populated Activities view replaces Full session.
