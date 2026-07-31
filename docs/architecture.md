@@ -316,12 +316,13 @@ state. Unknown versions fail closed with a user-visible update prompt.
 
 ## Audio model
 
-One stop action produces one canonical clip. Long clips may be divided into
-overlapping transcription chunks and processed concurrently. Those derivatives
-are deleted after the transcript is assembled. The original recording is
-uploaded as one R2 object and remains a single seekable player in Past. At the
-current 48-kbps capture rate, a 30-minute answer is far below the 100-MB private
-upload boundary.
+One stop action produces one canonical clip. Provider-safe recordings are sent
+as one transcription upload; Whisper owns its internal acoustic windows. A clip
+is divided into balanced overlapping transcription chunks only when its encoded
+file size approaches the provider upload limit. Those derivatives are deleted
+after the transcript is assembled. The original recording is uploaded as one R2
+object and remains a single seekable player in Past. At the current 48-kbps
+capture rate, a 30-minute answer is far below the 100-MB private upload boundary.
 
 ## Delivery analysis
 

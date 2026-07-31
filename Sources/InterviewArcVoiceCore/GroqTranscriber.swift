@@ -226,9 +226,6 @@ struct AudioChunkWindow: Equatable, Sendable {
 enum AudioChunkPlan {
     private static let directUploadBytes = 23 * 1024 * 1024
     private static let targetUploadBytes = 20 * 1024 * 1024
-    // Whisper Large v3 is optimized around a 30-second acoustic context.
-    // Compressed AAC size is not a reliable proxy for that duration.
-    private static let maximumWindowSeconds = 30.0
     private static let overlapSeconds = 1.5
 
     static func windows(
@@ -237,8 +234,12 @@ enum AudioChunkPlan {
     ) -> [AudioChunkWindow] {
         guard durationSeconds > 0 else { return [] }
 
-        if durationSeconds <= maximumWindowSeconds,
-           fileSizeBytes <= directUploadBytes {
+        // Groq accepts the complete recording and Whisper handles its own
+        // acoustic context internally. Splitting every recording at 30 seconds
+        // creates unnecessary provider calls and can silently lose an ending
+        // when one otherwise-successful chunk returns incomplete text.
+        // Only split when the encoded file approaches the upload limit.
+        if fileSizeBytes <= directUploadBytes {
             return [
                 AudioChunkWindow(
                     startSeconds: 0,
@@ -251,7 +252,7 @@ enum AudioChunkPlan {
         let sizeBoundSeconds = Double(targetUploadBytes) / max(bytesPerSecond, 1)
         let maximumChunkSeconds = max(
             overlapSeconds + 1,
-            min(maximumWindowSeconds, sizeBoundSeconds)
+            sizeBoundSeconds
         )
         let strideSeconds = maximumChunkSeconds - overlapSeconds
         let chunkCount = max(
