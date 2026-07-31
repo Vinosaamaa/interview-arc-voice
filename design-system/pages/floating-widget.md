@@ -217,8 +217,11 @@ least 58 points for the activity title.
   content trees. Only the selected tab and direct controls animate, preventing
   ghost images when a populated Activities view replaces Full session.
 - Full session keeps its Create action directly beneath the three specialty
-  cards. Cards, count controls, and the primary action expose consistent hover
-  and press feedback; no flexible spacer detaches the action from the cards.
+  cards' supporting content and anchored at the bottom of the panel. Beneath
+  the cards, a high-contrast Session countdown summarizes the live specialty
+  minute breakdown and total duration, followed by concise recipe/eligibility
+  guidance. Cards, count controls, and the primary action expose consistent
+  hover and press feedback; empty space must not replace useful session context.
 - Voice caches selection and presentation only. Eligibility, current Today
   work, removability, mutation identity, and conflict decisions come from the
   authenticated Worker. Exact retries reuse one mutation ID; changed work

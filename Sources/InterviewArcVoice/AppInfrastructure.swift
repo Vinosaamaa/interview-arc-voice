@@ -3117,6 +3117,41 @@ private struct FloatingTodayPlannerPanel: View {
                     value: $model.planningFullBehavioral
                 )
             }
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("SESSION COUNTDOWN")
+                        .font(.system(size: 8, weight: .heavy))
+                        .tracking(0.8)
+                        .foregroundStyle(palette.connectedIdle)
+                    Text(planningFullSessionBreakdown)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.78))
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 8)
+                Text(planningFullSessionDurationLabel)
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.white)
+            }
+            .padding(.horizontal, 12)
+            .frame(minHeight: 70)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(palette.ink.opacity(palette.isDark ? 0.92 : 0.96))
+            )
+
+            Text(
+                "Interview Arc places eligible due reviews first, then fills "
+                    + "the remaining slots with new high-frequency questions. "
+                    + "The recipe locks after its timer or activity work begins."
+            )
+            .font(.system(size: 9, weight: .medium))
+            .foregroundStyle(palette.secondaryInk)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer(minLength: 0)
             Button(action: model.createPlanningFullSession) {
                 HStack {
                     if model.planningMutationInFlight {
@@ -3162,6 +3197,24 @@ private struct FloatingTodayPlannerPanel: View {
             )
         }
         .padding(14)
+    }
+
+    private var planningFullSessionBreakdown: String {
+        let coding = model.planningFullCoding * VoicePlanningFullSessionPolicy.codingMinutes
+        let systemDesign = model.planningFullSystemDesign
+            * VoicePlanningFullSessionPolicy.interviewMinutes
+        let behavioral = model.planningFullBehavioral
+            * VoicePlanningFullSessionPolicy.interviewMinutes
+        return "\(coding)m coding + \(systemDesign)m system design + \(behavioral)m behavioral"
+    }
+
+    private var planningFullSessionDurationLabel: String {
+        let minutes = model.planningFullSessionMinutes
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        if hours == 0 { return "\(remainder) min" }
+        if remainder == 0 { return "\(hours) hr" }
+        return "\(hours)h \(remainder)m"
     }
 
     private func fullSessionCard(
