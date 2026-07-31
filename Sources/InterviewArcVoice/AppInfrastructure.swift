@@ -720,10 +720,6 @@ private struct PasteboardSnapshot {
 @MainActor
 private final class VoiceFloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        true
-    }
 }
 
 @MainActor
@@ -898,6 +894,10 @@ final class FloatingPanelController {
 
 private final class TransparentHostingView<Content: View>: NSHostingView<Content> {
     override var isOpaque: Bool { false }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
 
     required init(rootView: Content) {
         super.init(rootView: rootView)
