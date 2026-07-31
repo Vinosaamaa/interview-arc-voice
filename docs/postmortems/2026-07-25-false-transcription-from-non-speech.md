@@ -297,7 +297,8 @@ provider result exactly; neither stage removed the spoken words.
 ### Repair and prevention
 
 - split on acoustic duration as well as byte size;
-- cap every provider window at 30 seconds with a 1.5-second overlap;
+- cap every provider window at 30 seconds with a 1.5-second overlap and balance
+  the windows so no tiny tail request is created;
 - keep windows concurrent so provider latency is bounded by the slowest request
   rather than their sum;
 - retain exact overlap deduplication and timestamp offset restoration;
