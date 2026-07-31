@@ -249,23 +249,26 @@ enum AudioChunkPlan {
 
         let bytesPerSecond = Double(fileSizeBytes) / max(durationSeconds, 1)
         let sizeBoundSeconds = Double(targetUploadBytes) / max(bytesPerSecond, 1)
-        let windowSeconds = max(1, min(maximumWindowSeconds, sizeBoundSeconds))
-        let stepSeconds = max(1, windowSeconds - overlapSeconds)
-        var windows: [AudioChunkWindow] = []
-        var start = 0.0
+        let maximumChunkSeconds = max(
+            overlapSeconds + 1,
+            min(maximumWindowSeconds, sizeBoundSeconds)
+        )
+        let strideSeconds = maximumChunkSeconds - overlapSeconds
+        let chunkCount = max(
+            2,
+            Int(ceil((durationSeconds - overlapSeconds) / strideSeconds))
+        )
+        let balancedChunkSeconds =
+            (durationSeconds + overlapSeconds * Double(chunkCount - 1))
+            / Double(chunkCount)
+        let balancedStrideSeconds = balancedChunkSeconds - overlapSeconds
 
-        while start < durationSeconds {
-            let windowDuration = min(windowSeconds, durationSeconds - start)
-            windows.append(
-                AudioChunkWindow(
-                    startSeconds: start,
-                    durationSeconds: windowDuration
-                )
+        return (0..<chunkCount).map { index in
+            AudioChunkWindow(
+                startSeconds: Double(index) * balancedStrideSeconds,
+                durationSeconds: balancedChunkSeconds
             )
-            if start + windowDuration >= durationSeconds { break }
-            start += stepSeconds
         }
-        return windows
     }
 }
 
