@@ -106,8 +106,14 @@ only when a persisted failure explicitly advertises audio recovery and no
 reference exists. Missing or unsafe references are discarded rather than
 rendered as dead controls.
 
-The normal transcription path performs one provider request. Existing response
-metadata is checked without another network call. A concrete failure,
+The normal transcription path performs one provider request for recordings up
+to 30 seconds. Longer recordings are divided into overlapping windows of no
+more than 30 seconds because Whisper Large v3 is optimized around that acoustic
+context boundary. The windows are uploaded concurrently, timestamp offsets are
+restored, and exact repeated text at the 1.5-second overlap is deduplicated.
+Compressed file size is not used as a proxy for acoustic duration: a small M4A
+can still exceed the model's reliable context window. Existing response
+metadata is checked without another validation call. A concrete failure,
 incomplete provider result, implausible duration, known prompt leakage, or
 missing output triggers exactly one unprompted retry. If the retry is also
 suspicious, Voice does not claim success; it retains the original audio and
