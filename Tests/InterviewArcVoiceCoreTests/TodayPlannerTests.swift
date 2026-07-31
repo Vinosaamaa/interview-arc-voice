@@ -46,11 +46,14 @@ func jobApplicationsUseTheFixedCareerFocusDuration() {
 
 @Test
 func fullSessionEstimateMatchesTheWebsiteRecipeDurations() {
+    #expect(VoicePlanningFullSessionPolicy.defaultCodingCount == 6)
+    #expect(VoicePlanningFullSessionPolicy.defaultSystemDesignCount == 1)
+    #expect(VoicePlanningFullSessionPolicy.defaultBehavioralCount == 1)
     #expect(
         VoicePlanningFullSessionPolicy.totalMinutes(
-            coding: 6,
-            systemDesign: 1,
-            behavioral: 1
+            coding: VoicePlanningFullSessionPolicy.defaultCodingCount,
+            systemDesign: VoicePlanningFullSessionPolicy.defaultSystemDesignCount,
+            behavioral: VoicePlanningFullSessionPolicy.defaultBehavioralCount
         ) == 360
     )
 }

@@ -181,9 +181,9 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var planningCustomURL = ""
     @Published var planningCustomPrompt = ""
     @Published var planningCustomMinutes = 40
-    @Published var planningFullCoding = 2
-    @Published var planningFullSystemDesign = 1
-    @Published var planningFullBehavioral = 1
+    @Published var planningFullCoding = VoicePlanningFullSessionPolicy.defaultCodingCount
+    @Published var planningFullSystemDesign = VoicePlanningFullSessionPolicy.defaultSystemDesignCount
+    @Published var planningFullBehavioral = VoicePlanningFullSessionPolicy.defaultBehavioralCount
     @Published var miniSessionTimerExpanded = false
     @Published var activityPickerExpanded = false
     @Published private(set) var finishingActivityID: String?
@@ -4242,6 +4242,11 @@ private struct VoiceBridgeMenu: View {
             )
         }
         .buttonStyle(.plain)
+        .voiceHoverFeedback(
+            enabled: !model.isRecording && !model.isStartingRecording,
+            cornerRadius: 9,
+            tint: .accentColor
+        )
         .disabled(model.isRecording || model.isStartingRecording)
         .accessibilityLabel(model.plannerPresented ? "Close Plan Today" : "Open Plan Today")
     }

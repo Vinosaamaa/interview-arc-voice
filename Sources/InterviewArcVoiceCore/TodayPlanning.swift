@@ -391,6 +391,9 @@ public struct VoicePlanningMutationRequest: Encodable, Equatable, Sendable {
 public enum VoicePlanningFullSessionPolicy {
     public static let codingMinutes = 40
     public static let interviewMinutes = 60
+    public static let defaultCodingCount = 6
+    public static let defaultSystemDesignCount = 1
+    public static let defaultBehavioralCount = 1
 
     public static func totalMinutes(
         coding: Int,
