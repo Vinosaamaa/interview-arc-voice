@@ -1264,10 +1264,12 @@ struct FloatingRecorderView: View {
                         action: model.exportLastMemo
                     )
                 }
-                if !model.hasTimerInstrument,
-                   model.linkToInterviewArc,
-                   !model.hasLastAudio,
-                   model.lastTranscript.isEmpty {
+                if VoicePlannerEntryPolicy.showsStandardEntry(
+                    linkEnabled: model.linkToInterviewArc,
+                    hasTimerInstrument: model.hasTimerInstrument,
+                    isRecording: model.isRecording,
+                    isBusy: model.isBusy
+                ) {
                     memoButton(
                         symbol: "calendar.badge.plus",
                         label: "Plan today",
