@@ -2129,7 +2129,10 @@ private struct FloatingTodayPlannerPanel: View {
                     fullSessionComposer
                 }
             }
+            .id(model.planningState.surface)
+            .transition(.opacity)
             .frame(maxHeight: .infinity, alignment: .top)
+            .clipped()
         }
         .background {
             RoundedRectangle(cornerRadius: 19, style: .continuous)
@@ -2241,7 +2244,9 @@ private struct FloatingTodayPlannerPanel: View {
         HStack(spacing: 0) {
             ForEach(VoicePlanningSurface.allCases, id: \.rawValue) { surface in
                 Button {
-                    model.setPlanningSurface(surface)
+                    withAnimation(plannerAnimation) {
+                        model.setPlanningSurface(surface)
+                    }
                 } label: {
                     Text(surface.rawValue)
                         .font(.system(size: 10, weight: .bold))
