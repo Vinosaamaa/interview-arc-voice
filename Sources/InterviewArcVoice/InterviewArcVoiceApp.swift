@@ -376,6 +376,12 @@ final class VoiceBridgeModel: ObservableObject {
         guard let selectedTranscript else { return "0 words · 00:00" }
         return "\(selectedTranscript.wordCount) words · \(clock(selectedTranscript.durationSeconds))"
     }
+    var selectedTranscriptWordCountLabel: String {
+        "\(selectedTranscript?.wordCount ?? 0) words"
+    }
+    var selectedTranscriptDurationLabel: String {
+        clock(selectedTranscript?.durationSeconds ?? 0)
+    }
     var selectedTranscriptPosition: String {
         guard !transcriptHistory.isEmpty else { return "0 of 0" }
         return "\(selectedTranscriptIndex + 1) of \(transcriptHistory.count)"
@@ -537,6 +543,58 @@ final class VoiceBridgeModel: ObservableObject {
 
     var planningTotalMinutes: Int {
         planningState.totalSelectedMinutes
+    }
+
+    var planningFullSessionMinutes: Int {
+        VoicePlanningFullSessionPolicy.totalMinutes(
+            coding: planningFullCoding,
+            systemDesign: planningFullSystemDesign,
+            behavioral: planningFullBehavioral
+        )
+    }
+
+    func planningAttentionCount(_ attention: VoicePlanningAttention) -> Int {
+        planningResponse?.catalog.attentionCounts?[attention.rawValue] ?? 0
+    }
+
+    func planningDifficultyCount(_ difficulty: VoicePlanningDifficulty) -> Int {
+        planningResponse?.catalog.difficultyCounts?[difficulty.rawValue] ?? 0
+    }
+
+    func planningActivityStatus(
+        id: String,
+        declaredStatus: String? = nil
+    ) -> VoicePlanningCurrentStatus {
+        guard let timer = timerInstrument?.activities.first(where: { $0.id == id })?.timer else {
+            return declaredStatus == "completed" ? .completed : .upcoming
+        }
+        if timer.completed { return .completed }
+        if timer.isRunning { return .running }
+        return timer.startedAt == nil ? .upcoming : .paused
+    }
+
+    func planningSessionStatus(id: String) -> VoicePlanningCurrentStatus {
+        guard timerInstrument?.session?.id == id,
+              let timer = timerInstrument?.session?.timer else {
+            return .upcoming
+        }
+        if timer.completed { return .completed }
+        if timer.isRunning { return .running }
+        return timer.startedAt == nil ? .upcoming : .paused
+    }
+
+    func planningActivityTime(id: String, at now: Date) -> String? {
+        guard let instrument = timerInstrument,
+              let timer = instrument.activities.first(where: { $0.id == id })?.timer else {
+            return nil
+        }
+        return compactClock(
+            timer.elapsedSeconds(
+                serverNow: instrument.serverNow,
+                receivedAt: timerInstrumentReceivedAt,
+                now: now
+            )
+        )
     }
 
     func compactActivityTime(at now: Date) -> String? {
@@ -916,6 +974,17 @@ final class VoiceBridgeModel: ObservableObject {
             coding: planningFullCoding,
             systemDesign: planningFullSystemDesign,
             behavioral: planningFullBehavioral
+        )
+        Task { await performPlanningMutation(request) }
+    }
+
+    func startFreshPlanningDay() {
+        guard let workbenchID = planningResponse?.workbench?.id else { return }
+        let date = planningResponse?.date ?? ""
+        let request = VoicePlanningMutationRequest(
+            type: "start_fresh_today",
+            workbenchId: workbenchID,
+            newWorkbenchId: "workbench-\(date)-\(UUID().uuidString.lowercased())"
         )
         Task { await performPlanningMutation(request) }
     }
@@ -4111,9 +4180,20 @@ private struct VoiceBridgeMenu: View {
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 38)
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(Color.accentColor.opacity(model.plannerPresented ? 0.2 : 0.12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(Color.accentColor.opacity(0.45), lineWidth: 0.8)
+                    )
+            )
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.plain)
         .disabled(model.isRecording || model.isStartingRecording)
         .accessibilityLabel(model.plannerPresented ? "Close Plan Today" : "Open Plan Today")
     }
@@ -4330,65 +4410,83 @@ private struct VoiceBridgeMenu: View {
                     .font(.caption2.weight(.bold))
                     .tracking(0.8)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 Spacer()
-                if model.transcriptHistory.count > 1 {
-                    Text(model.selectedTranscriptPosition)
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel(
-                            "Transcript \(model.selectedTranscriptPosition)"
-                        )
-                    memoAction(
-                        symbol: "chevron.left",
-                        label: "Newer transcript",
-                        disabled: !model.canSelectNewerTranscript,
-                        action: model.selectNewerTranscript
-                    )
-                    memoAction(
-                        symbol: "chevron.right",
-                        label: "Older transcript",
-                        disabled: !model.canSelectOlderTranscript,
-                        action: model.selectOlderTranscript
-                    )
-                }
-                if model.hasMenuTranscript {
-                    memoAction(
-                        symbol: "trash.slash",
-                        label: "Clear recent history",
-                        disabled: false,
-                        action: model.clearRecentTranscriptHistory
-                    )
-                }
-            }
-            if let selectedTranscript = model.selectedTranscript {
-                ScrollView {
-                    Text(selectedTranscript.transcript)
-                        .font(.caption)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.trailing, 4)
-                }
-                .frame(maxHeight: 118)
-            } else {
-                Text("The recording is safe in memory. Retry transcription when ready.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            HStack {
-                Text(model.selectedTranscriptDetails)
+                Text(model.selectedTranscriptPosition)
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
-                Spacer()
+                    .frame(width: 38, alignment: .trailing)
+                    .opacity(model.transcriptHistory.count > 1 ? 1 : 0)
+                    .accessibilityLabel(
+                        "Transcript \(model.selectedTranscriptPosition)"
+                    )
+                memoAction(
+                    symbol: "chevron.left",
+                    label: "Newer transcript",
+                    disabled: !model.canSelectNewerTranscript,
+                    action: model.selectNewerTranscript
+                )
+                .opacity(model.transcriptHistory.count > 1 ? 1 : 0)
+                memoAction(
+                    symbol: "chevron.right",
+                    label: "Older transcript",
+                    disabled: !model.canSelectOlderTranscript,
+                    action: model.selectOlderTranscript
+                )
+                .opacity(model.transcriptHistory.count > 1 ? 1 : 0)
+                memoAction(
+                    symbol: "trash.slash",
+                    label: "Clear recent history",
+                    disabled: !model.hasMenuTranscript,
+                    action: model.clearRecentTranscriptHistory
+                )
+            }
+            ZStack(alignment: .bottomTrailing) {
+                if let selectedTranscript = model.selectedTranscript {
+                    ScrollView {
+                        Text(selectedTranscript.transcript)
+                            .font(.caption)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                            .padding(.trailing, 4)
+                    }
+                } else {
+                    Text("The recording is safe in memory. Retry transcription when ready.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
                 if model.canRetryLastTranscription,
                    model.selectedTranscriptCanRetry {
                     Button(action: model.retryLastTranscription) {
-                        Label("Retry", systemImage: "arrow.clockwise")
+                        Image(systemName: "arrow.clockwise")
+                            .frame(width: 20, height: 20)
                     }
                     .buttonStyle(.borderless)
-                    .font(.caption2.weight(.semibold))
-                    .voiceHoverFeedback(enabled: !model.isBusy && !model.isRecording, cornerRadius: 6)
+                    .voiceHoverFeedback(
+                        enabled: !model.isBusy && !model.isRecording,
+                        cornerRadius: 6
+                    )
                     .disabled(model.isBusy || model.isRecording)
+                    .help("Retry transcription")
+                    .accessibilityLabel("Retry transcription")
                 }
+            }
+            .frame(height: RecentTranscriptCardLayoutPolicy.previewHeight)
+            .clipped()
+            HStack(spacing: 5) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(model.selectedTranscriptWordCountLabel)
+                    Text(model.selectedTranscriptDurationLabel)
+                }
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(
+                    width: RecentTranscriptCardLayoutPolicy.metadataWidth,
+                    alignment: .leading
+                )
+                Spacer(minLength: 0)
                 memoAction(
                     symbol: "doc.on.doc",
                     label: "Copy transcript",
@@ -4428,8 +4526,10 @@ private struct VoiceBridgeMenu: View {
                     }
                 )
             }
+            .frame(height: RecentTranscriptCardLayoutPolicy.footerHeight)
         }
         .padding(9)
+        .frame(height: RecentTranscriptCardLayoutPolicy.cardHeight)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 

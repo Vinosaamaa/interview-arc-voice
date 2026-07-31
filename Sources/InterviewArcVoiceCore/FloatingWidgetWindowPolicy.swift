@@ -167,7 +167,7 @@ public enum MiniWidgetPointerPolicy {
 }
 
 public enum FloatingWidgetCompactTimerLayoutPolicy {
-    public static let showsPreviousMemoActionsWhenExpanded = true
+    public static let showsPreviousMemoActionsWhenExpanded = false
     public static let minimumTitleWidth: CGFloat = 58
     public static let titleFillsAvailableHeight = true
     public static let activityClockWidth: CGFloat = 36
@@ -179,6 +179,68 @@ public enum FloatingWidgetCompactTimerLayoutPolicy {
         + sessionClockWidth
         + dividerWidth
         + (clusterSpacing * 2)
+}
+
+public enum FloatingWidgetMemoShelf: Equatable, Hashable, Sendable {
+    case primary
+    case secondary
+}
+
+public enum FloatingWidgetMemoAction: Equatable, Hashable, Sendable {
+    case play
+    case insert
+    case more
+    case back
+    case copy
+    case save
+    case planToday
+}
+
+public enum FloatingWidgetMemoActionPolicy {
+    public static func actions(
+        shelf: FloatingWidgetMemoShelf,
+        hasTranscript: Bool,
+        hasAudio: Bool,
+        canPlanToday: Bool
+    ) -> [FloatingWidgetMemoAction] {
+        let hasMemo = hasTranscript || hasAudio
+        guard hasMemo else {
+            return canPlanToday ? [.planToday] : []
+        }
+
+        switch shelf {
+        case .primary:
+            var actions: [FloatingWidgetMemoAction] = []
+            if hasAudio { actions.append(.play) }
+            if hasTranscript { actions.append(.insert) }
+            actions.append(.more)
+            return actions
+        case .secondary:
+            var actions: [FloatingWidgetMemoAction] = [.back]
+            if hasTranscript { actions.append(.copy) }
+            if hasAudio { actions.append(.save) }
+            if canPlanToday { actions.append(.planToday) }
+            return actions
+        }
+    }
+}
+
+public enum RecentTranscriptCardLayoutPolicy {
+    public static let cardHeight: CGFloat = 184
+    public static let previewHeight: CGFloat = 84
+    public static let footerHeight: CGFloat = 36
+    public static let metadataWidth: CGFloat = 62
+    public static let metadataLineCount = 2
+    public static let footerActionSlotCount = 5
+
+    public static func cardHeight(
+        transcriptWordCount: Int,
+        hasAudio: Bool
+    ) -> CGFloat {
+        _ = transcriptWordCount
+        _ = hasAudio
+        return cardHeight
+    }
 }
 
 public enum FloatingWidgetGeometryPolicy {

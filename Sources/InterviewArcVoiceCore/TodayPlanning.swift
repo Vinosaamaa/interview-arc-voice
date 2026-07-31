@@ -31,9 +31,30 @@ public enum VoicePlanningDirection: String, Codable, Hashable, Sendable {
     case descending = "desc"
 }
 
+public enum VoicePlanningAttention: String, Codable, CaseIterable, Hashable, Sendable {
+    case due
+    case needsReview = "needs_review"
+    case solved
+    case helped
+    case failed
+    case todo
+
+    public var title: String {
+        switch self {
+        case .due: "Due now"
+        case .needsReview: "Needs review"
+        case .solved: "Solved"
+        case .helped: "Solved with help"
+        case .failed: "Failed"
+        case .todo: "To do"
+        }
+    }
+}
+
 public struct VoicePlanningQuery: Equatable, Sendable {
     public var search: String
     public var starredOnly: Bool
+    public var attention: Set<VoicePlanningAttention>
     public var difficulty: Set<VoicePlanningDifficulty>
     public var sort: VoicePlanningSort
     public var direction: VoicePlanningDirection
@@ -41,12 +62,14 @@ public struct VoicePlanningQuery: Equatable, Sendable {
     public init(
         search: String = "",
         starredOnly: Bool = false,
+        attention: Set<VoicePlanningAttention> = [],
         difficulty: Set<VoicePlanningDifficulty> = [],
         sort: VoicePlanningSort = .frequency,
         direction: VoicePlanningDirection = .descending
     ) {
         self.search = search
         self.starredOnly = starredOnly
+        self.attention = attention
         self.difficulty = difficulty
         self.sort = sort
         self.direction = direction
@@ -240,6 +263,7 @@ public struct VoicePlanningCatalogItem: Codable, Equatable, Identifiable, Sendab
     public let disabledReason: String?
     public let starred: Bool
     public let lastCompletedAt: Int64?
+    public var attention: [VoicePlanningAttention]? = nil
 }
 
 public struct VoicePlanningCatalog: Codable, Equatable, Sendable {
@@ -249,6 +273,8 @@ public struct VoicePlanningCatalog: Codable, Equatable, Sendable {
     public let pageSize: Int
     public let total: Int
     public let hasMore: Bool
+    public var attentionCounts: [String: Int]? = nil
+    public var difficultyCounts: [String: Int]? = nil
 }
 
 public struct VoicePlanningCurrentSession: Codable, Equatable, Identifiable, Sendable {
@@ -302,6 +328,7 @@ public struct VoicePlanningMutationRequest: Encodable, Equatable, Sendable {
     public var starred: Bool?
     public var kind: String?
     public var id: String?
+    public var newWorkbenchId: String?
 
     public init(
         type: String,
@@ -316,7 +343,8 @@ public struct VoicePlanningMutationRequest: Encodable, Equatable, Sendable {
         questionId: String? = nil,
         starred: Bool? = nil,
         kind: String? = nil,
-        id: String? = nil
+        id: String? = nil,
+        newWorkbenchId: String? = nil
     ) {
         self.type = type
         self.mutationId = mutationId
@@ -331,6 +359,38 @@ public struct VoicePlanningMutationRequest: Encodable, Equatable, Sendable {
         self.starred = starred
         self.kind = kind
         self.id = id
+        self.newWorkbenchId = newWorkbenchId
+    }
+}
+
+public enum VoicePlanningFullSessionPolicy {
+    public static let codingMinutes = 40
+    public static let interviewMinutes = 60
+
+    public static func totalMinutes(
+        coding: Int,
+        systemDesign: Int,
+        behavioral: Int
+    ) -> Int {
+        max(0, coding) * codingMinutes
+            + max(0, systemDesign) * interviewMinutes
+            + max(0, behavioral) * interviewMinutes
+    }
+}
+
+public enum VoicePlanningCurrentStatus: Equatable, Sendable {
+    case running
+    case paused
+    case completed
+    case upcoming
+
+    public var title: String {
+        switch self {
+        case .running: "Running"
+        case .paused: "Paused"
+        case .completed: "Completed"
+        case .upcoming: "Upcoming"
+        }
     }
 }
 

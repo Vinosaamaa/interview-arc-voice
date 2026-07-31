@@ -133,6 +133,10 @@ public actor InterviewArcAPIClient {
             URLQueryItem(name: "search", value: query.search),
             URLQueryItem(name: "starred", value: query.starredOnly ? "true" : "false"),
             URLQueryItem(
+                name: "attention",
+                value: query.attention.map(\.rawValue).sorted().joined(separator: ",")
+            ),
+            URLQueryItem(
                 name: "difficulty",
                 value: query.difficulty.map(\.rawValue).sorted().joined(separator: ",")
             ),
