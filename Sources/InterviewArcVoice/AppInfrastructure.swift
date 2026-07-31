@@ -1309,7 +1309,7 @@ struct FloatingRecorderView: View {
             }
         case .back:
             memoButton(
-                symbol: "chevron.left",
+                symbol: "chevron.right",
                 label: "Back to primary memo actions"
             ) {
                 withAnimation(memoShelfAnimation) {
@@ -1951,7 +1951,6 @@ private struct FloatingTodayPlannerPanel: View {
             header
             Divider().overlay(palette.divider.opacity(0.65))
             surfaceTabs
-            Divider().overlay(palette.divider.opacity(0.65))
 
             Group {
                 switch model.planningState.surface {
@@ -1964,22 +1963,6 @@ private struct FloatingTodayPlannerPanel: View {
                 }
             }
             .frame(maxHeight: .infinity)
-
-            Button(action: model.startFreshPlanningDay) {
-                Label("Start fresh today", systemImage: "lock")
-                    .font(.system(size: 9, weight: .bold))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 28)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(palette.secondaryInk)
-            .background(palette.timerSurface.opacity(0.42))
-            .disabled(
-                model.planningMutationInFlight
-                    || model.planningResponse?.workbench == nil
-            )
-            .help("Start fresh after every started activity has a result")
 
             if let message = model.planningMessage {
                 Text(message)
@@ -2029,44 +2012,38 @@ private struct FloatingTodayPlannerPanel: View {
     }
 
     private var header: some View {
-        VStack(spacing: 5) {
-            if model.hasTimerInstrument {
-                HStack(spacing: 4) {
-                    upperTab("Focus", symbol: "timer", selected: false, action: model.showFocusSurface)
-                    upperTab("Plan today", symbol: "calendar.badge.plus", selected: true) {}
-                }
-                .padding(.horizontal, 5)
-                .padding(.top, 5)
-            }
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("BUILD TODAY'S WORK")
-                        .font(.system(size: 9, weight: .bold))
-                        .tracking(0.8)
-                        .foregroundStyle(palette.tealDark)
-                    Text("Plan today")
-                        .font(.system(size: 19, weight: .bold))
-                        .foregroundStyle(palette.ink)
-                }
-                Spacer()
-                if model.planningLoading {
-                    ProgressView().controlSize(.small)
-                        .accessibilityLabel("Refreshing Today")
-                }
+        HStack(spacing: 5) {
+            upperTab(
+                "Focus",
+                symbol: "timer",
+                selected: false,
+                action: model.showFocusSurface
+            )
+            upperTab(
+                "Plan today",
+                symbol: "calendar.badge.plus",
+                selected: true
+            ) {}
+            if model.planningLoading {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 27, height: 27)
+                    .accessibilityLabel("Refreshing Today")
+            } else {
                 plannerIconButton(
                     "arrow.clockwise",
-                    label: "Refresh planning",
-                    enabled: !model.planningLoading
+                    label: "Refresh planning"
                 ) {
                     Task { await model.refreshPlanning() }
                 }
-                plannerIconButton("xmark", label: "Close Plan Today") {
-                    model.togglePlanner()
-                }
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
+            plannerIconButton("xmark", label: "Close Plan Today") {
+                model.togglePlanner()
+            }
         }
+        .padding(.horizontal, 7)
+        .padding(.top, 6)
+        .padding(.bottom, 3)
     }
 
     private var surfaceTabs: some View {
@@ -2112,92 +2089,100 @@ private struct FloatingTodayPlannerPanel: View {
                         .stroke(palette.coolBorder.opacity(0.68), lineWidth: 0.8)
                 )
         )
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 7)
     }
 
     private var currentToday: some View {
         TimelineView(.periodic(from: .now, by: 1)) { timeline in
-            VStack(spacing: 8) {
-            if let summary = model.planningResponse?.summary {
-                HStack(spacing: 7) {
-                    summaryMetric("Sessions", value: summary.sessionCount)
-                    summaryMetric("Activities", value: summary.activityCount)
-                    summaryMetric("Focus", value: summary.focusBlockCount)
-                    summaryMetric(
-                        "Planned",
-                        value: summary.plannedSeconds / 60,
-                        suffix: "m"
-                    )
-                }
-                .padding(.horizontal, 10)
-                .padding(.top, 9)
-            }
+            let current = model.planningResponse?.current
+            let sessions = current?.sessions ?? []
+            let activities = current?.activities ?? []
+            let standalone = activities.filter { $0.sessionId == nil }
+            let focusBlocks = current?.focusBlocks ?? []
 
-            ScrollView {
-                LazyVStack(spacing: 6) {
-                    ForEach(model.planningResponse?.current.sessions ?? []) { session in
-                        currentRow(
-                            eyebrow: "SESSION",
-                            title: session.label,
-                            detail: "\(session.activityIds.count) items · \(session.allocatedSeconds / 60)m",
-                            status: model.planningSessionStatus(id: session.id),
-                            liveTime: nil,
-                            removeKind: "session",
-                            id: session.id
-                        )
+            VStack(spacing: 0) {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        if !sessions.isEmpty {
+                            planningSectionHeader("Sessions")
+                            ForEach(sessions) { session in
+                                sessionCard(
+                                    session,
+                                    activities: activities.filter {
+                                        $0.sessionId == session.id
+                                            || session.activityIds.contains($0.id)
+                                    },
+                                    now: timeline.date
+                                )
+                            }
+                        }
+
+                        if !standalone.isEmpty || !focusBlocks.isEmpty {
+                            planningSectionHeader("Standalone")
+                            ForEach(standalone) { activity in
+                                currentActivityRow(activity, now: timeline.date)
+                            }
+                            ForEach(focusBlocks) { focus in
+                                currentFocusRow(focus, now: timeline.date)
+                            }
+                        }
+
+                        if sessions.isEmpty,
+                           activities.isEmpty,
+                           focusBlocks.isEmpty {
+                            ContentUnavailableView(
+                                "Today is open",
+                                systemImage: "calendar",
+                                description: Text("Add activities or build a full session.")
+                            )
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 330)
+                        }
                     }
-                    ForEach(model.planningResponse?.current.activities ?? []) { activity in
-                        currentRow(
-                            eyebrow: "ACTIVITY",
-                            title: activity.title,
-                            detail: "\(activity.allocatedSeconds / 60)m",
-                            status: model.planningActivityStatus(
-                                id: activity.id,
-                                declaredStatus: activity.status
-                            ),
-                            liveTime: model.planningActivityTime(
-                                id: activity.id,
-                                at: timeline.date
-                            ),
-                            removeKind: "activity",
-                            id: activity.id
-                        )
-                    }
-                    ForEach(model.planningResponse?.current.focusBlocks ?? []) { focus in
-                        currentRow(
-                            eyebrow: "CAREER FOCUS",
-                            title: focus.title,
-                            detail: "\(focus.plannedSeconds / 60)m",
-                            status: model.planningActivityStatus(id: focus.id),
-                            liveTime: model.planningActivityTime(
-                                id: focus.id,
-                                at: timeline.date
-                            ),
-                            removeKind: "focus",
-                            id: focus.id
-                        )
-                    }
-                    if let response = model.planningResponse,
-                       response.current.sessions.isEmpty,
-                       response.current.activities.isEmpty,
-                       response.current.focusBlocks.isEmpty {
-                        ContentUnavailableView(
-                            "Today is open",
-                            systemImage: "calendar",
-                            description: Text("Add activities or build a full session.")
-                        )
-                        .frame(height: 250)
-                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 9)
                 }
-                .padding(10)
+
+                Divider().overlay(palette.divider.opacity(0.55))
+                startFreshControl
             }
-        }
         }
     }
 
+    private var startFreshControl: some View {
+        Button(action: model.startFreshPlanningDay) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.counterclockwise")
+                Text("Start fresh today")
+                Spacer()
+                Text("Available after active work is finished")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(palette.secondaryInk)
+            }
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(palette.secondaryInk)
+            .padding(.horizontal, 11)
+            .frame(height: 32)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PlannerPressButtonStyle())
+        .voiceHoverFeedback(
+            enabled: !model.planningMutationInFlight
+                && model.planningResponse?.workbench != nil,
+            cornerRadius: 0,
+            tint: palette.linkOff
+        )
+        .disabled(
+            model.planningMutationInFlight
+                || model.planningResponse?.workbench == nil
+        )
+        .help("Start fresh after every started activity has a result")
+    }
+
     private var activityComposer: some View {
-        VStack(spacing: 7) {
+        VStack(spacing: 8) {
             categoryTabs
             if model.planningState.selectedCategory == .career {
                 careerFocus
@@ -2208,17 +2193,17 @@ private struct FloatingTodayPlannerPanel: View {
             customComposer
             selectionTray
         }
-        .padding(.top, 7)
+        .padding(.top, 2)
     }
 
     private var categoryTabs: some View {
         HStack(spacing: 4) {
             categoryButton("Coding", value: .leetcode)
-            categoryButton("System", value: .systemDesign)
-            categoryButton("Behavior", value: .behavioral)
+            categoryButton("System design", value: .systemDesign)
+            categoryButton("Behavioral", value: .behavioral)
             categoryButton("Career", value: .career)
         }
-        .padding(.horizontal, 9)
+        .padding(.horizontal, 10)
     }
 
     private var catalogControls: some View {
@@ -2306,7 +2291,7 @@ private struct FloatingTodayPlannerPanel: View {
                 planningSortPopover
             }
         }
-        .padding(.horizontal, 9)
+        .padding(.horizontal, 10)
     }
 
     private var planningFilterPopover: some View {
@@ -2597,7 +2582,7 @@ private struct FloatingTodayPlannerPanel: View {
             ),
             anchor: .top
         )
-        .frame(minHeight: 170, maxHeight: 230)
+        .frame(minHeight: 176, maxHeight: 244)
     }
 
     private var careerFocus: some View {
@@ -2644,8 +2629,8 @@ private struct FloatingTodayPlannerPanel: View {
             )
             Spacer()
         }
-        .padding(.horizontal, 9)
-        .padding(.top, 4)
+        .padding(.horizontal, 10)
+        .padding(.top, 2)
         .frame(minHeight: 220)
     }
 
@@ -2697,14 +2682,18 @@ private struct FloatingTodayPlannerPanel: View {
                 RoundedRectangle(cornerRadius: 9)
                     .stroke(palette.coolBorder, style: StrokeStyle(lineWidth: 0.8, dash: [4]))
             )
-            .padding(.horizontal, 9)
+            .padding(.horizontal, 10)
         }
     }
 
     private var selectionTray: some View {
         VStack(spacing: 6) {
             HStack(spacing: 7) {
-                Text("\(model.planningSelectionCount) activities · \(model.planningTotalMinutes) min")
+                Text(
+                    model.planningSelectionCount == 0
+                        ? "No activities selected"
+                        : "\(model.planningSelectionCount) activities · \(model.planningTotalMinutes) min"
+                )
                     .font(.system(size: 10, weight: .bold, design: .rounded))
                     .monospacedDigit()
                 Spacer()
@@ -2765,6 +2754,7 @@ private struct FloatingTodayPlannerPanel: View {
                             }
                         }
                         .scrollClipDisabled()
+                        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
                         .accessibilityLabel("Selected activities")
                     }
                 }
@@ -2782,10 +2772,18 @@ private struct FloatingTodayPlannerPanel: View {
                         )
                 )
 
-                Button("Add activities", action: model.submitPlanningSelection)
+                Button(action: model.submitPlanningSelection) {
+                    Text(
+                        model.planningSelectionCount == 0
+                            ? "Add activities"
+                            : "Add \(model.planningSelectionCount) activities"
+                    )
+                    .font(.system(size: 10, weight: .bold))
+                    .frame(width: 116, height: 30)
+                    .contentShape(Rectangle())
+                }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                    .frame(width: 108, height: 30)
                     .disabled(
                         model.planningState.selections.isEmpty
                             || model.planningMutationInFlight
@@ -2794,77 +2792,77 @@ private struct FloatingTodayPlannerPanel: View {
             }
             .frame(height: 32)
         }
-        .padding(9)
-        .frame(height: 84)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(height: 86)
         .background(palette.timerSurface.opacity(palette.isDark ? 0.72 : 0.48))
     }
 
     private var fullSessionComposer: some View {
-        VStack(spacing: 10) {
-            Text("Build one timed session from the highest-frequency eligible work.")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(palette.secondaryInk)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Build a full interview session")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(palette.ink)
+                    Text("Highest-frequency eligible work · 6 coding by default")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(palette.secondaryInk)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("TOTAL")
+                        .font(.system(size: 8, weight: .bold))
+                        .tracking(0.7)
+                        .foregroundStyle(palette.secondaryInk)
+                    Text("\(model.planningFullSessionMinutes) min")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.linkOff)
+                }
+            }
             HStack(spacing: 7) {
                 fullSessionCard(
                     "Coding",
                     mark: "C",
                     minutes: VoicePlanningFullSessionPolicy.codingMinutes,
+                    tint: categoryTint(.leetcode),
                     value: $model.planningFullCoding
                 )
                 fullSessionCard(
                     "System design",
                     mark: "S",
                     minutes: VoicePlanningFullSessionPolicy.interviewMinutes,
+                    tint: categoryTint(.systemDesign),
                     value: $model.planningFullSystemDesign
                 )
                 fullSessionCard(
                     "Behavioral",
                     mark: "B",
                     minutes: VoicePlanningFullSessionPolicy.interviewMinutes,
+                    tint: categoryTint(.behavioral),
                     value: $model.planningFullBehavioral
                 )
             }
-            HStack {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("SESSION COUNTDOWN")
-                        .font(.system(size: 8, weight: .bold))
-                        .tracking(0.7)
-                        .foregroundStyle(palette.secondaryInk)
-                    Text("Coding 40m · interviews 60m each")
-                        .font(.system(size: 9))
-                        .foregroundStyle(palette.secondaryInk)
-                }
-                Spacer()
-                Text("\(model.planningFullSessionMinutes)m")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
-                    .foregroundStyle(palette.tealDark)
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 46)
-            .background(plannerControlBackground)
             Spacer()
-            HStack(spacing: 7) {
-                Button(action: model.createPlanningFullSession) {
-                    HStack {
-                        if model.planningMutationInFlight {
-                            ProgressView().controlSize(.small)
-                        }
-                        Text("Create full session")
-                            .font(.system(size: 11, weight: .bold))
+            Button(action: model.createPlanningFullSession) {
+                HStack {
+                    if model.planningMutationInFlight {
+                        ProgressView().controlSize(.small)
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 32)
-                    .contentShape(Rectangle())
+                    Text("Create full session")
+                        .font(.system(size: 11, weight: .bold))
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(
-                    model.planningMutationInFlight
-                        || model.planningFullCoding
-                            + model.planningFullSystemDesign
-                            + model.planningFullBehavioral == 0
-                )
+                .frame(maxWidth: .infinity)
+                .frame(height: 34)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.borderedProminent)
+            .disabled(
+                model.planningMutationInFlight
+                    || model.planningFullCoding
+                        + model.planningFullSystemDesign
+                        + model.planningFullBehavioral == 0
+            )
         }
         .padding(14)
     }
@@ -2873,30 +2871,74 @@ private struct FloatingTodayPlannerPanel: View {
         _ title: String,
         mark: String,
         minutes: Int,
+        tint: Color,
         value: Binding<Int>
     ) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 7) {
             Text(mark)
                 .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(palette.tealDark)
+                .foregroundStyle(tint)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(tint.opacity(palette.isDark ? 0.20 : 0.09))
+                )
             Text(title)
-                .font(.system(size: 9, weight: .bold))
+                .font(.system(size: 10, weight: .bold))
                 .lineLimit(1)
             Text("\(minutes)m each")
                 .font(.system(size: 8))
                 .foregroundStyle(palette.secondaryInk)
-            Stepper(value: value, in: 0...20) {
+            HStack(spacing: 8) {
+                fullSessionCountButton(
+                    "minus",
+                    label: "Remove one \(title)",
+                    enabled: value.wrappedValue > 0
+                ) {
+                    value.wrappedValue -= 1
+                }
                 Text("\(value.wrappedValue)")
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .monospacedDigit()
+                    .frame(minWidth: 24)
+                fullSessionCountButton(
+                    "plus",
+                    label: "Add one \(title)",
+                    enabled: value.wrappedValue < 20
+                ) {
+                    value.wrappedValue += 1
+                }
             }
-            .labelsHidden()
             .accessibilityLabel("\(title) count")
-            Text("\(value.wrappedValue)")
-                .font(.system(size: 13, weight: .bold, design: .monospaced))
         }
-        .padding(9)
-        .frame(maxWidth: .infinity, minHeight: 122)
-        .background(plannerControlBackground)
+        .padding(10)
+        .frame(maxWidth: .infinity, minHeight: 142)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(tint.opacity(palette.isDark ? 0.13 : 0.055))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(tint.opacity(0.34), lineWidth: 0.8)
+                )
+        )
+    }
+
+    private func fullSessionCountButton(
+        _ symbol: String,
+        label: String,
+        enabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .bold))
+                .frame(width: 25, height: 25)
+                .background(plannerControlBackground)
+        }
+        .buttonStyle(PlannerPressButtonStyle())
+        .voiceHoverFeedback(enabled: enabled, cornerRadius: 8, tint: palette.linkOff)
+        .disabled(!enabled)
+        .accessibilityLabel(label)
     }
 
     private func catalogRow(_ item: VoicePlanningCatalogItem) -> some View {
@@ -2906,6 +2948,36 @@ private struct FloatingTodayPlannerPanel: View {
                 model.togglePlanningSelection(item)
             } label: {
                 HStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .stroke(
+                                selected
+                                    ? palette.linkOff
+                                    : palette.coolBorder.opacity(0.9),
+                                lineWidth: selected ? 1.2 : 0.8
+                            )
+                        if selected {
+                            Circle().fill(palette.linkOff)
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 7, weight: .heavy))
+                                .foregroundStyle(Color.white)
+                        }
+                    }
+                    .frame(width: 17, height: 17)
+                    .accessibilityHidden(true)
+
+                    Text(model.planningState.selectedSpecialty == .leetcode ? "C" : "S")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(categoryTint(model.planningState.selectedCategory))
+                        .frame(width: 30, height: 30)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(
+                                    categoryTint(model.planningState.selectedCategory)
+                                        .opacity(palette.isDark ? 0.20 : 0.09)
+                                )
+                        )
+
                     VStack(alignment: .leading, spacing: 2) {
                         Text(item.title)
                             .font(.system(size: 11, weight: .bold))
@@ -2939,22 +3011,24 @@ private struct FloatingTodayPlannerPanel: View {
             .voiceHoverFeedback(
                 enabled: item.eligible,
                 cornerRadius: 10,
-                tint: palette.teal
+                tint: palette.linkOff
             )
-        .padding(.horizontal, 9)
-        .frame(height: 47)
+        .padding(.horizontal, 10)
+        .frame(height: 54)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(
                     selected
-                        ? palette.teal.opacity(palette.isDark ? 0.24 : 0.12)
+                        ? palette.linkOff.opacity(palette.isDark ? 0.23 : 0.09)
                         : palette.glassHighlight.opacity(palette.isDark ? 0.12 : 0.38)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
                         .stroke(
-                            selected ? palette.teal.opacity(0.72) : palette.coolBorder.opacity(0.65),
-                            lineWidth: 0.8
+                            selected
+                                ? palette.linkOff.opacity(0.72)
+                                : palette.coolBorder.opacity(0.65),
+                            lineWidth: selected ? 1.0 : 0.8
                         )
                 )
         )
@@ -3010,86 +3084,210 @@ private struct FloatingTodayPlannerPanel: View {
         }
     }
 
-    private func currentRow(
-        eyebrow: String,
-        title: String,
-        detail: String,
-        status: VoicePlanningCurrentStatus,
-        liveTime: String?,
-        removeKind: String,
-        id: String
+    private func planningSectionHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: 8, weight: .bold))
+            .tracking(0.8)
+            .foregroundStyle(palette.secondaryInk)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 2)
+    }
+
+    private func sessionCard(
+        _ session: VoicePlanningCurrentSession,
+        activities: [VoicePlanningCurrentActivity],
+        now: Date
     ) -> some View {
-        HStack(spacing: 9) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(eyebrow)
-                    .font(.system(size: 8, weight: .bold))
-                    .tracking(0.7)
-                    .foregroundStyle(palette.tealDark)
-                Text(title)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(palette.ink)
-                    .lineLimit(1)
-                Text(detail)
-                    .font(.system(size: 9))
-                    .foregroundStyle(palette.secondaryInk)
+        let status = model.planningSessionStatus(id: session.id)
+        let canRemove = status == .upcoming
+            && activities.allSatisfy {
+                model.planningActivityStatus(
+                    id: $0.id,
+                    declaredStatus: $0.status
+                ) == .upcoming
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(status.title)
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(
-                        status == .running ? palette.connectedIdle : palette.secondaryInk
+
+        return VStack(spacing: 0) {
+            HStack(spacing: 9) {
+                Image(systemName: "timer")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.tealDark)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(palette.teal.opacity(palette.isDark ? 0.20 : 0.09))
                     )
-                if let liveTime {
-                    Text(liveTime)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(palette.tealDark)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(session.label)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(palette.ink)
+                        .lineLimit(1)
+                    Text("\(activities.count) activities · \(session.allocatedSeconds / 60) min")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(palette.secondaryInk)
+                }
+                Spacer()
+                statusBadge(status)
+                plannerIconButton(
+                    "trash",
+                    label: "Remove \(session.label)",
+                    enabled: canRemove
+                ) {
+                    model.removePlanningItem(kind: "session", id: session.id)
                 }
             }
-            plannerIconButton("trash", label: "Remove \(title)") {
-                model.removePlanningItem(kind: removeKind, id: id)
+            .padding(.horizontal, 9)
+            .frame(height: 48)
+
+            if !activities.isEmpty {
+                Divider()
+                    .overlay(palette.divider.opacity(0.52))
+                    .padding(.leading, 46)
+                ForEach(activities) { activity in
+                    currentActivityRow(activity, now: now, nested: true)
+                    if activity.id != activities.last?.id {
+                        Divider()
+                            .overlay(palette.divider.opacity(0.42))
+                            .padding(.leading, 46)
+                    }
+                }
             }
         }
-        .padding(.horizontal, 10)
-        .frame(height: 52)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(palette.glassHighlight.opacity(palette.isDark ? 0.12 : 0.38))
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(palette.glassHighlight.opacity(palette.isDark ? 0.13 : 0.40))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(
                             status == .running
-                                ? palette.connectedIdle.opacity(0.84)
-                                : palette.coolBorder.opacity(0.62),
-                            lineWidth: status == .running ? 1.4 : 0.7
+                                ? palette.connectedIdle.opacity(0.82)
+                                : palette.coolBorder.opacity(0.66),
+                            lineWidth: status == .running ? 1.2 : 0.8
                         )
                 )
         )
-        .shadow(
-            color: status == .running ? palette.connectedIdle.opacity(0.16) : .clear,
-            radius: 5
+    }
+
+    private func currentActivityRow(
+        _ activity: VoicePlanningCurrentActivity,
+        now: Date,
+        nested: Bool = false
+    ) -> some View {
+        let status = model.planningActivityStatus(
+            id: activity.id,
+            declaredStatus: activity.status
+        )
+        let liveTime = model.planningActivityTime(id: activity.id, at: now)
+        return HStack(spacing: 9) {
+            Image(systemName: "calendar")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(palette.tealDark)
+                .frame(width: 26, height: 26)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(activity.title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(palette.ink)
+                    .lineLimit(1)
+                Text("\(activity.allocatedSeconds / 60) min")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(palette.secondaryInk)
+            }
+            Spacer()
+            if let liveTime {
+                Text(liveTime)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(palette.tealDark)
+            } else {
+                statusBadge(status)
+            }
+            plannerIconButton(
+                "trash",
+                label: "Remove \(activity.title)",
+                enabled: status == .upcoming
+            ) {
+                model.removePlanningItem(kind: "activity", id: activity.id)
+            }
+        }
+        .padding(.horizontal, nested ? 9 : 10)
+        .frame(height: 44)
+        .background(
+            nested
+                ? Color.clear
+                : palette.glassHighlight.opacity(palette.isDark ? 0.13 : 0.40)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func currentFocusRow(
+        _ focus: VoicePlanningCurrentFocus,
+        now: Date
+    ) -> some View {
+        let status = model.planningActivityStatus(id: focus.id)
+        let liveTime = model.planningActivityTime(id: focus.id, at: now)
+        return HStack(spacing: 9) {
+            Image(systemName: "briefcase")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.purple)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.purple.opacity(palette.isDark ? 0.20 : 0.09))
+                )
+            VStack(alignment: .leading, spacing: 1) {
+                Text(focus.title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(palette.ink)
+                    .lineLimit(1)
+                Text("Career focus · \(focus.plannedSeconds / 60) min")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(palette.secondaryInk)
+            }
+            Spacer()
+            if let liveTime {
+                Text(liveTime)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.purple)
+            } else {
+                statusBadge(status)
+            }
+            plannerIconButton(
+                "trash",
+                label: "Remove \(focus.title)",
+                enabled: status == .upcoming
+            ) {
+                model.removePlanningItem(kind: "focus", id: focus.id)
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 48)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.purple.opacity(palette.isDark ? 0.11 : 0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.purple.opacity(0.26), lineWidth: 0.8)
+                )
         )
     }
 
-    private func summaryMetric(
-        _ title: String,
-        value: Int,
-        suffix: String = ""
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text("\(value)\(suffix)")
-                .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundStyle(palette.ink)
-            Text(title)
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(palette.secondaryInk)
-        }
-        .padding(.horizontal, 9)
-        .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(palette.teal.opacity(palette.isDark ? 0.14 : 0.07))
-        )
+    private func statusBadge(_ status: VoicePlanningCurrentStatus) -> some View {
+        Text(status.title)
+            .font(.system(size: 8, weight: .bold))
+            .foregroundStyle(
+                status == .running ? palette.connectedIdle : palette.secondaryInk
+            )
+            .padding(.horizontal, 7)
+            .frame(height: 22)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(
+                        status == .running
+                            ? palette.connectedIdle.opacity(0.12)
+                            : palette.timerSurface.opacity(0.5)
+                    )
+            )
     }
 
     private func upperTab(
@@ -3345,16 +3543,15 @@ private struct FloatingTimerInstrumentPanel: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 28)
                 .foregroundStyle(selected ? palette.tealDark : palette.secondaryInk)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(
-                            selected
-                                ? palette.teal.opacity(palette.isDark ? 0.22 : 0.12)
-                                : Color.clear
-                        )
-                )
+                .contentShape(Rectangle())
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(selected ? palette.tealDark : Color.clear)
+                        .frame(height: 2)
+                        .padding(.horizontal, 8)
+                }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PlannerPressButtonStyle())
         .voiceHoverFeedback(cornerRadius: 9, tint: palette.teal)
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? .isSelected : [])
