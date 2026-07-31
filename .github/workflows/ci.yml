@@ -14,6 +14,8 @@ jobs:
         run: xcodebuild -version && swift --version
       - name: Test
         run: swift test
+      - name: Validate signing policy
+        run: Tests/SigningPolicyTests.sh
       - name: Package app
         run: ./scripts/package-app.sh
       - uses: actions/upload-artifact@v4
