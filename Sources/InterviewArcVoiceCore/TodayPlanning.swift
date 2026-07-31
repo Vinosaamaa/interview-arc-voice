@@ -93,6 +93,20 @@ public enum VoiceUpperSurfacePolicy {
     }
 }
 
+public enum VoicePlannerEntryPolicy {
+    public static func showsStandardEntry(
+        linkEnabled: Bool,
+        hasTimerInstrument: Bool,
+        isRecording: Bool,
+        isBusy: Bool
+    ) -> Bool {
+        linkEnabled
+            && !hasTimerInstrument
+            && !isRecording
+            && !isBusy
+    }
+}
+
 public struct VoicePlanningMutationIdentity: Equatable, Hashable, Sendable {
     public let rawValue: String
 

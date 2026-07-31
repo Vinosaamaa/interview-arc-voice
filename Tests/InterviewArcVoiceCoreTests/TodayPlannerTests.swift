@@ -166,3 +166,23 @@ func plannerGeometryKeepsTheRecorderAsTheBottomAnchor() {
     #expect(FloatingWidgetWindowPolicy.recorderIsBottomSurface)
     #expect(FloatingWidgetWindowPolicy.timerGap == 10)
 }
+
+@Test
+func standardPlannerEntryDoesNotDisappearWhenPreviousMemoActionsExist() {
+    #expect(
+        VoicePlannerEntryPolicy.showsStandardEntry(
+            linkEnabled: true,
+            hasTimerInstrument: false,
+            isRecording: false,
+            isBusy: false
+        )
+    )
+    #expect(
+        !VoicePlannerEntryPolicy.showsStandardEntry(
+            linkEnabled: true,
+            hasTimerInstrument: true,
+            isRecording: false,
+            isBusy: false
+        )
+    )
+}
