@@ -2390,11 +2390,6 @@ private struct FloatingTodayPlannerPanel: View {
             if model.planningState.selectedCategory == .career {
                 careerFocus
                     .frame(maxHeight: .infinity, alignment: .top)
-            } else if model.planningCustomPresented {
-                VStack(spacing: 8) {
-                    catalogControls
-                    catalogList
-                }
             } else {
                 VStack(spacing: 8) {
                     catalogControls
@@ -2830,10 +2825,7 @@ private struct FloatingTodayPlannerPanel: View {
         // The catalog owns the flexible middle of the Activities surface. Letting
         // it absorb the available height keeps Custom activity attached to the
         // fixed selection tray instead of leaving a dead band beneath it.
-        .frame(
-            minHeight: model.planningCustomPresented ? 64 : 176,
-            maxHeight: model.planningCustomPresented ? 64 : .infinity
-        )
+        .frame(minHeight: 64, maxHeight: .infinity)
     }
 
     private var careerFocus: some View {
