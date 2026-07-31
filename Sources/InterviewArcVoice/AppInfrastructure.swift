@@ -3056,15 +3056,6 @@ private struct FloatingTodayPlannerPanel: View {
                         .foregroundStyle(palette.secondaryInk)
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text("TOTAL")
-                        .font(.system(size: 8, weight: .bold))
-                        .tracking(0.7)
-                        .foregroundStyle(palette.secondaryInk)
-                    Text("\(model.planningFullSessionMinutes) min")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundStyle(palette.linkOff)
-                }
             }
             HStack(spacing: 7) {
                 fullSessionCard(
@@ -3113,17 +3104,43 @@ private struct FloatingTodayPlannerPanel: View {
                     .fill(palette.ink.opacity(palette.isDark ? 0.92 : 0.96))
             )
 
-            Text(
-                "Interview Arc places eligible due reviews first, then fills "
-                    + "the remaining slots with new high-frequency questions. "
-                    + "The recipe locks after its timer or activity work begins."
-            )
-            .font(.system(size: 9, weight: .medium))
-            .foregroundStyle(palette.secondaryInk)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("HOW INTERVIEW ARC BUILDS IT")
+                    .font(.system(size: 8, weight: .heavy))
+                    .tracking(0.8)
+                    .foregroundStyle(palette.secondaryInk)
+                    .padding(.bottom, 4)
 
-            Spacer(minLength: 0)
+                fullSessionGuideRow(
+                    symbol: "clock.arrow.circlepath",
+                    title: "Reviews first",
+                    detail: "Up to two eligible due reviews lead the session."
+                )
+                Divider().overlay(palette.divider.opacity(0.5))
+                fullSessionGuideRow(
+                    symbol: "chart.bar.fill",
+                    title: "Frequency-based fill",
+                    detail: "Open slots use new high-frequency questions."
+                )
+                Divider().overlay(palette.divider.opacity(0.5))
+                fullSessionGuideRow(
+                    symbol: "lock.fill",
+                    title: "Adjust now, then lock",
+                    detail: "The recipe locks after timing or activity work begins."
+                )
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(palette.glassHighlight.opacity(palette.isDark ? 0.10 : 0.34))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(palette.coolBorder.opacity(0.64), lineWidth: 0.8)
+                    )
+            )
+
+            Spacer(minLength: 8)
             Button(action: model.createPlanningFullSession) {
                 HStack {
                     if model.planningMutationInFlight {
@@ -3187,6 +3204,34 @@ private struct FloatingTodayPlannerPanel: View {
         if hours == 0 { return "\(remainder) min" }
         if remainder == 0 { return "\(hours) hr" }
         return "\(hours)h \(remainder)m"
+    }
+
+    private func fullSessionGuideRow(
+        symbol: String,
+        title: String,
+        detail: String
+    ) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(palette.linkOff)
+                .frame(width: 24, height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(palette.linkOff.opacity(palette.isDark ? 0.20 : 0.08))
+                )
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(palette.ink)
+                Text(detail)
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(palette.secondaryInk)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: 38)
     }
 
     private func fullSessionCard(

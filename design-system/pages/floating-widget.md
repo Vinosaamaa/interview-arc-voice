@@ -226,8 +226,10 @@ least 58 points for the activity title.
 - Full session keeps its Create action directly beneath the three specialty
   cards' supporting content and anchored at the bottom of the panel. Beneath
   the cards, a high-contrast Session countdown summarizes the live specialty
-  minute breakdown and total duration, followed by concise recipe/eligibility
-  guidance. Cards, count controls, and the primary action expose consistent
+  minute breakdown and total duration. The header does not repeat that total.
+  A compact three-step assembly guide fills the remaining working area with
+  review-first, frequency-fill, and recipe-locking rules. Cards, count controls,
+  and the primary action expose consistent
   hover and press feedback; empty space must not replace useful session context.
 - Voice caches selection and presentation only. Eligibility, current Today
   work, removability, mutation identity, and conflict decisions come from the
