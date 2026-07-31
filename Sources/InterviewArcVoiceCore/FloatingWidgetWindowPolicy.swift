@@ -125,9 +125,33 @@ public enum FloatingWidgetWindowPolicy {
 
 public enum PlannerSelectionTrayPolicy {
     public static let collapsedVisibleCount = 3
+    public static let expandedColumnCount = 4
+    public static let maximumExpandedRows = 4
+    public static let chipHeight: CGFloat = 26
+    public static let rowSpacing: CGFloat = 5
+    public static let verticalPadding: CGFloat = 12
 
     public static func hiddenCount(selectionCount: Int) -> Int {
         max(0, selectionCount - collapsedVisibleCount)
+    }
+
+    public static func expandedRowCount(selectionCount: Int) -> Int {
+        guard selectionCount > 0 else { return 1 }
+        return min(
+            maximumExpandedRows,
+            Int(ceil(Double(selectionCount) / Double(expandedColumnCount)))
+        )
+    }
+
+    public static func expandedRailHeight(selectionCount: Int) -> CGFloat {
+        let rows = expandedRowCount(selectionCount: selectionCount)
+        return CGFloat(rows) * chipHeight
+            + CGFloat(max(0, rows - 1)) * rowSpacing
+            + verticalPadding
+    }
+
+    public static func expandedContentScrolls(selectionCount: Int) -> Bool {
+        selectionCount > expandedColumnCount * maximumExpandedRows
     }
 }
 

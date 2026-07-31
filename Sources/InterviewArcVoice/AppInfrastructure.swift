@@ -1207,7 +1207,10 @@ struct FloatingRecorderView: View {
                                     - 16
                             )
                         )
-                        .transition(.opacity)
+                        .transition(
+                            .move(edge: .bottom)
+                                .combined(with: .opacity)
+                        )
                 } else if model.widgetSizeMode == .standard,
                    !model.dynamicRecordingInterfaceActive,
                    model.timerPanelExpanded,
@@ -1235,6 +1238,7 @@ struct FloatingRecorderView: View {
                 height: host.size.height,
                 alignment: .bottomTrailing
             )
+            .clipped()
         }
         .onChange(of: model.floatingSize) { _, _ in resizeWindow() }
         .onChange(of: model.widgetSizeMode) { _, mode in
@@ -1338,6 +1342,10 @@ struct FloatingRecorderView: View {
         .simultaneousGesture(
             miniDragGesture,
             including: model.widgetSizeMode == .mini ? .all : .none
+        )
+        .simultaneousGesture(
+            standardDragGesture,
+            including: model.widgetSizeMode == .standard ? .all : .none
         )
     }
 
@@ -1600,7 +1608,6 @@ struct FloatingRecorderView: View {
                             minHeight: 24
                         )
                         .layoutPriority(1)
-                        .simultaneousGesture(standardDragGesture)
                         memoButton(
                             symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
                             label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
@@ -1646,7 +1653,6 @@ struct FloatingRecorderView: View {
                                     minHeight: 24
                                 )
                                 .layoutPriority(1)
-                                .simultaneousGesture(standardDragGesture)
                                 compactTimerCluster(at: timeline.date)
                                 Image(systemName: model.timerPanelExpanded ? "chevron.down" : "chevron.up")
                                     .font(.system(size: 8, weight: .bold))
@@ -1673,7 +1679,6 @@ struct FloatingRecorderView: View {
                         alignment: model.shouldCenterFloatingTitle ? .center : .leading
                     )
                     .contentShape(Rectangle())
-                    .simultaneousGesture(standardDragGesture)
             }
         }
     }
@@ -2382,18 +2387,21 @@ private struct FloatingTodayPlannerPanel: View {
     private var activityComposer: some View {
         VStack(spacing: 8) {
             categoryTabs
-            Group {
-                if model.planningState.selectedCategory == .career {
-                    careerFocus
-                } else {
-                    VStack(spacing: 8) {
-                        catalogControls
-                        catalogList
-                        customComposer
-                    }
+            if model.planningState.selectedCategory == .career {
+                careerFocus
+                    .frame(maxHeight: .infinity, alignment: .top)
+            } else if model.planningCustomPresented {
+                VStack(spacing: 8) {
+                    catalogControls
+                    catalogList
                 }
+            } else {
+                VStack(spacing: 8) {
+                    catalogControls
+                    catalogList
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
             }
-            .frame(maxHeight: .infinity, alignment: .top)
             selectionTray
         }
         .padding(.top, 2)
@@ -2943,7 +2951,6 @@ private struct FloatingTodayPlannerPanel: View {
                             .stroke(palette.coolBorder.opacity(0.76), lineWidth: 0.8)
                     )
             )
-            .padding(.horizontal, 10)
             .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .bottom)))
             .onDisappear {
                 FloatingPanelController.shared.endPlannerTextEntry()
@@ -2973,7 +2980,6 @@ private struct FloatingTodayPlannerPanel: View {
                     .stroke(palette.coolBorder, style: StrokeStyle(lineWidth: 0.8, dash: [4]))
             )
             .contentShape(Rectangle())
-            .padding(.horizontal, 10)
         }
     }
 
@@ -2991,21 +2997,28 @@ private struct FloatingTodayPlannerPanel: View {
     }
 
     private var selectionTray: some View {
-        VStack(spacing: 6) {
+        let railHeight = selectionTrayExpanded
+            ? PlannerSelectionTrayPolicy.expandedRailHeight(
+                selectionCount: model.planningState.selections.count
+            )
+            : 30
+        return VStack(spacing: 6) {
             selectionRail
                 .frame(maxWidth: .infinity)
-                .frame(height: selectionTrayExpanded ? 132 : 30)
-            .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(palette.glassHighlight.opacity(palette.isDark ? 0.10 : 0.30))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .stroke(
-                                palette.coolBorder.opacity(0.62),
-                                style: StrokeStyle(lineWidth: 0.7, dash: [4])
-                            )
-                    )
-            )
+                .frame(height: railHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(palette.glassHighlight.opacity(palette.isDark ? 0.10 : 0.30))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .stroke(
+                                    palette.coolBorder.opacity(0.62),
+                                    style: StrokeStyle(lineWidth: 0.7, dash: [4])
+                                )
+                        )
+                )
+
+            customComposer
 
             HStack(spacing: 7) {
                 Spacer(minLength: 0)
@@ -3068,7 +3081,6 @@ private struct FloatingTodayPlannerPanel: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .frame(height: selectionTrayExpanded ? 188 : 86)
         .background(palette.timerSurface.opacity(palette.isDark ? 0.72 : 0.48))
         .animation(plannerAnimation, value: selectionTrayExpanded)
         .onChange(of: model.planningState.selections.count) { _, count in
@@ -3103,6 +3115,11 @@ private struct FloatingTodayPlannerPanel: View {
                 }
                 .padding(6)
             }
+            .scrollDisabled(
+                !PlannerSelectionTrayPolicy.expandedContentScrolls(
+                    selectionCount: selections.count
+                )
+            )
             .overlay(alignment: .topTrailing) {
                 selectionDisclosureButton(
                     label: "Collapse selections",
@@ -3321,9 +3338,16 @@ private struct FloatingTodayPlannerPanel: View {
                     title: "Adjust now, then lock",
                     detail: "The recipe locks after timing or activity work begins."
                 )
+                Divider().overlay(palette.divider.opacity(0.5))
+                fullSessionGuideRow(
+                    symbol: "rectangle.stack.fill",
+                    title: "One coherent session",
+                    detail: "Every selected activity shares one session countdown."
+                )
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
+            .frame(maxHeight: .infinity, alignment: .top)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(palette.glassHighlight.opacity(palette.isDark ? 0.10 : 0.34))
@@ -3333,7 +3357,6 @@ private struct FloatingTodayPlannerPanel: View {
                     )
             )
 
-            Spacer(minLength: 4)
             Button(action: model.createPlanningFullSession) {
                 HStack {
                     if model.planningMutationInFlight {
