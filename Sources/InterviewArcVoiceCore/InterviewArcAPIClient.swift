@@ -118,6 +118,46 @@ public actor InterviewArcAPIClient {
         )
     }
 
+    public func planning(
+        specialty: VoicePlanningSpecialty,
+        query: VoicePlanningQuery = VoicePlanningQuery(),
+        page: Int = 1,
+        pageSize: Int = 30
+    ) async throws -> VoicePlanningResponse {
+        var components = URLComponents(
+            url: baseURL.appending(path: "voice/planning"),
+            resolvingAgainstBaseURL: false
+        )!
+        components.queryItems = [
+            URLQueryItem(name: "specialty", value: specialty.rawValue),
+            URLQueryItem(name: "search", value: query.search),
+            URLQueryItem(name: "starred", value: query.starredOnly ? "true" : "false"),
+            URLQueryItem(
+                name: "difficulty",
+                value: query.difficulty.map(\.rawValue).sorted().joined(separator: ",")
+            ),
+            URLQueryItem(name: "sort", value: query.sort.rawValue),
+            URLQueryItem(name: "direction", value: query.direction.rawValue),
+            URLQueryItem(name: "page", value: String(max(1, page))),
+            URLQueryItem(name: "pageSize", value: String(min(100, max(1, pageSize)))),
+        ]
+        return try await send(
+            url: components.url!,
+            method: "GET",
+            body: Optional<Data>.none
+        )
+    }
+
+    public func mutatePlanning(
+        _ mutation: VoicePlanningMutationRequest
+    ) async throws -> VoicePlanningMutationResponse {
+        try await send(
+            path: "voice/planning/mutations",
+            method: "POST",
+            body: encoder.encode(mutation)
+        )
+    }
+
     public func finishActivity(
         activityID: String,
         outcome: VoicePracticeOutcome,

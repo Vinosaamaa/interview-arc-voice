@@ -12,6 +12,10 @@ private let voiceBridgeLogger = Logger(
     category: "VoiceBridge"
 )
 
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
 private struct SecureCredentialSnapshot: Sendable {
     let interviewArcToken: String
     let groqAPIKey: String
@@ -165,6 +169,22 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var timerMutationInFlight = false
     @Published private(set) var timerMutationMessage: String?
     @Published var timerPanelExpanded = false
+    @Published var plannerPresented = false
+    @Published var planningState = VoicePlanningPresentationState()
+    @Published private(set) var planningResponse: VoicePlanningResponse?
+    @Published private(set) var planningLoading = false
+    @Published private(set) var planningMutationInFlight = false
+    @Published var planningMessage: String?
+    @Published var planningDestination = "standalone"
+    @Published var planningCustomPresented = false
+    @Published var planningCustomTitle = ""
+    @Published var planningCustomURL = ""
+    @Published var planningCustomPrompt = ""
+    @Published var planningCustomMinutes = 40
+    @Published var planningJobMinutes = 60
+    @Published var planningFullCoding = 2
+    @Published var planningFullSystemDesign = 1
+    @Published var planningFullBehavioral = 1
     @Published var miniSessionTimerExpanded = false
     @Published var activityPickerExpanded = false
     @Published private(set) var finishingActivityID: String?
@@ -199,6 +219,8 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var linkShortcutCapturing = false
     @Published var widgetSizeShortcut: HotKeyShortcut
     @Published var widgetSizeShortcutCapturing = false
+    @Published var plannerShortcut: HotKeyShortcut
+    @Published var plannerShortcutCapturing = false
     @Published var shortcutMessage: String?
     @Published var accessibilityNeeded = false
     @Published var deliveryStates: [VoiceDeliveryComponent: VoiceDeliveryComponentState] = [:]
@@ -232,6 +254,7 @@ final class VoiceBridgeModel: ObservableObject {
     private let hotKeyManager = GlobalHotKeyManager(identifierID: 1)
     private let linkHotKeyManager = GlobalHotKeyManager(identifierID: 2)
     private let widgetSizeHotKeyManager = GlobalHotKeyManager(identifierID: 3)
+    private let plannerHotKeyManager = GlobalHotKeyManager(identifierID: 4)
     private let textInjector = DictationTextInjector()
     private let outputVolumeController = SystemOutputVolumeController()
     private var recordingStore: RecordingStore?
@@ -247,6 +270,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var shortcutMonitor: Any?
     private var linkShortcutMonitor: Any?
     private var widgetSizeShortcutMonitor: Any?
+    private var plannerShortcutMonitor: Any?
     private var lastInsertionSucceeded = false
     private var contextPollTask: Task<Void, Never>?
     private var pendingReconciliationTask: Task<Void, Never>?
@@ -272,6 +296,8 @@ final class VoiceBridgeModel: ObservableObject {
     private var processingTimer: Timer?
     private var processingIndicatorTask: Task<Void, Never>?
     private var disclosureStateBeforeRecording: FloatingWidgetDisclosureState?
+    private var plannerPresentedBeforeRecording: Bool?
+    private var timerPanelExpandedBeforePlanner: Bool?
     private var recordingStartupTask: Task<Void, Never>?
     private var currentInsertionDurationSeconds: Double = 0
     @Published private(set) var isStartingRecording = false
@@ -419,6 +445,9 @@ final class VoiceBridgeModel: ObservableObject {
         return false
     }
     var floatingWidth: CGFloat {
+        if plannerPresented {
+            return FloatingWidgetWindowPolicy.plannerWidth
+        }
         if widgetSizeMode == .mini {
             return MiniWidgetPresentationPolicy.width(for: miniWidgetLayout)
         }
@@ -436,6 +465,9 @@ final class VoiceBridgeModel: ObservableObject {
         CGSize(width: floatingWidth, height: floatingHeight)
     }
     var floatingHeight: CGFloat {
+        if plannerPresented {
+            return FloatingWidgetWindowPolicy.plannerHostHeight
+        }
         if widgetSizeMode == .mini {
             return FloatingWidgetWindowPolicy.hostHeight
         }
@@ -488,6 +520,18 @@ final class VoiceBridgeModel: ObservableObject {
         timerInstrument?.activity?.title
             ?? timerInstrument?.session?.label
             ?? floatingTitle
+    }
+
+    var activePlanningQuery: VoicePlanningQuery {
+        planningState.query(for: planningState.selectedSpecialty)
+    }
+
+    var planningSelectionCount: Int {
+        planningState.selections.count
+    }
+
+    var planningTotalMinutes: Int {
+        planningState.totalSelectedMinutes
     }
 
     func compactActivityTime(at now: Date) -> String? {
@@ -596,6 +640,21 @@ final class VoiceBridgeModel: ObservableObject {
            let data = try? JSONEncoder().encode(resolvedWidgetSizeShortcut) {
             defaults.set(data, forKey: "voice.widgetSizeShortcut")
         }
+        let resolvedPlannerShortcut: HotKeyShortcut
+        if let data = defaults.data(forKey: "voice.plannerShortcut"),
+           let saved = try? JSONDecoder().decode(HotKeyShortcut.self, from: data),
+           saved != resolvedShortcut,
+           saved != resolvedLinkShortcut,
+           saved != resolvedWidgetSizeShortcut {
+            resolvedPlannerShortcut = saved
+        } else {
+            resolvedPlannerShortcut = .plannerToggle
+        }
+        plannerShortcut = resolvedPlannerShortcut
+        if resolvedPlannerShortcut == .plannerToggle,
+           let data = try? JSONEncoder().encode(resolvedPlannerShortcut) {
+            defaults.set(data, forKey: "voice.plannerShortcut")
+        }
         if let data = defaults.data(forKey: "voice.lastFailure"),
            let storedFailure = try? JSONDecoder().decode(VoiceFailureNotice.self, from: data) {
             failureNotice = storedFailure
@@ -684,6 +743,13 @@ final class VoiceBridgeModel: ObservableObject {
     func toggleTimerPanel() {
         guard hasTimerInstrument, !isRecording else { return }
         withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
+            if plannerPresented {
+                plannerPresented = false
+                timerPanelExpanded = true
+                timerPanelExpandedBeforePlanner = nil
+                synchronizeFloatingPanelSize()
+                return
+            }
             timerPanelExpanded.toggle()
             if !timerPanelExpanded {
                 cancelFinishDrawer()
@@ -691,6 +757,221 @@ final class VoiceBridgeModel: ObservableObject {
             }
         }
         synchronizeFloatingPanelSize()
+    }
+
+    func togglePlanner() {
+        guard linkToInterviewArc, !isRecording, !isStartingRecording else { return }
+        withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
+            if plannerPresented {
+                plannerPresented = false
+                timerPanelExpanded = timerPanelExpandedBeforePlanner ?? false
+                timerPanelExpandedBeforePlanner = nil
+            } else {
+                timerPanelExpandedBeforePlanner = timerPanelExpanded
+                plannerPresented = true
+                timerPanelExpanded = false
+                finishingActivityID = nil
+                activityPickerExpanded = false
+                sessionFinishResolutionRequested = false
+            }
+        }
+        synchronizeFloatingPanelSize()
+        if plannerPresented {
+            Task { await refreshPlanning() }
+        }
+    }
+
+    func showPlanner() {
+        if !plannerPresented { togglePlanner() }
+    }
+
+    func showFocusSurface() {
+        guard hasTimerInstrument else { return }
+        withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
+            plannerPresented = false
+            timerPanelExpanded = true
+            timerPanelExpandedBeforePlanner = nil
+        }
+        synchronizeFloatingPanelSize()
+    }
+
+    func setPlanningSurface(_ surface: VoicePlanningSurface) {
+        planningState.surface = surface
+    }
+
+    func setPlanningSpecialty(_ specialty: VoicePlanningSpecialty) {
+        planningState.selectedCategory = VoicePlanningCategory(
+            rawValue: specialty.rawValue
+        ) ?? .leetcode
+        planningState.selectedSpecialty = specialty
+        Task { await refreshPlanning() }
+    }
+
+    func setPlanningCategory(_ category: VoicePlanningCategory) {
+        planningState.selectedCategory = category
+        guard let specialty = category.specialty else { return }
+        planningState.selectedSpecialty = specialty
+        Task { await refreshPlanning() }
+    }
+
+    func planningCatalogScrollAnchor(
+        for specialty: VoicePlanningSpecialty
+    ) -> String? {
+        planningState.catalogScrollAnchor(for: specialty)
+    }
+
+    func updatePlanningCatalogScrollAnchor(
+        _ itemID: String?,
+        for specialty: VoicePlanningSpecialty
+    ) {
+        planningState.updateCatalogScrollAnchor(itemID, for: specialty)
+    }
+
+    func updatePlanningQuery(_ transform: (inout VoicePlanningQuery) -> Void) {
+        var query = activePlanningQuery
+        transform(&query)
+        planningState.updateQuery(query, for: planningState.selectedSpecialty)
+    }
+
+    func applyPlanningQuery() {
+        Task { await refreshPlanning() }
+    }
+
+    func togglePlanningSelection(_ item: VoicePlanningCatalogItem) {
+        guard item.eligible else { return }
+        planningState.toggleSelection(
+            .practice(
+                specialty: planningState.selectedSpecialty,
+                questionID: item.id,
+                title: item.title,
+                minutes: item.targetMinutes,
+                url: item.url,
+                prompt: item.prompt,
+                topics: item.topics ?? []
+            )
+        )
+    }
+
+    func addJobApplicationsSelection() {
+        planningState.toggleSelection(
+            .focus(
+                title: "Job applications",
+                minutes: planningJobMinutes,
+                note: nil
+            )
+        )
+    }
+
+    func addCustomPlanningSelection() {
+        let title = planningCustomTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        planningState.toggleSelection(
+            .practice(
+                specialty: planningState.selectedSpecialty,
+                questionID: nil,
+                title: title,
+                minutes: max(1, planningCustomMinutes),
+                url: planningCustomURL.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+                prompt: planningCustomPrompt.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+                topics: []
+            )
+        )
+        planningCustomTitle = ""
+        planningCustomURL = ""
+        planningCustomPrompt = ""
+        planningCustomPresented = false
+    }
+
+    func removePlanningSelection(_ id: String) {
+        planningState.removeSelection(id: id)
+    }
+
+    func submitPlanningSelection() {
+        guard !planningState.selections.isEmpty,
+              let workbenchID = planningResponse?.workbench?.id else { return }
+        let request = VoicePlanningMutationRequest(
+            type: "add_selection",
+            workbenchId: workbenchID,
+            destination: planningDestination,
+            selections: planningState.selections.map(VoicePlanningSelectionPayload.init)
+        )
+        Task { await performPlanningMutation(request, clearSelection: true) }
+    }
+
+    func createPlanningFullSession() {
+        guard let workbenchID = planningResponse?.workbench?.id else { return }
+        let request = VoicePlanningMutationRequest(
+            type: "create_full_session",
+            workbenchId: workbenchID,
+            coding: planningFullCoding,
+            systemDesign: planningFullSystemDesign,
+            behavioral: planningFullBehavioral
+        )
+        Task { await performPlanningMutation(request) }
+    }
+
+    func togglePlanningStar(_ item: VoicePlanningCatalogItem) {
+        guard let workbenchID = planningResponse?.workbench?.id else { return }
+        let request = VoicePlanningMutationRequest(
+            type: "problem_star",
+            workbenchId: workbenchID,
+            specialty: planningState.selectedSpecialty,
+            questionId: item.id,
+            starred: !item.starred
+        )
+        Task { await performPlanningMutation(request) }
+    }
+
+    func removePlanningItem(kind: String, id: String) {
+        guard let workbenchID = planningResponse?.workbench?.id else { return }
+        let request = VoicePlanningMutationRequest(
+            type: "remove",
+            workbenchId: workbenchID,
+            kind: kind,
+            id: id
+        )
+        Task { await performPlanningMutation(request) }
+    }
+
+    func refreshPlanning() async {
+        guard plannerPresented else { return }
+        planningLoading = true
+        planningMessage = nil
+        defer { planningLoading = false }
+        do {
+            let client = try timerAPIClient()
+            planningResponse = try await client.planning(
+                specialty: planningState.selectedSpecialty,
+                query: activePlanningQuery,
+                pageSize: 60
+            )
+        } catch {
+            planningMessage = error.localizedDescription
+        }
+    }
+
+    private func performPlanningMutation(
+        _ request: VoicePlanningMutationRequest,
+        clearSelection: Bool = false
+    ) async {
+        planningMutationInFlight = true
+        planningMessage = nil
+        defer { planningMutationInFlight = false }
+        do {
+            let response = try await timerAPIClient().mutatePlanning(request)
+            guard response.protocolVersion == 1 else {
+                throw VoiceBridgeError.protocolMismatch(response.protocolVersion)
+            }
+            if clearSelection {
+                planningState.clearSelections()
+            }
+            planningMessage = response.duplicate == true ? "Already applied." : "Added to Today."
+            await refreshPlanning()
+            await refreshContext(showProgress: false)
+        } catch {
+            planningMessage = error.localizedDescription
+            await refreshPlanning()
+        }
     }
 
     func toggleActivityPicker() {
@@ -1463,7 +1744,8 @@ final class VoiceBridgeModel: ObservableObject {
     func beginShortcutCapture() {
         guard shortcutMonitor == nil,
               linkShortcutMonitor == nil,
-              widgetSizeShortcutMonitor == nil else { return }
+              widgetSizeShortcutMonitor == nil,
+              plannerShortcutMonitor == nil else { return }
         shortcutMessage = nil
         shortcutCapturing = true
         suspendGlobalShortcuts()
@@ -1475,8 +1757,9 @@ final class VoiceBridgeModel: ObservableObject {
             }
             guard let shortcut = HotKeyShortcut.from(event: event) else { return nil }
             guard shortcut != self.linkShortcut,
-                  shortcut != self.widgetSizeShortcut else {
-                self.shortcutMessage = "Record/Stop, link mode, and widget size need different shortcuts."
+                  shortcut != self.widgetSizeShortcut,
+                  shortcut != self.plannerShortcut else {
+                self.shortcutMessage = "Record/Stop, link mode, widget size, and Plan Today need different shortcuts."
                 self.endShortcutCapture()
                 return nil
             }
@@ -1492,7 +1775,8 @@ final class VoiceBridgeModel: ObservableObject {
     func beginLinkShortcutCapture() {
         guard shortcutMonitor == nil,
               linkShortcutMonitor == nil,
-              widgetSizeShortcutMonitor == nil else { return }
+              widgetSizeShortcutMonitor == nil,
+              plannerShortcutMonitor == nil else { return }
         shortcutMessage = nil
         linkShortcutCapturing = true
         suspendGlobalShortcuts()
@@ -1504,8 +1788,9 @@ final class VoiceBridgeModel: ObservableObject {
             }
             guard let shortcut = HotKeyShortcut.from(event: event) else { return nil }
             guard shortcut != self.shortcut,
-                  shortcut != self.widgetSizeShortcut else {
-                self.shortcutMessage = "Record/Stop, link mode, and widget size need different shortcuts."
+                  shortcut != self.widgetSizeShortcut,
+                  shortcut != self.plannerShortcut else {
+                self.shortcutMessage = "Record/Stop, link mode, widget size, and Plan Today need different shortcuts."
                 self.endLinkShortcutCapture()
                 return nil
             }
@@ -1521,7 +1806,8 @@ final class VoiceBridgeModel: ObservableObject {
     func beginWidgetSizeShortcutCapture() {
         guard shortcutMonitor == nil,
               linkShortcutMonitor == nil,
-              widgetSizeShortcutMonitor == nil else { return }
+              widgetSizeShortcutMonitor == nil,
+              plannerShortcutMonitor == nil else { return }
         shortcutMessage = nil
         widgetSizeShortcutCapturing = true
         suspendGlobalShortcuts()
@@ -1533,8 +1819,9 @@ final class VoiceBridgeModel: ObservableObject {
             }
             guard let shortcut = HotKeyShortcut.from(event: event) else { return nil }
             guard shortcut != self.shortcut,
-                  shortcut != self.linkShortcut else {
-                self.shortcutMessage = "Record/Stop, link mode, and widget size need different shortcuts."
+                  shortcut != self.linkShortcut,
+                  shortcut != self.plannerShortcut else {
+                self.shortcutMessage = "Record/Stop, link mode, widget size, and Plan Today need different shortcuts."
                 self.endWidgetSizeShortcutCapture()
                 return nil
             }
@@ -1547,6 +1834,37 @@ final class VoiceBridgeModel: ObservableObject {
         }
     }
 
+    func beginPlannerShortcutCapture() {
+        guard shortcutMonitor == nil,
+              linkShortcutMonitor == nil,
+              widgetSizeShortcutMonitor == nil,
+              plannerShortcutMonitor == nil else { return }
+        shortcutMessage = nil
+        plannerShortcutCapturing = true
+        suspendGlobalShortcuts()
+        plannerShortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            if Int(event.keyCode) == kVK_Escape {
+                self.endPlannerShortcutCapture()
+                return nil
+            }
+            guard let shortcut = HotKeyShortcut.from(event: event) else { return nil }
+            guard shortcut != self.shortcut,
+                  shortcut != self.linkShortcut,
+                  shortcut != self.widgetSizeShortcut else {
+                self.shortcutMessage = "Record/Stop, link mode, widget size, and Plan Today need different shortcuts."
+                self.endPlannerShortcutCapture()
+                return nil
+            }
+            self.plannerShortcut = shortcut
+            if let data = try? JSONEncoder().encode(shortcut) {
+                UserDefaults.standard.set(data, forKey: "voice.plannerShortcut")
+            }
+            self.endPlannerShortcutCapture()
+            return nil
+        }
+    }
+
     func cancelShortcutCapture() {
         if shortcutCapturing {
             endShortcutCapture()
@@ -1554,6 +1872,8 @@ final class VoiceBridgeModel: ObservableObject {
             endLinkShortcutCapture()
         } else if widgetSizeShortcutCapturing {
             endWidgetSizeShortcutCapture()
+        } else if plannerShortcutCapturing {
+            endPlannerShortcutCapture()
         }
     }
 
@@ -2065,12 +2385,18 @@ final class VoiceBridgeModel: ObservableObject {
                             if !self.timerMutationInFlight {
                                 await self.refreshContext(showProgress: false)
                             }
+                            if self.plannerPresented {
+                                await self.refreshPlanning()
+                            }
                         case .practiceChanged(let update):
                             self.lastLiveRevision = max(self.lastLiveRevision, update.revision)
                             if ["voice_intent", "voice_capture"].contains(update.scope) {
                                 await self.retryPendingInBackground()
                             } else if !self.timerMutationInFlight {
                                 await self.refreshContext(showProgress: false)
+                                if self.plannerPresented {
+                                    await self.refreshPlanning()
+                                }
                             }
                         }
                     }
@@ -2198,6 +2524,8 @@ final class VoiceBridgeModel: ObservableObject {
                 disclosureStateBeforeRecording = nil
                 dynamicRecordingInterfaceActive = false
             }
+            plannerPresentedBeforeRecording = plannerPresented
+            plannerPresented = false
             phase = .recording
             if linkToInterviewArc {
                 Task { await refreshContext(showProgress: false) }
@@ -2409,6 +2737,10 @@ final class VoiceBridgeModel: ObservableObject {
         }
         self.disclosureStateBeforeRecording = nil
         dynamicRecordingInterfaceActive = false
+        if let plannerPresentedBeforeRecording {
+            plannerPresented = plannerPresentedBeforeRecording
+        }
+        self.plannerPresentedBeforeRecording = nil
     }
 
     private func processGeneral(
@@ -2876,10 +3208,20 @@ final class VoiceBridgeModel: ObservableObject {
         registerGlobalShortcuts()
     }
 
+    private func endPlannerShortcutCapture() {
+        if let plannerShortcutMonitor {
+            NSEvent.removeMonitor(plannerShortcutMonitor)
+        }
+        plannerShortcutMonitor = nil
+        plannerShortcutCapturing = false
+        registerGlobalShortcuts()
+    }
+
     private func suspendGlobalShortcuts() {
         hotKeyManager.unregister()
         linkHotKeyManager.unregister()
         widgetSizeHotKeyManager.unregister()
+        plannerHotKeyManager.unregister()
     }
 
     private func registerGlobalShortcuts() {
@@ -2891,6 +3233,9 @@ final class VoiceBridgeModel: ObservableObject {
         }
         widgetSizeHotKeyManager.register(widgetSizeShortcut) { [weak self] in
             self?.toggleWidgetSizeMode()
+        }
+        plannerHotKeyManager.register(plannerShortcut) { [weak self] in
+            self?.togglePlanner()
         }
     }
 
@@ -3265,9 +3610,25 @@ private struct VoiceSettingsWindow: View {
                         Button("Cancel", action: model.cancelShortcutCapture)
                     }
                 }
+                HStack {
+                    Text("Open or close Plan Today")
+                    Spacer()
+                    Button(
+                        model.plannerShortcutCapturing
+                            ? "Press shortcut…"
+                            : model.plannerShortcut.displayName
+                    ) {
+                        model.beginPlannerShortcutCapture()
+                    }
+                    .disabled(model.plannerShortcutCapturing)
+                    if model.plannerShortcutCapturing {
+                        Button("Cancel", action: model.cancelShortcutCapture)
+                    }
+                }
                 if model.shortcutCapturing
                     || model.linkShortcutCapturing
-                    || model.widgetSizeShortcutCapturing {
+                    || model.widgetSizeShortcutCapturing
+                    || model.plannerShortcutCapturing {
                     Text("Press the new shortcut. Press Escape or choose Cancel to keep the current one.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -3553,6 +3914,7 @@ private struct VoiceBridgeMenu: View {
         VStack(alignment: .leading, spacing: 10) {
             statusHeader
             modeCard
+            if model.linkToInterviewArc { planTodayControl }
             recordingControl
             if model.recorder.isRecording, model.recorder.signalHealth == .absent {
                 microphoneSignalWarning
@@ -3571,6 +3933,26 @@ private struct VoiceBridgeMenu: View {
         }
         .padding(12)
         .frame(width: 260)
+    }
+
+    private var planTodayControl: some View {
+        Button {
+            model.togglePlanner()
+            dismiss()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "calendar.badge.plus")
+                Text(model.plannerPresented ? "Close Plan Today" : "Plan Today")
+                Spacer()
+                Text(model.plannerShortcut.displayName)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.bordered)
+        .disabled(model.isRecording || model.isStartingRecording)
+        .accessibilityLabel(model.plannerPresented ? "Close Plan Today" : "Open Plan Today")
     }
 
     private var statusHeader: some View {

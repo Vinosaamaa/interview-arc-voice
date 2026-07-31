@@ -153,6 +153,12 @@ struct HotKeyShortcut: Codable, Equatable, Sendable {
         displayName: "⌥M"
     )
 
+    static let plannerToggle = HotKeyShortcut(
+        keyCode: UInt32(kVK_ANSI_P),
+        carbonModifiers: UInt32(controlKey | optionKey),
+        displayName: "⌃⌥P"
+    )
+
     static func from(event: NSEvent) -> HotKeyShortcut? {
         let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
         var modifiers: UInt32 = 0
@@ -1048,7 +1054,12 @@ struct FloatingRecorderView: View {
     var body: some View {
         GeometryReader { host in
             VStack(alignment: .trailing, spacing: FloatingWidgetWindowPolicy.timerGap) {
-                if model.widgetSizeMode == .standard,
+                if model.plannerPresented,
+                   !model.isRecording {
+                    FloatingTodayPlannerPanel(model: model)
+                        .frame(width: FloatingWidgetWindowPolicy.plannerWidth)
+                        .transition(.opacity)
+                } else if model.widgetSizeMode == .standard,
                    !model.dynamicRecordingInterfaceActive,
                    model.timerPanelExpanded,
                    model.hasTimerInstrument,
@@ -1251,6 +1262,16 @@ struct FloatingRecorderView: View {
                         symbol: "square.and.arrow.down",
                         label: "Save last audio and transcript",
                         action: model.exportLastMemo
+                    )
+                }
+                if !model.hasTimerInstrument,
+                   model.linkToInterviewArc,
+                   !model.hasLastAudio,
+                   model.lastTranscript.isEmpty {
+                    memoButton(
+                        symbol: "calendar.badge.plus",
+                        label: "Plan today",
+                        action: model.togglePlanner
                     )
                 }
             }
@@ -1854,6 +1875,778 @@ struct FloatingRecorderView: View {
 
 }
 
+private struct FloatingTodayPlannerPanel: View {
+    @ObservedObject var model: VoiceBridgeModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var palette: VoiceWidgetPalette { model.widgetPalette }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider().overlay(palette.divider.opacity(0.65))
+            surfaceTabs
+            Divider().overlay(palette.divider.opacity(0.65))
+
+            Group {
+                switch model.planningState.surface {
+                case .current:
+                    currentToday
+                case .activities:
+                    activityComposer
+                case .fullSession:
+                    fullSessionComposer
+                }
+            }
+            .frame(maxHeight: .infinity)
+
+            if let message = model.planningMessage {
+                Text(message)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(
+                        message == "Added to Today." || message == "Already applied."
+                            ? palette.tealDark
+                            : palette.warning
+                    )
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(palette.timerSurface.opacity(0.5))
+            }
+        }
+        .background {
+            RoundedRectangle(cornerRadius: 19, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    LinearGradient(
+                        colors: [
+                            palette.glassHighlight.opacity(palette.isDark ? 0.74 : 0.56),
+                            palette.glass.opacity(palette.isDark ? 0.95 : 0.76),
+                            palette.timerSurface.opacity(palette.isDark ? 0.72 : 0.34),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 19, style: .continuous)
+                        .stroke(palette.coolBorder.opacity(0.92), lineWidth: 0.9)
+                )
+                .shadow(color: palette.coolShadow, radius: 10, y: 4)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
+        .frame(
+            height: FloatingWidgetWindowPolicy.plannerHostHeight
+                - FloatingWidgetWindowPolicy.capsuleHeight
+                - FloatingWidgetWindowPolicy.timerGap
+                - 16
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Plan today")
+    }
+
+    private var header: some View {
+        VStack(spacing: 5) {
+            if model.hasTimerInstrument {
+                HStack(spacing: 4) {
+                    upperTab("Focus", symbol: "timer", selected: false, action: model.showFocusSurface)
+                    upperTab("Plan today", symbol: "calendar.badge.plus", selected: true) {}
+                }
+                .padding(.horizontal, 5)
+                .padding(.top, 5)
+            }
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("BUILD TODAY'S WORK")
+                        .font(.system(size: 9, weight: .bold))
+                        .tracking(0.8)
+                        .foregroundStyle(palette.tealDark)
+                    Text("Plan today")
+                        .font(.system(size: 19, weight: .bold))
+                        .foregroundStyle(palette.ink)
+                }
+                Spacer()
+                if model.planningLoading {
+                    ProgressView().controlSize(.small)
+                        .accessibilityLabel("Refreshing Today")
+                }
+                plannerIconButton(
+                    "arrow.clockwise",
+                    label: "Refresh planning",
+                    enabled: !model.planningLoading
+                ) {
+                    Task { await model.refreshPlanning() }
+                }
+                plannerIconButton("xmark", label: "Close Plan Today") {
+                    model.togglePlanner()
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+        }
+    }
+
+    private var surfaceTabs: some View {
+        HStack(spacing: 4) {
+            ForEach(VoicePlanningSurface.allCases, id: \.rawValue) { surface in
+                Button {
+                    model.setPlanningSurface(surface)
+                } label: {
+                    Text(surface.rawValue)
+                        .font(.system(size: 10, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 30)
+                        .foregroundStyle(
+                            model.planningState.surface == surface
+                                ? palette.tealDark
+                                : palette.secondaryInk
+                        )
+                        .background(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(
+                                    model.planningState.surface == surface
+                                        ? palette.teal.opacity(palette.isDark ? 0.22 : 0.12)
+                                        : Color.clear
+                                )
+                        )
+                }
+                .buttonStyle(.plain)
+                .voiceHoverFeedback(cornerRadius: 9, tint: palette.teal)
+                .accessibilityAddTraits(
+                    model.planningState.surface == surface ? .isSelected : []
+                )
+            }
+        }
+        .padding(5)
+    }
+
+    private var currentToday: some View {
+        VStack(spacing: 8) {
+            if let summary = model.planningResponse?.summary {
+                HStack(spacing: 7) {
+                    summaryMetric("Sessions", value: summary.sessionCount)
+                    summaryMetric("Activities", value: summary.activityCount)
+                    summaryMetric("Focus", value: summary.focusBlockCount)
+                    summaryMetric(
+                        "Planned",
+                        value: summary.plannedSeconds / 60,
+                        suffix: "m"
+                    )
+                }
+                .padding(.horizontal, 10)
+                .padding(.top, 9)
+            }
+
+            ScrollView {
+                LazyVStack(spacing: 6) {
+                    ForEach(model.planningResponse?.current.sessions ?? []) { session in
+                        currentRow(
+                            eyebrow: "SESSION",
+                            title: session.label,
+                            detail: "\(session.activityIds.count) items · \(session.allocatedSeconds / 60)m",
+                            removeKind: "session",
+                            id: session.id
+                        )
+                    }
+                    ForEach(model.planningResponse?.current.activities ?? []) { activity in
+                        currentRow(
+                            eyebrow: "ACTIVITY",
+                            title: activity.title,
+                            detail: "\(activity.allocatedSeconds / 60)m",
+                            removeKind: "activity",
+                            id: activity.id
+                        )
+                    }
+                    ForEach(model.planningResponse?.current.focusBlocks ?? []) { focus in
+                        currentRow(
+                            eyebrow: "CAREER FOCUS",
+                            title: focus.title,
+                            detail: "\(focus.plannedSeconds / 60)m",
+                            removeKind: "focus",
+                            id: focus.id
+                        )
+                    }
+                    if let response = model.planningResponse,
+                       response.current.sessions.isEmpty,
+                       response.current.activities.isEmpty,
+                       response.current.focusBlocks.isEmpty {
+                        ContentUnavailableView(
+                            "Today is open",
+                            systemImage: "calendar",
+                            description: Text("Add activities or build a full session.")
+                        )
+                        .frame(height: 250)
+                    }
+                }
+                .padding(10)
+            }
+        }
+    }
+
+    private var activityComposer: some View {
+        VStack(spacing: 7) {
+            categoryTabs
+            if model.planningState.selectedCategory == .career {
+                careerFocus
+            } else {
+                catalogControls
+                catalogList
+            }
+            customComposer
+            selectionTray
+        }
+        .padding(.top, 7)
+    }
+
+    private var categoryTabs: some View {
+        HStack(spacing: 4) {
+            categoryButton("Coding", value: .leetcode)
+            categoryButton("System", value: .systemDesign)
+            categoryButton("Behavior", value: .behavioral)
+            categoryButton("Career", value: .career)
+        }
+        .padding(.horizontal, 9)
+    }
+
+    private var catalogControls: some View {
+        VStack(spacing: 5) {
+            HStack(spacing: 5) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(palette.secondaryInk)
+                TextField(
+                    "Search \(model.planningState.selectedSpecialty.title)",
+                    text: Binding(
+                        get: { model.activePlanningQuery.search },
+                        set: { value in
+                            model.updatePlanningQuery { $0.search = value }
+                        }
+                    )
+                )
+                .textFieldStyle(.plain)
+                .font(.system(size: 11))
+                .onSubmit(model.applyPlanningQuery)
+                plannerIconButton(
+                    model.activePlanningQuery.starredOnly ? "star.fill" : "star",
+                    label: "Favorites only",
+                    selected: model.activePlanningQuery.starredOnly
+                ) {
+                    model.updatePlanningQuery { $0.starredOnly.toggle() }
+                    model.applyPlanningQuery()
+                }
+                Menu {
+                    Section("Difficulty") {
+                        ForEach(VoicePlanningDifficulty.allCases, id: \.rawValue) { difficulty in
+                            Button {
+                                model.updatePlanningQuery { query in
+                                    if query.difficulty.contains(difficulty) {
+                                        query.difficulty.remove(difficulty)
+                                    } else {
+                                        query.difficulty.insert(difficulty)
+                                    }
+                                }
+                                model.applyPlanningQuery()
+                            } label: {
+                                Label(
+                                    difficulty.rawValue.capitalized,
+                                    systemImage: model.activePlanningQuery.difficulty.contains(difficulty)
+                                        ? "checkmark" : "circle"
+                                )
+                            }
+                        }
+                    }
+                    Section("Sort") {
+                        ForEach(VoicePlanningSort.allCases, id: \.rawValue) { sort in
+                            Button {
+                                model.updatePlanningQuery { $0.sort = sort }
+                                model.applyPlanningQuery()
+                            } label: {
+                                Label(
+                                    sort.rawValue.capitalized,
+                                    systemImage: model.activePlanningQuery.sort == sort
+                                        ? "checkmark" : "circle"
+                                )
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .frame(width: 26, height: 26)
+                }
+                .menuStyle(.borderlessButton)
+                .help("Filter and sort")
+                .accessibilityLabel("Filter and sort")
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(palette.glassHighlight.opacity(palette.isDark ? 0.16 : 0.46))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(palette.coolBorder.opacity(0.72), lineWidth: 0.8)
+                    )
+            )
+        }
+        .padding(.horizontal, 9)
+    }
+
+    private var catalogList: some View {
+        ScrollView {
+            LazyVStack(spacing: 5) {
+                ForEach(model.planningResponse?.catalog.items ?? []) { item in
+                    catalogRow(item)
+                        .id(item.id)
+                }
+            }
+            .scrollTargetLayout()
+            .padding(.horizontal, 9)
+        }
+        .scrollPosition(
+            id: Binding(
+                get: {
+                    model.planningCatalogScrollAnchor(
+                        for: model.planningState.selectedSpecialty
+                    )
+                },
+                set: { itemID in
+                    model.updatePlanningCatalogScrollAnchor(
+                        itemID,
+                        for: model.planningState.selectedSpecialty
+                    )
+                }
+            ),
+            anchor: .top
+        )
+        .frame(minHeight: 170, maxHeight: 230)
+    }
+
+    private var careerFocus: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "briefcase.fill")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(palette.connectedIdle)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(palette.connectedIdle.opacity(0.12))
+                    )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Job applications")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(palette.ink)
+                    Text("Career focus · time only · no result or publication")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(palette.secondaryInk)
+                }
+                Spacer()
+                TextField(
+                    "Minutes",
+                    value: $model.planningJobMinutes,
+                    format: .number
+                )
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 58)
+                Button("Add", action: model.addJobApplicationsSelection)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(palette.connectedIdle.opacity(palette.isDark ? 0.12 : 0.07))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(palette.connectedIdle.opacity(0.32), lineWidth: 0.8)
+                    )
+            )
+            Spacer()
+        }
+        .padding(.horizontal, 9)
+        .padding(.top, 4)
+        .frame(minHeight: 220)
+    }
+
+    @ViewBuilder
+    private var customComposer: some View {
+        if model.planningCustomPresented {
+            VStack(spacing: 6) {
+                HStack(spacing: 6) {
+                    TextField("Required title", text: $model.planningCustomTitle)
+                    TextField(
+                        "Minutes",
+                        value: $model.planningCustomMinutes,
+                        format: .number
+                    )
+                    .frame(width: 64)
+                }
+                TextField("Optional public URL", text: $model.planningCustomURL)
+                TextField("Optional prompt or context", text: $model.planningCustomPrompt)
+                HStack {
+                    Button("Cancel") { model.planningCustomPresented = false }
+                    Spacer()
+                    Button("Add to selection", action: model.addCustomPlanningSelection)
+                        .disabled(
+                            model.planningCustomTitle
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                                .isEmpty
+                        )
+                }
+            }
+            .font(.system(size: 10))
+            .textFieldStyle(.roundedBorder)
+            .padding(9)
+            .background(palette.timerSurface.opacity(0.55))
+            .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .bottom)))
+        } else if model.planningState.selectedCategory != .career {
+            Button {
+                withAnimation(plannerAnimation) {
+                    model.planningCustomPresented = true
+                }
+            } label: {
+                Label("Custom activity", systemImage: "plus")
+                    .font(.system(size: 10, weight: .bold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 27)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(palette.tealDark)
+            .background(
+                RoundedRectangle(cornerRadius: 9)
+                    .stroke(palette.coolBorder, style: StrokeStyle(lineWidth: 0.8, dash: [4]))
+            )
+            .padding(.horizontal, 9)
+        }
+    }
+
+    private var selectionTray: some View {
+        VStack(spacing: 6) {
+            if !model.planningState.selections.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 5) {
+                        ForEach(model.planningState.selections) { selection in
+                            HStack(spacing: 4) {
+                                Text(selection.title)
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .lineLimit(1)
+                                Button {
+                                    model.removePlanningSelection(selection.id)
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 7, weight: .bold))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Remove \(selection.title)")
+                            }
+                            .padding(.horizontal, 7)
+                            .frame(height: 24)
+                            .background(
+                                Capsule()
+                                    .fill(palette.teal.opacity(palette.isDark ? 0.22 : 0.12))
+                            )
+                        }
+                    }
+                }
+            }
+            HStack(spacing: 7) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(model.planningSelectionCount) selected")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("\(model.planningTotalMinutes) total minutes")
+                        .font(.system(size: 9))
+                        .foregroundStyle(palette.secondaryInk)
+                }
+                Spacer()
+                Picker("", selection: $model.planningDestination) {
+                    Text("Standalone").tag("standalone")
+                    Text("One session").tag("session")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 170)
+                Button("Add to Today", action: model.submitPlanningSelection)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(
+                        model.planningState.selections.isEmpty
+                            || model.planningMutationInFlight
+                            || model.planningResponse?.workbench == nil
+                    )
+            }
+        }
+        .padding(9)
+        .background(palette.timerSurface.opacity(palette.isDark ? 0.72 : 0.48))
+    }
+
+    private var fullSessionComposer: some View {
+        VStack(spacing: 12) {
+            Text("Build one timed session from the highest-frequency eligible work.")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(palette.secondaryInk)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            fullSessionStepper("Coding", value: $model.planningFullCoding)
+            fullSessionStepper("System design", value: $model.planningFullSystemDesign)
+            fullSessionStepper("Behavioral", value: $model.planningFullBehavioral)
+            Spacer()
+            Button(action: model.createPlanningFullSession) {
+                HStack {
+                    if model.planningMutationInFlight {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text("Create full session")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 34)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(
+                model.planningMutationInFlight
+                    || model.planningFullCoding
+                        + model.planningFullSystemDesign
+                        + model.planningFullBehavioral == 0
+            )
+        }
+        .padding(14)
+    }
+
+    private func fullSessionStepper(_ title: String, value: Binding<Int>) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+            Spacer()
+            Stepper("", value: value, in: 0...20)
+                .labelsHidden()
+            Text("\(value.wrappedValue)")
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .frame(width: 24, alignment: .trailing)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 40)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(palette.glassHighlight.opacity(palette.isDark ? 0.14 : 0.42))
+        )
+    }
+
+    private func catalogRow(_ item: VoicePlanningCatalogItem) -> some View {
+        let draftID = "practice:\(model.planningState.selectedSpecialty.rawValue):\(item.id)"
+        let selected = model.planningState.selections.contains { $0.id == draftID }
+        return HStack(spacing: 8) {
+            Button {
+                model.togglePlanningSelection(item)
+            } label: {
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.title)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(item.eligible ? palette.ink : palette.secondaryInk)
+                            .lineLimit(1)
+                        Text(
+                            [
+                                item.difficulty?.capitalized,
+                                item.acceptanceRate.map { "\(Int($0.rounded()))% accepted" },
+                                "\(item.targetMinutes)m",
+                                item.disabledReason,
+                            ]
+                            .compactMap { $0 }
+                            .joined(separator: " · ")
+                        )
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(palette.secondaryInk)
+                        .lineLimit(1)
+                    }
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!item.eligible)
+            plannerIconButton(
+                item.starred ? "star.fill" : "star",
+                label: item.starred ? "Remove favorite" : "Add favorite",
+                selected: item.starred
+            ) {
+                model.togglePlanningStar(item)
+            }
+        }
+        .padding(.horizontal, 9)
+        .frame(height: 47)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(
+                    selected
+                        ? palette.teal.opacity(palette.isDark ? 0.24 : 0.12)
+                        : palette.glassHighlight.opacity(palette.isDark ? 0.12 : 0.38)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(
+                            selected ? palette.teal.opacity(0.72) : palette.coolBorder.opacity(0.65),
+                            lineWidth: 0.8
+                        )
+                )
+        )
+        .opacity(item.eligible ? 1 : 0.66)
+        .accessibilityElement(children: .contain)
+        .accessibilityValue(selected ? "Selected" : (item.disabledReason ?? "Not selected"))
+    }
+
+    private func categoryButton(
+        _ title: String,
+        value: VoicePlanningCategory
+    ) -> some View {
+        Button {
+            model.setPlanningCategory(value)
+        } label: {
+            Text(title)
+                .font(.system(size: 9, weight: .bold))
+                .frame(maxWidth: .infinity)
+                .frame(height: 28)
+                .foregroundStyle(
+                    model.planningState.selectedCategory == value
+                        ? palette.tealDark
+                        : palette.secondaryInk
+                )
+                .background(
+                    RoundedRectangle(cornerRadius: 9)
+                        .fill(
+                            model.planningState.selectedCategory == value
+                                ? palette.teal.opacity(palette.isDark ? 0.22 : 0.12)
+                                : Color.clear
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .voiceHoverFeedback(cornerRadius: 9, tint: palette.teal)
+    }
+
+    private func currentRow(
+        eyebrow: String,
+        title: String,
+        detail: String,
+        removeKind: String,
+        id: String
+    ) -> some View {
+        HStack(spacing: 9) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(eyebrow)
+                    .font(.system(size: 8, weight: .bold))
+                    .tracking(0.7)
+                    .foregroundStyle(palette.tealDark)
+                Text(title)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(palette.ink)
+                    .lineLimit(1)
+                Text(detail)
+                    .font(.system(size: 9))
+                    .foregroundStyle(palette.secondaryInk)
+            }
+            Spacer()
+            plannerIconButton("trash", label: "Remove \(title)") {
+                model.removePlanningItem(kind: removeKind, id: id)
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 52)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(palette.glassHighlight.opacity(palette.isDark ? 0.12 : 0.38))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(palette.coolBorder.opacity(0.62), lineWidth: 0.7)
+                )
+        )
+    }
+
+    private func summaryMetric(
+        _ title: String,
+        value: Int,
+        suffix: String = ""
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("\(value)\(suffix)")
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundStyle(palette.ink)
+            Text(title)
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(palette.secondaryInk)
+        }
+        .padding(.horizontal, 9)
+        .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(palette.teal.opacity(palette.isDark ? 0.14 : 0.07))
+        )
+    }
+
+    private func upperTab(
+        _ title: String,
+        symbol: String,
+        selected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .frame(maxWidth: .infinity)
+                .frame(height: 28)
+                .foregroundStyle(selected ? palette.tealDark : palette.secondaryInk)
+                .background(
+                    RoundedRectangle(cornerRadius: 9)
+                        .fill(
+                            selected
+                                ? palette.teal.opacity(palette.isDark ? 0.22 : 0.12)
+                                : Color.clear
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .voiceHoverFeedback(cornerRadius: 9, tint: palette.teal)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func plannerIconButton(
+        _ symbol: String,
+        label: String,
+        enabled: Bool = true,
+        selected: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .frame(width: 27, height: 27)
+                .foregroundStyle(selected ? palette.tealDark : palette.secondaryInk)
+                .background(
+                    RoundedRectangle(cornerRadius: 9)
+                        .fill(
+                            selected
+                                ? palette.teal.opacity(palette.isDark ? 0.24 : 0.12)
+                                : palette.glassHighlight.opacity(palette.isDark ? 0.14 : 0.42)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9)
+                                .stroke(palette.coolBorder.opacity(0.68), lineWidth: 0.7)
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .voiceHoverFeedback(enabled: enabled, cornerRadius: 9, tint: palette.teal)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
+    private var plannerAnimation: Animation {
+        reduceMotion
+            ? .linear(duration: 0.10)
+            : .easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)
+    }
+}
+
 private struct FloatingTimerInstrumentPanel: View {
     @ObservedObject var model: VoiceBridgeModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1867,6 +2660,20 @@ private struct FloatingTimerInstrumentPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                upperSurfaceTab("Focus", symbol: "timer", selected: true) {}
+                upperSurfaceTab(
+                    "Plan today",
+                    symbol: "calendar.badge.plus",
+                    selected: false,
+                    action: model.showPlanner
+                )
+            }
+            .padding(5)
+            .background(palette.timerSurface.opacity(palette.isDark ? 0.74 : 0.42))
+
+            Divider().overlay(palette.divider.opacity(0.65))
+
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 VStack(spacing: 0) {
                     if let session = instrument.session,
@@ -2014,6 +2821,33 @@ private struct FloatingTimerInstrumentPanel: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Interview Arc timers")
+    }
+
+    private func upperSurfaceTab(
+        _ title: String,
+        symbol: String,
+        selected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .frame(maxWidth: .infinity)
+                .frame(height: 28)
+                .foregroundStyle(selected ? palette.tealDark : palette.secondaryInk)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(
+                            selected
+                                ? palette.teal.opacity(palette.isDark ? 0.22 : 0.12)
+                                : Color.clear
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .voiceHoverFeedback(cornerRadius: 9, tint: palette.teal)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private var drawerAnimation: Animation {
