@@ -261,3 +261,44 @@ private func writeAudio(
         (metadataAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o600
     )
 }
+
+@Test func historyRemainsVisibleWhenCleanupCannotRewriteMetadata() async throws {
+    let root = try retentionRoot()
+    defer {
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: root.path
+        )
+        try? FileManager.default.removeItem(at: root)
+    }
+    let now = Date(timeIntervalSince1970: 40_000_000)
+    let store = try LocalTranscriptHistoryStore(
+        directory: root,
+        retentionDuration: 100,
+        retentionLimit: 20
+    )
+    let visible = LocalTranscriptRecord(
+        createdAt: now,
+        transcript: "Keep this transcript visible",
+        editorText: "Keep this transcript visible",
+        durationSeconds: 3
+    )
+    let expired = LocalTranscriptRecord(
+        createdAt: now.addingTimeInterval(-101),
+        transcript: "Expired",
+        editorText: "Expired",
+        durationSeconds: 1
+    )
+    try JSONEncoder().encode([visible, expired]).write(
+        to: store.fileURL,
+        options: .atomic
+    )
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o500],
+        ofItemAtPath: root.path
+    )
+
+    let records = try await store.records(now: now)
+
+    #expect(records.map(\.transcript) == [visible.transcript])
+}

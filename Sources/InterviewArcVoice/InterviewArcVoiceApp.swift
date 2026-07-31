@@ -275,6 +275,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var contextPollTask: Task<Void, Never>?
     private var pendingReconciliationTask: Task<Void, Never>?
     private var transcriptHistoryExpiryTask: Task<Void, Never>?
+    private var transcriptHistoryRefreshRetryTask: Task<Void, Never>?
     private var pendingReconciliationGeneration = UUID()
     private var lastLiveRevision = 0
     private var contextRefreshRequestID = 0
@@ -1750,12 +1751,60 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func refreshTranscriptHistory() async {
-        transcriptHistory = (try? await transcriptHistoryStore?.records()) ?? []
+        guard let transcriptHistoryStore else { return }
+        do {
+            let records = try await transcriptHistoryStore.records()
+            applyTranscriptHistory(records)
+            transcriptHistoryRefreshRetryTask?.cancel()
+            transcriptHistoryRefreshRetryTask = nil
+        } catch {
+            // Preserve the last successfully loaded history. Replacing it with
+            // [] made a transient file-coordination or cleanup failure look
+            // like the user's Recent Transcripts had disappeared.
+            scheduleTranscriptHistoryRefreshRetry()
+        }
+    }
+
+    private func applyTranscriptHistory(
+        _ records: [LocalTranscriptRecord]
+    ) {
+        transcriptHistory = records
         selectedTranscriptIndex = min(
             selectedTranscriptIndex,
             max(0, transcriptHistory.count - 1)
         )
         scheduleTranscriptHistoryExpiry()
+    }
+
+    private func scheduleTranscriptHistoryRefreshRetry() {
+        guard transcriptHistoryRefreshRetryTask == nil else { return }
+        transcriptHistoryRefreshRetryTask = Task { [weak self] in
+            let delays = [
+                Duration.milliseconds(200),
+                .seconds(1),
+                .seconds(3),
+            ]
+            for delay in delays {
+                do {
+                    try await Task.sleep(for: delay)
+                } catch {
+                    return
+                }
+                guard let self,
+                      let store = self.transcriptHistoryStore else {
+                    return
+                }
+                do {
+                    let records = try await store.records()
+                    self.applyTranscriptHistory(records)
+                    self.transcriptHistoryRefreshRetryTask = nil
+                    return
+                } catch {
+                    continue
+                }
+            }
+            self?.transcriptHistoryRefreshRetryTask = nil
+        }
     }
 
     private func rememberTranscriptHistory(

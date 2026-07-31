@@ -207,11 +207,21 @@ public actor LocalTranscriptHistoryStore {
 
     public func records(now: Date = Date()) throws -> [LocalTranscriptRecord] {
         let current = try readRecords()
-        let retained = try pruned(current, now: now)
-        if retained != current {
-            try write(retained)
+        let visible = visibleRecords(current, now: now)
+        do {
+            let retained = try pruned(current, now: now)
+            if retained != current {
+                try write(retained)
+            }
+            return retained
+        } catch {
+            // Cleanup is best-effort for presentation. A transient directory,
+            // audio-file, or atomic-write failure must not turn a valid
+            // Recent Transcripts file into an empty card. The next refresh
+            // retries cleanup while the bounded, non-expired records remain
+            // visible now.
+            return visible
         }
-        return retained
     }
 
     public func audioURL(
@@ -312,13 +322,7 @@ public actor LocalTranscriptHistoryStore {
         now: Date
     ) throws -> [LocalTranscriptRecord] {
         let ordered = records.sorted { $0.createdAt > $1.createdAt }
-        var retained = Array(
-            ordered
-                .filter {
-                    now.timeIntervalSince($0.createdAt) < retentionDuration
-                }
-                .prefix(retentionLimit)
-        )
+        var retained = visibleRecords(ordered, now: now)
         for index in retained.indices
             where retained[index].audioReference != nil
                 && audioURL(for: retained[index]) == nil {
@@ -341,6 +345,26 @@ public actor LocalTranscriptHistoryStore {
             try removeAudio(for: evicted)
         }
         return retained
+    }
+
+    private func visibleRecords(
+        _ records: [LocalTranscriptRecord],
+        now: Date
+    ) -> [LocalTranscriptRecord] {
+        var visible = Array(
+            records
+                .sorted { $0.createdAt > $1.createdAt }
+                .filter {
+                    now.timeIntervalSince($0.createdAt) < retentionDuration
+                }
+                .prefix(retentionLimit)
+        )
+        for index in visible.indices
+            where visible[index].audioReference != nil
+                && audioURL(for: visible[index]) == nil {
+            visible[index].audioReference = nil
+        }
+        return visible
     }
 
     private func write(_ records: [LocalTranscriptRecord]) throws {
