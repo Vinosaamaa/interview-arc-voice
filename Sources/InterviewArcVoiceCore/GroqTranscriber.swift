@@ -203,6 +203,7 @@ public actor GroqTranscriber: SpeechTranscribing {
         }
         return try JSONDecoder().decode(GroqTranscription.self, from: data)
     }
+
 }
 
 public struct AudioChunk: Equatable, Sendable {
@@ -212,27 +213,79 @@ public struct AudioChunk: Equatable, Sendable {
     public let isTemporary: Bool
 }
 
-public actor AudioChunker {
-    private let directUploadBytes = 23 * 1024 * 1024
-    private let overlapSeconds = 1.5
+struct AudioChunkWindow: Equatable, Sendable {
+    let startSeconds: Double
+    let durationSeconds: Double
 
+    init(startSeconds: Double, durationSeconds: Double) {
+        self.startSeconds = startSeconds
+        self.durationSeconds = durationSeconds
+    }
+}
+
+enum AudioChunkPlan {
+    private static let directUploadBytes = 23 * 1024 * 1024
+    private static let targetUploadBytes = 20 * 1024 * 1024
+    // Whisper Large v3 is optimized around a 30-second acoustic context.
+    // Compressed AAC size is not a reliable proxy for that duration.
+    private static let maximumWindowSeconds = 30.0
+    private static let overlapSeconds = 1.5
+
+    static func windows(
+        durationSeconds: Double,
+        fileSizeBytes: Int
+    ) -> [AudioChunkWindow] {
+        guard durationSeconds > 0 else { return [] }
+
+        if durationSeconds <= maximumWindowSeconds,
+           fileSizeBytes <= directUploadBytes {
+            return [
+                AudioChunkWindow(
+                    startSeconds: 0,
+                    durationSeconds: durationSeconds
+                ),
+            ]
+        }
+
+        let bytesPerSecond = Double(fileSizeBytes) / max(durationSeconds, 1)
+        let sizeBoundSeconds = Double(targetUploadBytes) / max(bytesPerSecond, 1)
+        let windowSeconds = max(1, min(maximumWindowSeconds, sizeBoundSeconds))
+        let stepSeconds = max(1, windowSeconds - overlapSeconds)
+        var windows: [AudioChunkWindow] = []
+        var start = 0.0
+
+        while start < durationSeconds {
+            let windowDuration = min(windowSeconds, durationSeconds - start)
+            windows.append(
+                AudioChunkWindow(
+                    startSeconds: start,
+                    durationSeconds: windowDuration
+                )
+            )
+            if start + windowDuration >= durationSeconds { break }
+            start += stepSeconds
+        }
+        return windows
+    }
+}
+
+public actor AudioChunker {
     public init() {}
 
     public func chunks(for source: URL, temporaryDirectory: URL) async throws -> [AudioChunk] {
         let resource = try source.resourceValues(forKeys: [.fileSizeKey])
         let asset = AVURLAsset(url: source)
         let duration = try await asset.load(.duration).seconds
-        guard (resource.fileSize ?? 0) > directUploadBytes else {
+        let windows = AudioChunkPlan.windows(
+            durationSeconds: duration,
+            fileSizeBytes: resource.fileSize ?? 0
+        )
+        guard windows.count > 1 else {
             return [AudioChunk(url: source, offsetSeconds: 0, durationSeconds: duration, isTemporary: false)]
         }
 
-        let bytesPerSecond = Double(resource.fileSize ?? directUploadBytes) / max(duration, 1)
-        let targetSeconds = min(1_800, max(300, Double(20 * 1024 * 1024) / max(bytesPerSecond, 1)))
         var chunks: [AudioChunk] = []
-        var start = 0.0
-        var index = 0
-        while start < duration {
-            let chunkDuration = min(targetSeconds, duration - start)
+        for (index, window) in windows.enumerated() {
             let output = temporaryDirectory.appending(path: "\(source.deletingPathExtension().lastPathComponent)-chunk-\(index).m4a")
             try? FileManager.default.removeItem(at: output)
             guard let export = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
@@ -241,14 +294,18 @@ public actor AudioChunker {
             export.outputURL = output
             export.outputFileType = .m4a
             export.timeRange = CMTimeRange(
-                start: CMTime(seconds: start, preferredTimescale: 600),
-                duration: CMTime(seconds: chunkDuration, preferredTimescale: 600)
+                start: CMTime(seconds: window.startSeconds, preferredTimescale: 600),
+                duration: CMTime(seconds: window.durationSeconds, preferredTimescale: 600)
             )
             try await export.exportInterviewArcChunk()
-            chunks.append(AudioChunk(url: output, offsetSeconds: start, durationSeconds: chunkDuration, isTemporary: true))
-            if start + chunkDuration >= duration { break }
-            start += max(1, chunkDuration - overlapSeconds)
-            index += 1
+            chunks.append(
+                AudioChunk(
+                    url: output,
+                    offsetSeconds: window.startSeconds,
+                    durationSeconds: window.durationSeconds,
+                    isTemporary: true
+                )
+            )
         }
         return chunks
     }

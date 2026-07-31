@@ -262,6 +262,53 @@ matrix passes.
   unique.
 - Preserve older pending records when optional provider metadata is introduced.
 
+## 2026-07-31 follow-up: spoken tail omitted after 30 seconds
+
+### Impact
+
+A General Dictation capture longer than 30 seconds preserved clear speech on
+both sides of that boundary, but the delivered transcript compressed much of
+the later spoken passage into a shorter question. The missing text could not be
+recovered from the inserted transcript, although the original M4A remained
+available in Recent Transcripts.
+
+### Evidence and boundary isolation
+
+- the preserved M4A contains the missing speech;
+- an independent local transcription preserves speech on both sides of the
+  30-second boundary;
+- the installed diagnostic reports five evaluated provider segments, complete
+  word alignment, zero omitted segments, and zero omitted words;
+- the stored Recent Transcript and inserted text are identical;
+- the sub-megabyte recording took the direct-upload path because chunking
+  considered only the 23 MB file-size threshold;
+- a single-chunk response is assembled from Groq's canonical top-level text
+  without an overlap merge or wording rewrite.
+
+### Root cause
+
+The transport treated compressed byte size as the only signal for chunking.
+Normal AAC dictations therefore stayed far below 23 MB even when they exceeded
+Whisper Large v3's approximately 30-second optimized audio context. In this
+incident, the provider compressed or omitted speech beginning at that context
+boundary. Enhanced silence protection and cursor insertion preserved the
+provider result exactly; neither stage removed the spoken words.
+
+### Repair and prevention
+
+- split on acoustic duration as well as byte size;
+- cap every provider window at 30 seconds with a 1.5-second overlap;
+- keep windows concurrent so provider latency is bounded by the slowest request
+  rather than their sum;
+- retain exact overlap deduplication and timestamp offset restoration;
+- add a regression based on the observed small-but-long recording shape so
+  compressed recordings cannot bypass duration chunking again;
+- keep the original M4A as the recovery and playback source.
+
+This change does not alter Off, Basic, or Enhanced filtering decisions. It
+repairs the provider input boundary before those modes evaluate the returned
+transcript.
+
 ## Rollback
 
 If Enhanced rejects verified real speech, select Basic in Settings or revert
