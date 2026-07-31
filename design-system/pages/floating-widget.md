@@ -319,10 +319,11 @@ least 58 points for the activity title.
   the last eligible external editor; transient menu-bar and system UI processes
   are never remembered as insertion destinations. Menu insertion waits until
   AppKit has actually dismissed the menu window before restoring the editor.
-- **Recent Transcripts** retains at most 20 newest-first items for 24 hours in a
-  permission-0600 local file. Position and navigation stay in the header;
-  Copy, Play, Save, and Insert stay in the footer and always act on the visible
-  item.
+- **Recent Transcripts** retains at most 20 newest-first transcript/audio pairs
+  for 24 hours in permission-0600 local storage and loads them before remote
+  startup work. Position and navigation stay in the header; Copy, Play, Save,
+  Delete, and Insert always act on the visible item. Clear History removes
+  history-owned pairs without deleting unresolved linked evidence.
 - Timer rows expose no result or star controls until Finish opens its drawer.
 - The next-activity picker exposes no result or star controls.
 - Pausing a session freezes both clocks and preserves the last-focused

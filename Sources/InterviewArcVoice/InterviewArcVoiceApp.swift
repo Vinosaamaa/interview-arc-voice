@@ -274,6 +274,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var lastInsertionSucceeded = false
     private var contextPollTask: Task<Void, Never>?
     private var pendingReconciliationTask: Task<Void, Never>?
+    private var transcriptHistoryExpiryTask: Task<Void, Never>?
     private var pendingReconciliationGeneration = UUID()
     private var lastLiveRevision = 0
     private var contextRefreshRequestID = 0
@@ -292,6 +293,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var lastMemoActivityTitle: String?
     private var lastRetryDestination: CaptureDestination?
     private var audioPlayer: AVAudioPlayer?
+    private var playbackTranscriptID: UUID?
     private var playbackTimer: Timer?
     private var processingTimer: Timer?
     private var processingIndicatorTask: Task<Void, Never>?
@@ -383,6 +385,9 @@ final class VoiceBridgeModel: ObservableObject {
         selectedTranscriptIndex + 1 < transcriptHistory.count
     }
     var selectedTranscriptOwnsAudio: Bool {
+        selectedTranscript?.audioReference != nil
+    }
+    var selectedTranscriptCanRetry: Bool {
         selectedTranscriptIndex == 0
             && hasLastAudio
             && selectedTranscript?.transcript == lastTranscript
@@ -665,7 +670,8 @@ final class VoiceBridgeModel: ObservableObject {
                 directory: recordingStore.diagnosticsDirectory
             )
             transcriptHistoryStore = try? LocalTranscriptHistoryStore(
-                directory: recordingStore.transcriptHistoryDirectory
+                directory: recordingStore.transcriptHistoryDirectory,
+                audioDirectory: recordingStore.recentHistoryDirectory
             )
             recoverableRecordingStore = try? LocalRecoverableRecordingStore(
                 directory: recordingStore.recoveryDirectory
@@ -692,12 +698,16 @@ final class VoiceBridgeModel: ObservableObject {
         Task {
             await Task.yield()
             FloatingPanelController.shared.show(model: self)
+            // Recent Transcripts is local state. Load it before Keychain,
+            // network context, pending reconciliation, or live updates so a
+            // cold launch never presents an empty history while remote startup
+            // work is slow.
+            await refreshTranscriptHistory()
             outputVolumeController.recoverInterruptedSessionIfNeeded()
             registerGlobalShortcuts()
             restoreRecoverableRecordingIfNeeded()
             await loadSecureSettings()
             await refreshDiagnostics()
-            await refreshTranscriptHistory()
             startLiveUpdates()
         }
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -1177,11 +1187,13 @@ final class VoiceBridgeModel: ObservableObject {
 
     func selectNewerTranscript() {
         guard canSelectNewerTranscript else { return }
+        stopLastAudioPlayback()
         selectedTranscriptIndex -= 1
     }
 
     func selectOlderTranscript() {
         guard canSelectOlderTranscript else { return }
+        stopLastAudioPlayback()
         selectedTranscriptIndex += 1
     }
 
@@ -1289,6 +1301,41 @@ final class VoiceBridgeModel: ObservableObject {
 
     func toggleLastAudioPlayback() {
         guard let lastAudioData else { return }
+        playbackTranscriptID = nil
+        toggleAudioPlayback(data: lastAudioData)
+    }
+
+    func toggleSelectedTranscriptPlayback() {
+        guard let selectedTranscript,
+              selectedTranscript.audioReference != nil,
+              let transcriptHistoryStore else {
+            return
+        }
+        if playbackTranscriptID == selectedTranscript.id,
+           audioPlayer != nil {
+            toggleAudioPlayback(data: Data())
+            return
+        }
+        Task { [weak self] in
+            guard let self,
+                  let url = await transcriptHistoryStore.audioURL(
+                      for: selectedTranscript
+                  ),
+                  let data = try? Data(
+                      contentsOf: url,
+                      options: .mappedIfSafe
+                  ),
+                  !data.isEmpty else {
+                await self?.refreshTranscriptHistory()
+                return
+            }
+            self.stopLastAudioPlayback()
+            self.playbackTranscriptID = selectedTranscript.id
+            self.toggleAudioPlayback(data: data)
+        }
+    }
+
+    private func toggleAudioPlayback(data: Data) {
         if let audioPlayer, audioPlayer.isPlaying {
             audioPlayer.pause()
             isPlayingLastAudio = false
@@ -1301,7 +1348,7 @@ final class VoiceBridgeModel: ObservableObject {
             if let audioPlayer {
                 player = audioPlayer
             } else {
-                player = try AVAudioPlayer(data: lastAudioData)
+                player = try AVAudioPlayer(data: data)
                 player.prepareToPlay()
                 audioPlayer = player
                 playbackDuration = player.duration
@@ -1349,6 +1396,7 @@ final class VoiceBridgeModel: ObservableObject {
         playbackCurrentTime = 0
         playbackTimer?.invalidate()
         playbackTimer = nil
+        playbackTranscriptID = nil
     }
 
     func seekLastAudio(to progress: Double) {
@@ -1399,6 +1447,88 @@ final class VoiceBridgeModel: ObservableObject {
             contextMessage = "Voice memo saved."
         } catch {
             reportFailure(error, stage: .export, hasRecoverableAudio: hasLastAudio)
+        }
+    }
+
+    func exportSelectedTranscriptMemo() {
+        guard let selectedTranscript,
+              selectedTranscript.audioReference != nil,
+              let transcriptHistoryStore else {
+            return
+        }
+        Task { [weak self] in
+            guard let self,
+                  let retainedURL = await transcriptHistoryStore.audioURL(
+                      for: selectedTranscript
+                  ),
+                  let audioData = try? Data(
+                      contentsOf: retainedURL,
+                      options: .mappedIfSafe
+                  ),
+                  !audioData.isEmpty else {
+                await self?.refreshTranscriptHistory()
+                return
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            let plan = VoiceMemoExportPlan(
+                activityTitle: selectedTranscript.activityTitle,
+                createdAt: selectedTranscript.createdAt
+            )
+            let panel = NSSavePanel()
+            panel.title = "Save Voice Memo"
+            panel.message = selectedTranscript.activityTitle.map {
+                "Linked to \($0)"
+            } ?? "General dictation · not linked to Interview Arc"
+            panel.prompt = "Save"
+            panel.canCreateDirectories = true
+            panel.level = .floating
+            panel.allowedContentTypes = [.mpeg4Audio]
+            panel.nameFieldStringValue = plan.suggestedAudioFilename
+            let transcriptCheckbox = NSButton(
+                checkboxWithTitle: "Also save transcript as .txt",
+                target: nil,
+                action: nil
+            )
+            transcriptCheckbox.state = .on
+            panel.accessoryView = transcriptCheckbox
+            guard panel.runModal() == .OK, let audioURL = panel.url else {
+                return
+            }
+            do {
+                try audioData.write(to: audioURL, options: .atomic)
+                if transcriptCheckbox.state == .on {
+                    try selectedTranscript.transcript.write(
+                        to: plan.transcriptURL(forAudioURL: audioURL),
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                }
+                self.contextMessage = "Voice memo saved."
+            } catch {
+                self.reportFailure(
+                    error,
+                    stage: .export,
+                    hasRecoverableAudio: true
+                )
+            }
+        }
+    }
+
+    func deleteSelectedTranscript() {
+        guard let id = selectedTranscript?.id else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            try? await transcriptHistoryStore?.delete(id: id)
+            await refreshTranscriptHistory()
+        }
+    }
+
+    func clearRecentTranscriptHistory() {
+        Task { [weak self] in
+            guard let self else { return }
+            try? await transcriptHistoryStore?.clear()
+            selectedTranscriptIndex = 0
+            await refreshTranscriptHistory()
         }
     }
 
@@ -1556,24 +1686,46 @@ final class VoiceBridgeModel: ObservableObject {
             selectedTranscriptIndex,
             max(0, transcriptHistory.count - 1)
         )
+        scheduleTranscriptHistoryExpiry()
     }
 
     private func rememberTranscriptHistory(
         transcript: String,
         editorText: String,
         durationSeconds: Double,
-        activityTitle: String?
+        activityTitle: String?,
+        captureID: String? = nil,
+        recordingURL: URL? = nil
     ) async {
         guard let transcriptHistoryStore else { return }
         let record = LocalTranscriptRecord(
             transcript: transcript,
             editorText: editorText,
             durationSeconds: durationSeconds,
-            activityTitle: activityTitle
+            activityTitle: activityTitle,
+            captureID: captureID
         )
-        try? await transcriptHistoryStore.append(record)
+        _ = try? await transcriptHistoryStore.append(
+            record,
+            recordingURL: recordingURL
+        )
         await refreshTranscriptHistory()
         selectedTranscriptIndex = 0
+    }
+
+    private func scheduleTranscriptHistoryExpiry() {
+        transcriptHistoryExpiryTask?.cancel()
+        transcriptHistoryExpiryTask = Task { [weak self] in
+            guard let self,
+                  let expiry = try? await transcriptHistoryStore?
+                      .nextExpiryDate() else {
+                return
+            }
+            let delay = max(0, expiry.timeIntervalSinceNow)
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            await self.refreshTranscriptHistory()
+        }
     }
 
     func copyDiagnostic(_ record: VoiceDiagnosticRecord) {
@@ -2778,17 +2930,19 @@ final class VoiceBridgeModel: ObservableObject {
                     ?? speechProtectionMode
             )
             let transcript = result.transcription.text
-            await rememberTranscriptHistory(
-                transcript: transcript,
-                editorText: transcript,
-                durationSeconds: recording.duration,
-                activityTitle: nil
-            )
             let inserted = await insertTranscript(
                 transcript,
                 editorText: transcript,
                 showDeliveryStep: false
             )
+            await rememberTranscriptHistory(
+                transcript: transcript,
+                editorText: transcript,
+                durationSeconds: recording.duration,
+                activityTitle: nil,
+                recordingURL: recording.url
+            )
+            try? recoverableRecordingStore?.clear()
             canRetryLastTranscription = false
             endProcessing()
             if inserted {
@@ -2861,7 +3015,8 @@ final class VoiceBridgeModel: ObservableObject {
                         transcript: capture.transcript,
                         editorText: capture.editorText,
                         durationSeconds: recording.duration,
-                        activityTitle: activity.title
+                        activityTitle: activity.title,
+                        captureID: capture.captureID
                     )
                     _ = await self.insertTranscript(
                         capture.transcript,
@@ -2971,6 +3126,7 @@ final class VoiceBridgeModel: ObservableObject {
                 try await pipeline?.resolvePendingCapture(captureID: capture.id, attach: attach)
                 if attach { _ = await pipeline?.retryPending() }
                 await updateRetryCount()
+                await refreshTranscriptHistory()
             } catch {
                 reportFailure(error, stage: .interviewArc, hasRecoverableAudio: true)
             }
@@ -3068,6 +3224,7 @@ final class VoiceBridgeModel: ObservableObject {
             pendingCaptureStore: PendingVoiceCaptureStore(
                 directory: recordingStore.pendingCapturesDirectory
             ),
+            transcriptHistoryStore: transcriptHistoryStore,
             temporaryDirectory: recordingStore.temporaryDirectory,
             workspaceURL: URL(fileURLWithPath: workspacePath, isDirectory: true),
             interviewArcToken: token
@@ -3143,6 +3300,7 @@ final class VoiceBridgeModel: ObservableObject {
         let previousPhase = phase
         _ = await pipeline.retryPending()
         await updateRetryCount()
+        await refreshTranscriptHistory()
         if VoiceBackgroundPresentationPolicy.decision(
             foreground: foregroundPresentation(for: previousPhase),
             stateUnchangedDuringReconciliation: phase == previousPhase
@@ -3281,6 +3439,8 @@ final class VoiceBridgeModel: ObservableObject {
         }
         let allowedDirectories = [
             recordingStore.recordingsDirectory,
+            recordingStore.legacyRecordingsDirectory,
+            recordingStore.recentHistoryDirectory,
             recordingStore.temporaryDirectory,
         ]
         var reference = try? recoverableRecordingStore.load(
@@ -3933,6 +4093,9 @@ private struct VoiceBridgeMenu: View {
         }
         .padding(12)
         .frame(width: 260)
+        .task {
+            await model.refreshTranscriptHistory()
+        }
     }
 
     private var planTodayControl: some View {
@@ -4188,6 +4351,14 @@ private struct VoiceBridgeMenu: View {
                         action: model.selectOlderTranscript
                     )
                 }
+                if model.hasMenuTranscript {
+                    memoAction(
+                        symbol: "trash.slash",
+                        label: "Clear recent history",
+                        disabled: false,
+                        action: model.clearRecentTranscriptHistory
+                    )
+                }
             }
             if let selectedTranscript = model.selectedTranscript {
                 ScrollView {
@@ -4209,7 +4380,7 @@ private struct VoiceBridgeMenu: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 if model.canRetryLastTranscription,
-                   model.selectedTranscriptOwnsAudio {
+                   model.selectedTranscriptCanRetry {
                     Button(action: model.retryLastTranscription) {
                         Label("Retry", systemImage: "arrow.clockwise")
                     }
@@ -4232,13 +4403,19 @@ private struct VoiceBridgeMenu: View {
                         ? "Pause recording"
                         : "Play recording",
                     disabled: !model.selectedTranscriptOwnsAudio,
-                    action: model.toggleLastAudioPlayback
+                    action: model.toggleSelectedTranscriptPlayback
                 )
                 memoAction(
                     symbol: "square.and.arrow.down",
                     label: "Save audio and transcript",
                     disabled: !model.selectedTranscriptOwnsAudio,
-                    action: model.exportLastMemo
+                    action: model.exportSelectedTranscriptMemo
+                )
+                memoAction(
+                    symbol: "trash",
+                    label: "Delete transcript",
+                    disabled: model.selectedTranscript == nil,
+                    action: model.deleteSelectedTranscript
                 )
                 memoAction(
                     symbol: "text.cursor",

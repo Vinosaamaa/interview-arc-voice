@@ -54,6 +54,7 @@ public actor VoicePipeline {
     private let vocabularyResolver: VocabularyResolver
     private let retryQueue: VoiceRetryQueue
     private let pendingCaptureStore: PendingVoiceCaptureStore
+    private let transcriptHistoryStore: LocalTranscriptHistoryStore?
     private let temporaryDirectory: URL
     private let workspaceURL: URL
     private let interviewArcToken: String
@@ -65,6 +66,7 @@ public actor VoicePipeline {
         vocabularyResolver: VocabularyResolver,
         retryQueue: VoiceRetryQueue,
         pendingCaptureStore: PendingVoiceCaptureStore,
+        transcriptHistoryStore: LocalTranscriptHistoryStore? = nil,
         temporaryDirectory: URL,
         workspaceURL: URL,
         interviewArcToken: String
@@ -76,6 +78,7 @@ public actor VoicePipeline {
         self.vocabularyResolver = vocabularyResolver
         self.retryQueue = retryQueue
         self.pendingCaptureStore = pendingCaptureStore
+        self.transcriptHistoryStore = transcriptHistoryStore
         self.temporaryDirectory = temporaryDirectory
         self.workspaceURL = workspaceURL
         self.interviewArcToken = interviewArcToken
@@ -362,12 +365,10 @@ public actor VoicePipeline {
                         captureID: capture.id,
                         checksum: capture.checksum
                     )
-                    try await finishAcceptedCapture(capture)
-                    try await pendingCaptureStore.remove(id: capture.id, deleteAudio: true)
+                    try await completeAcceptedCapture(capture)
                     completed += 1
                 case "accepted":
-                    try await finishAcceptedCapture(capture)
-                    try await pendingCaptureStore.remove(id: capture.id, deleteAudio: true)
+                    try await completeAcceptedCapture(capture)
                     completed += 1
                 case "unrelated":
                     try await pendingCaptureStore.update(id: capture.id) {
@@ -457,6 +458,21 @@ public actor VoicePipeline {
             audioURL: capture.audioURL,
             workspaceURL: workspaceURL,
             interviewArcToken: interviewArcToken
+        )
+    }
+
+    private func completeAcceptedCapture(
+        _ capture: PendingVoiceCapture
+    ) async throws {
+        try await finishAcceptedCapture(capture)
+        let retainedInHistory = try await transcriptHistoryStore?
+            .adoptLinkedAudio(
+                captureID: capture.id,
+                recordingURL: capture.audioURL
+            ) ?? false
+        try await pendingCaptureStore.remove(
+            id: capture.id,
+            deleteAudio: !retainedInHistory
         )
     }
 

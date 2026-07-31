@@ -40,9 +40,11 @@ instructions, website playback, and journal publication.
 - Store credentials in macOS Keychain.
 - Store linked-practice recordings under Application Support and upload them
   only to the authenticated private Interview Arc audio endpoint.
-- Preserve an original linked-practice recording. General-dictation recordings
-  are temporary and must be deleted after transcription; transcription chunks
-  are always disposable.
+- Preserve an original linked-practice recording. Successful General Dictation
+  and completed linked recordings may move into private `RecentHistory/` for
+  the same 20-item/24-hour window as Recent Transcripts. Unresolved linked
+  evidence remains in `LinkedPending/`; history pruning must never delete it.
+  Transcription derivatives and chunks are always disposable.
 - Never rewrite, summarize, or remove fillers from the user transcript.
 - Delivery analysis is attempt-specific evidence and must never mutate the
   reusable Problem Bank solution.

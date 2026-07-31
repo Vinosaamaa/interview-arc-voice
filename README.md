@@ -48,7 +48,8 @@ the recording itself is never discarded.
 When linking is off—or when no usable Interview Arc activity is focused—Voice
 works as **general dictation**. It records to a temporary file, transcribes with
 Groq using a small terms-only global vocabulary prompt, inserts into the app
-that was active when recording began, and deletes the temporary audio. The
+that was active when recording began, and atomically moves the successful
+finalized audio into private Recent History. The
 global prompt contains stable interview vocabulary such as “LeetCode”; it is
 not a personal dictionary, does not learn replacements, and contains no prose
 instructions. Voice uses a guarded transient pasteboard operation internally
@@ -57,9 +58,10 @@ never leaves the transcript as the user's clipboard value. Direct insertion
 requires macOS Accessibility access; without it, Voice keeps the transcript
 available for **Insert again** and explains how to enable access.
 General dictation never writes transcript, audio, or coaching data to Interview
-Arc, D1, or R2. Successful temporary audio is deleted. If capture or
-transcription integrity fails, the original remains recoverable through Play,
-Save, and Retry instead of being discarded.
+Arc, D1, or R2. Its local audio follows the same 20-item/24-hour retention
+window as Recent Transcripts. If capture or transcription integrity fails, the
+original remains recoverable through Play, Save, and Retry instead of being
+discarded.
 
 ## Product decisions
 
@@ -121,12 +123,14 @@ Save, and Retry instead of being discarded.
   Detailed memo and recovery controls remain in the menu-bar panel. Standard
   and Mini share one trailing microphone control and one bottom-right-anchored
   window resize, preventing a mode switch from moving or flashing the control.
-- The menu-bar panel retains the 20 newest transcripts locally for at most
-  24 hours in a permission-0600 file. **Recent Transcripts** keeps its position
-  and navigation controls in a stable header and its Copy, Play, Save, and
-  Insert actions in the footer. Menu insertion preserves the last eligible
-  external editor, dismisses the menu window fully, then restores that editor
-  before inserting.
+- The menu-bar panel retains the 20 newest transcript/audio pairs locally for
+  at most 24 hours in permission-0600 storage. **Recent Transcripts** loads from
+  disk before Keychain or network startup, keeps its position and navigation
+  controls in a stable header, and keeps Copy, Play, Save, Delete, and Insert
+  actions on the visible item. Clear History removes only history-owned audio;
+  unresolved linked evidence remains protected. Menu insertion preserves the
+  last eligible external editor, dismisses the menu window fully, then restores
+  that editor before inserting.
 - The permanent widget visual and interaction contract is
   [`design-system/pages/floating-widget.md`](design-system/pages/floating-widget.md).
 - Settings → Appearance offers five persistent widget themes: the original
@@ -196,12 +200,19 @@ identity instead of requiring permission again after every build.
    press the shortcut again when finished. The transcript appears at the
    cursor; press Send yourself.
 9. For ordinary dictation, turn **Link to Interview Arc** off. The resulting
-   text is inserted into the active app and the temporary recording is deleted.
+   text is inserted into the active app and its finalized recording moves into
+   bounded local Recent History for Play and Save.
 
-Linked practice originals live at:
+Unresolved linked-practice originals live at:
 
 ```text
-~/Library/Application Support/InterviewArcVoice/Recordings/
+~/Library/Application Support/InterviewArcVoice/LinkedPending/
+```
+
+Completed recordings that remain visible in Recent Transcripts live at:
+
+```text
+~/Library/Application Support/InterviewArcVoice/RecentHistory/
 ```
 
 The website copy is private in R2 and streams only through Interview Arc's
