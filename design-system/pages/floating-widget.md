@@ -205,6 +205,20 @@ least 58 points for the activity title.
 - Standalone, One session, and Add activities use the same planner hover and
   press language. Destination buttons expose an unmistakable selected state;
   Add activities exposes distinct enabled and disabled states without moving.
+- Custom activity expands as a surfaced form with genuinely focusable title,
+  URL, prompt, and minutes inputs. Duration is labeled in minutes rather than
+  shown as an unexplained number. Cancel and Add to selection use the planner's
+  surfaced hover, press, enabled, and disabled states.
+- Today renders each session as a distinct parent card. Its activities live in
+  an inset child stack with a visible hierarchy rail and their own quiet row
+  surfaces; standalone work stays outside beneath its own heading. Parent and
+  child rows must never share one visually flat list treatment.
+- Switching Today, Activities, and Full session never cross-composites their
+  content trees. Only the selected tab and direct controls animate, preventing
+  ghost images when a populated Activities view replaces Full session.
+- Full session keeps its Create action directly beneath the three specialty
+  cards. Cards, count controls, and the primary action expose consistent hover
+  and press feedback; no flexible spacer detaches the action from the cards.
 - Voice caches selection and presentation only. Eligibility, current Today
   work, removability, mutation identity, and conflict decisions come from the
   authenticated Worker. Exact retries reuse one mutation ID; changed work
