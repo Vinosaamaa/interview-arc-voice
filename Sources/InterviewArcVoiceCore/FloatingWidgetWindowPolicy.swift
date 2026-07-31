@@ -75,6 +75,7 @@ public enum FloatingWidgetWindowPolicy {
     public static let expandedHostHeight: CGFloat = 340
     public static let expandedDrawerHostHeight: CGFloat = 418
     public static let plannerHostHeight: CGFloat = 648
+    public static let hostVerticalInset: CGFloat = 8
     public static let recorderIsBottomSurface = true
     public static let expandsUpward = true
     public static let timerDisclosureAvailableDuringPlayback = true
@@ -91,6 +92,24 @@ public enum FloatingWidgetWindowPolicy {
         // explicit drag gesture on non-control surfaces instead.
         _ = mode
         return false
+    }
+
+    public static func upperSurfaceViewportHeight(
+        hostHeight: CGFloat
+    ) -> CGFloat {
+        max(
+            0,
+            hostHeight - capsuleHeight - hostVerticalInset * 2
+        )
+    }
+
+    public static func upperSurfaceContentHeight(
+        hostHeight: CGFloat
+    ) -> CGFloat {
+        max(
+            0,
+            upperSurfaceViewportHeight(hostHeight: hostHeight) - timerGap
+        )
     }
 
     public static func recordingWaveformBarWidth(
