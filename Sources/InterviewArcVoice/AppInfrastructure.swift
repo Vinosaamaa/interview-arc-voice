@@ -2969,7 +2969,7 @@ private struct FloatingTodayPlannerPanel: View {
     ) -> some View {
         let tint = categoryTint(value)
         let selected = model.planningState.selectedCategory == value
-        Button {
+        return Button {
             withAnimation(plannerAnimation) {
                 model.setPlanningCategory(value)
             }
@@ -3099,7 +3099,7 @@ private struct FloatingTodayPlannerPanel: View {
         action: @escaping () -> Void
     ) -> some View {
         let tint = title == "Plan today" ? palette.linkOff : palette.tealDark
-        Button(action: action) {
+        return Button(action: action) {
             Label(title, systemImage: symbol)
                 .font(.system(size: 10, weight: .bold))
                 .frame(maxWidth: .infinity)
