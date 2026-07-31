@@ -25,6 +25,26 @@ func plannerKeepsSpecialtyQueryStateIndependent() {
 }
 
 @Test
+func plannerFilterCountAndSortCopyStayExplicit() {
+    let query = VoicePlanningQuery(
+        attention: [.due, .todo],
+        difficulty: [.hard],
+        sort: .recent,
+        direction: .descending
+    )
+
+    #expect(query.activeFilterCount == 3)
+    #expect(query.sort.title == "Recently practiced")
+    #expect(query.sort.directionTitle(query.direction) == "Newest first")
+    #expect(VoicePlanningSort.acceptance.directionTitle(.ascending) == "Low first")
+}
+
+@Test
+func jobApplicationsUseTheFixedCareerFocusDuration() {
+    #expect(VoicePlanningCareerPolicy.jobApplicationMinutes == 60)
+}
+
+@Test
 func fullSessionEstimateMatchesTheWebsiteRecipeDurations() {
     #expect(
         VoicePlanningFullSessionPolicy.totalMinutes(

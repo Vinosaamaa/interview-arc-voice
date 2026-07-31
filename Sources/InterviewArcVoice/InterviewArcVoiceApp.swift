@@ -181,7 +181,6 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var planningCustomURL = ""
     @Published var planningCustomPrompt = ""
     @Published var planningCustomMinutes = 40
-    @Published var planningJobMinutes = 60
     @Published var planningFullCoding = 2
     @Published var planningFullSystemDesign = 1
     @Published var planningFullBehavioral = 1
@@ -925,7 +924,7 @@ final class VoiceBridgeModel: ObservableObject {
         planningState.toggleSelection(
             .focus(
                 title: "Job applications",
-                minutes: planningJobMinutes,
+                minutes: VoicePlanningCareerPolicy.jobApplicationMinutes,
                 note: nil
             )
         )

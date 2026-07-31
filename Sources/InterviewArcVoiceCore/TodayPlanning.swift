@@ -24,6 +24,23 @@ public enum VoicePlanningSort: String, Codable, CaseIterable, Hashable, Sendable
     case frequency
     case recent
     case acceptance
+
+    public var title: String {
+        switch self {
+        case .frequency: "Frequency"
+        case .recent: "Recently practiced"
+        case .acceptance: "Acceptance"
+        }
+    }
+
+    public func directionTitle(_ direction: VoicePlanningDirection) -> String {
+        switch (self, direction) {
+        case (.recent, .descending): "Newest first"
+        case (.recent, .ascending): "Oldest first"
+        case (_, .descending): "High first"
+        case (_, .ascending): "Low first"
+        }
+    }
 }
 
 public enum VoicePlanningDirection: String, Codable, Hashable, Sendable {
@@ -74,6 +91,14 @@ public struct VoicePlanningQuery: Equatable, Sendable {
         self.sort = sort
         self.direction = direction
     }
+
+    public var activeFilterCount: Int {
+        attention.count + difficulty.count
+    }
+}
+
+public enum VoicePlanningCareerPolicy {
+    public static let jobApplicationMinutes = 60
 }
 
 public enum VoicePlanningSurface: String, CaseIterable, Sendable {
