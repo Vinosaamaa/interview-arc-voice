@@ -1326,7 +1326,7 @@ final class VoiceBridgeModel: ObservableObject {
                       options: .mappedIfSafe
                   ),
                   !data.isEmpty else {
-                await self.refreshTranscriptHistory()
+                await self?.refreshTranscriptHistory()
                 return
             }
             self.stopLastAudioPlayback()
@@ -1466,7 +1466,7 @@ final class VoiceBridgeModel: ObservableObject {
                       options: .mappedIfSafe
                   ),
                   !audioData.isEmpty else {
-                await self.refreshTranscriptHistory()
+                await self?.refreshTranscriptHistory()
                 return
             }
             NSApp.activate(ignoringOtherApps: true)
