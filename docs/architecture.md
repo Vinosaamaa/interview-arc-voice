@@ -354,12 +354,18 @@ transient surface.
 
 ## Local transcript recovery
 
-The menu-bar popover keeps a separate transcript-only recovery history in
-`Application Support/InterviewArcVoice/TranscriptHistory`. The JSON file is
-permission `0600`, newest-first, limited to five records, and pruned after 24
-hours on load and append. Records retain the exact insertion payload so linked
-Voice v2 envelopes remain idempotent. This history does not extend successful
-general-dictation audio retention.
+The menu-bar popover keeps the 20 newest completed transcript/audio pairs for
+at most 24 hours. Permission-`0600` metadata remains under
+`Application Support/InterviewArcVoice/TranscriptHistory`, while exact
+finalized M4As owned by that history live under private `RecentHistory/`.
+Records retain the exact insertion payload so linked Voice v2 envelopes remain
+idempotent and a validated relative audio identity so Play and Save always
+target the transcript currently visible in the menu.
+
+History loads from disk before Keychain and network initialization and refreshes
+whenever the menu opens. Count, age, explicit Delete, Clear History, and the
+bounded disk budget evict complete history-owned pairs. None of those paths may
+delete audio still owned by an unresolved linked capture in `LinkedPending/`.
 
 ## Provider credential rejection
 

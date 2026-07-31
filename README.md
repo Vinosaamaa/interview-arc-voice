@@ -200,12 +200,19 @@ identity instead of requiring permission again after every build.
    press the shortcut again when finished. The transcript appears at the
    cursor; press Send yourself.
 9. For ordinary dictation, turn **Link to Interview Arc** off. The resulting
-   text is inserted into the active app and the temporary recording is deleted.
+   text is inserted into the active app and its finalized recording moves into
+   bounded local Recent History for Play and Save.
 
-Linked practice originals live at:
+Unresolved linked-practice originals live at:
 
 ```text
-~/Library/Application Support/InterviewArcVoice/Recordings/
+~/Library/Application Support/InterviewArcVoice/LinkedPending/
+```
+
+Completed recordings that remain visible in Recent Transcripts live at:
+
+```text
+~/Library/Application Support/InterviewArcVoice/RecentHistory/
 ```
 
 The website copy is private in R2 and streams only through Interview Arc's
