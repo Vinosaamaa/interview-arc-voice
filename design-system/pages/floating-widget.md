@@ -344,6 +344,16 @@ least 58 points for the activity title.
 - Plan Today preserves a stationary microphone, independent specialty
   filters, selected work, and the exact previous Focus/collapsed disclosure
   through open, close, Mini entry, recording, and server-conflict refresh.
+- Standard idle memo actions use one in-place shelf: Play, Insert, and More.
+  More swaps those controls for Back, Copy, Save, and Plan Today while the
+  title viewport and trailing microphone remain fixed. Active timer capsules
+  never expose this memo shelf.
+- Plan Today uses an outer Focus/Plan Today switcher and an independent inner
+  Today/Activities/Full session tab row. Today is the default and highlights
+  the authoritative running item with its live clock.
+- Recent Transcripts uses a fixed card, preview viewport, two-line
+  word-count/duration column, and five fixed action slots. Short transcripts
+  must not collapse the card or leave the selected transcript body blank.
 - Intermediate expansion and collapse frames visibly resize the capsule; no
   target-width snap may be hidden inside an otherwise animated native panel.
 - Expand and collapse keep the capsule on one bottom baseline with no vertical

@@ -9,6 +9,7 @@ func plannerKeepsSpecialtyQueryStateIndependent() {
         VoicePlanningQuery(
             search: "graph",
             starredOnly: true,
+            attention: [.due, .todo],
             difficulty: [.medium, .hard],
             sort: .acceptance,
             direction: .descending
@@ -18,8 +19,20 @@ func plannerKeepsSpecialtyQueryStateIndependent() {
 
     #expect(state.query(for: .leetcode).search == "graph")
     #expect(state.query(for: .leetcode).starredOnly)
+    #expect(state.query(for: .leetcode).attention == [.due, .todo])
     #expect(state.query(for: .systemDesign) == VoicePlanningQuery())
     #expect(state.query(for: .behavioral) == VoicePlanningQuery())
+}
+
+@Test
+func fullSessionEstimateMatchesTheWebsiteRecipeDurations() {
+    #expect(
+        VoicePlanningFullSessionPolicy.totalMinutes(
+            coding: 6,
+            systemDesign: 1,
+            behavioral: 1
+        ) == 360
+    )
 }
 
 @Test

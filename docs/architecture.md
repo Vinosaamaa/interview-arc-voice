@@ -366,6 +366,20 @@ History loads from disk before Keychain and network initialization and refreshes
 whenever the menu opens. Count, age, explicit Delete, Clear History, and the
 bounded disk budget evict complete history-owned pairs. None of those paths may
 delete audio still owned by an unresolved linked capture in `LinkedPending/`.
+The Recent Transcripts presentation is fixed-height and derives its body,
+metadata, playback identity, and every action from one selected record. A
+remote context refresh cannot replace or temporarily empty that local body.
+
+## Native Today planning
+
+Focus and Plan Today are mutually exclusive presentations above the same
+bottom-anchored recorder. Plan Today contains its own Today, Activities, and
+Full session tabs; opening it defaults to Today. Activities keeps independent
+search/filter/sort/scroll state per specialty and sends only bounded query
+state to the owner-scoped Worker. D1 remains authoritative for eligibility,
+attention/result filters, mutations, the guarded fresh-workbench transition,
+and live invalidation. The native client never clears or reconstructs a
+workbench locally.
 
 ## Provider credential rejection
 

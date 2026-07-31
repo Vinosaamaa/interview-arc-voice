@@ -1048,6 +1048,7 @@ struct FloatingRecorderView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var miniSmoothedLevel = 0.0
     @State private var suppressMiniClick = false
+    @State private var memoShelf: FloatingWidgetMemoShelf = .primary
 
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
@@ -1105,6 +1106,15 @@ struct FloatingRecorderView: View {
                 previous: miniSmoothedLevel,
                 current: current
             )
+        }
+        .onChange(of: model.hasTimerInstrument) { _, _ in
+            memoShelf = .primary
+        }
+        .onChange(of: model.lastTranscript) { _, _ in
+            memoShelf = .primary
+        }
+        .onChange(of: model.hasLastAudio) { _, _ in
+            memoShelf = .primary
         }
     }
 
@@ -1238,43 +1248,8 @@ struct FloatingRecorderView: View {
                 processingLabel
             } else {
                 activityLabel
-                if !model.hasTimerInstrument, model.hasLastAudio {
-                    memoButton(
-                        symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
-                        label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
-                        action: model.toggleLastAudioPlayback
-                    )
-                }
-                if !model.hasTimerInstrument, !model.lastTranscript.isEmpty {
-                    memoButton(
-                        symbol: "text.cursor",
-                        label: "Insert last transcript",
-                        action: model.reinsertLastTranscript
-                    )
-                    memoButton(
-                        symbol: "doc.on.doc",
-                        label: "Copy last transcript",
-                        action: model.copyLastTranscript
-                    )
-                }
-                if !model.hasTimerInstrument, model.hasLastAudio {
-                    memoButton(
-                        symbol: "square.and.arrow.down",
-                        label: "Save last audio and transcript",
-                        action: model.exportLastMemo
-                    )
-                }
-                if VoicePlannerEntryPolicy.showsStandardEntry(
-                    linkEnabled: model.linkToInterviewArc,
-                    hasTimerInstrument: model.hasTimerInstrument,
-                    isRecording: model.isRecording,
-                    isBusy: model.isBusy
-                ) {
-                    memoButton(
-                        symbol: "calendar.badge.plus",
-                        label: "Plan today",
-                        action: model.togglePlanner
-                    )
+                if !model.hasTimerInstrument {
+                    memoActionShelf
                 }
             }
             Color.clear
@@ -1282,6 +1257,92 @@ struct FloatingRecorderView: View {
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, 4)
+    }
+
+    @ViewBuilder
+    private var memoActionShelf: some View {
+        let canPlanToday = VoicePlannerEntryPolicy.showsStandardEntry(
+            linkEnabled: model.linkToInterviewArc,
+            hasTimerInstrument: model.hasTimerInstrument,
+            isRecording: model.isRecording,
+            isBusy: model.isBusy
+        )
+        let actions = FloatingWidgetMemoActionPolicy.actions(
+            shelf: memoShelf,
+            hasTranscript: !model.lastTranscript.isEmpty,
+            hasAudio: model.hasLastAudio,
+            canPlanToday: canPlanToday
+        )
+        ForEach(actions, id: \.self) { action in
+            memoActionButton(action)
+                .transition(.opacity.combined(with: .scale(scale: 0.94)))
+        }
+    }
+
+    @ViewBuilder
+    private func memoActionButton(
+        _ action: FloatingWidgetMemoAction
+    ) -> some View {
+        switch action {
+        case .play:
+            memoButton(
+                symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
+                label: model.isPlayingLastAudio
+                    ? "Pause last recording"
+                    : "Play last recording",
+                action: model.toggleLastAudioPlayback
+            )
+        case .insert:
+            memoButton(
+                symbol: "text.cursor",
+                label: "Insert last transcript",
+                action: model.reinsertLastTranscript
+            )
+        case .more:
+            memoButton(
+                symbol: "ellipsis",
+                label: "More memo actions"
+            ) {
+                withAnimation(memoShelfAnimation) {
+                    memoShelf = .secondary
+                }
+            }
+        case .back:
+            memoButton(
+                symbol: "chevron.left",
+                label: "Back to primary memo actions"
+            ) {
+                withAnimation(memoShelfAnimation) {
+                    memoShelf = .primary
+                }
+            }
+        case .copy:
+            memoButton(
+                symbol: "doc.on.doc",
+                label: "Copy last transcript",
+                action: model.copyLastTranscript
+            )
+        case .save:
+            memoButton(
+                symbol: "square.and.arrow.down",
+                label: "Save last audio and transcript",
+                action: model.exportLastMemo
+            )
+        case .planToday:
+            memoButton(
+                symbol: "calendar.badge.plus",
+                label: "Plan today"
+            ) {
+                memoShelf = .primary
+                model.togglePlanner()
+            }
+        }
+    }
+
+    private var memoShelfAnimation: Animation? {
+        reduceMotion
+            ? nil
+            : .easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)
     }
 
     @ViewBuilder
@@ -1902,6 +1963,22 @@ private struct FloatingTodayPlannerPanel: View {
             }
             .frame(maxHeight: .infinity)
 
+            Button(action: model.startFreshPlanningDay) {
+                Label("Start fresh today", systemImage: "lock")
+                    .font(.system(size: 9, weight: .bold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(palette.secondaryInk)
+            .background(palette.timerSurface.opacity(0.42))
+            .disabled(
+                model.planningMutationInFlight
+                    || model.planningResponse?.workbench == nil
+            )
+            .help("Start fresh after every started activity has a result")
+
             if let message = model.planningMessage {
                 Text(message)
                     .font(.system(size: 10, weight: .medium))
@@ -2000,6 +2077,7 @@ private struct FloatingTodayPlannerPanel: View {
                         .font(.system(size: 10, weight: .bold))
                         .frame(maxWidth: .infinity)
                         .frame(height: 30)
+                        .contentShape(Rectangle())
                         .foregroundStyle(
                             model.planningState.surface == surface
                                 ? palette.tealDark
@@ -2025,7 +2103,8 @@ private struct FloatingTodayPlannerPanel: View {
     }
 
     private var currentToday: some View {
-        VStack(spacing: 8) {
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+            VStack(spacing: 8) {
             if let summary = model.planningResponse?.summary {
                 HStack(spacing: 7) {
                     summaryMetric("Sessions", value: summary.sessionCount)
@@ -2048,6 +2127,8 @@ private struct FloatingTodayPlannerPanel: View {
                             eyebrow: "SESSION",
                             title: session.label,
                             detail: "\(session.activityIds.count) items · \(session.allocatedSeconds / 60)m",
+                            status: model.planningSessionStatus(id: session.id),
+                            liveTime: nil,
                             removeKind: "session",
                             id: session.id
                         )
@@ -2057,6 +2138,14 @@ private struct FloatingTodayPlannerPanel: View {
                             eyebrow: "ACTIVITY",
                             title: activity.title,
                             detail: "\(activity.allocatedSeconds / 60)m",
+                            status: model.planningActivityStatus(
+                                id: activity.id,
+                                declaredStatus: activity.status
+                            ),
+                            liveTime: model.planningActivityTime(
+                                id: activity.id,
+                                at: timeline.date
+                            ),
                             removeKind: "activity",
                             id: activity.id
                         )
@@ -2066,6 +2155,11 @@ private struct FloatingTodayPlannerPanel: View {
                             eyebrow: "CAREER FOCUS",
                             title: focus.title,
                             detail: "\(focus.plannedSeconds / 60)m",
+                            status: model.planningActivityStatus(id: focus.id),
+                            liveTime: model.planningActivityTime(
+                                id: focus.id,
+                                at: timeline.date
+                            ),
                             removeKind: "focus",
                             id: focus.id
                         )
@@ -2084,6 +2178,7 @@ private struct FloatingTodayPlannerPanel: View {
                 }
                 .padding(10)
             }
+        }
         }
     }
 
@@ -2113,7 +2208,7 @@ private struct FloatingTodayPlannerPanel: View {
     }
 
     private var catalogControls: some View {
-        VStack(spacing: 5) {
+        HStack(spacing: 5) {
             HStack(spacing: 5) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(palette.secondaryInk)
@@ -2129,69 +2224,169 @@ private struct FloatingTodayPlannerPanel: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 11))
                 .onSubmit(model.applyPlanningQuery)
-                plannerIconButton(
-                    model.activePlanningQuery.starredOnly ? "star.fill" : "star",
-                    label: "Favorites only",
-                    selected: model.activePlanningQuery.starredOnly
-                ) {
-                    model.updatePlanningQuery { $0.starredOnly.toggle() }
-                    model.applyPlanningQuery()
-                }
-                Menu {
-                    Section("Difficulty") {
-                        ForEach(VoicePlanningDifficulty.allCases, id: \.rawValue) { difficulty in
-                            Button {
-                                model.updatePlanningQuery { query in
-                                    if query.difficulty.contains(difficulty) {
-                                        query.difficulty.remove(difficulty)
-                                    } else {
-                                        query.difficulty.insert(difficulty)
-                                    }
-                                }
-                                model.applyPlanningQuery()
-                            } label: {
-                                Label(
-                                    difficulty.rawValue.capitalized,
-                                    systemImage: model.activePlanningQuery.difficulty.contains(difficulty)
-                                        ? "checkmark" : "circle"
-                                )
-                            }
-                        }
-                    }
-                    Section("Sort") {
-                        ForEach(VoicePlanningSort.allCases, id: \.rawValue) { sort in
-                            Button {
-                                model.updatePlanningQuery { $0.sort = sort }
-                                model.applyPlanningQuery()
-                            } label: {
-                                Label(
-                                    sort.rawValue.capitalized,
-                                    systemImage: model.activePlanningQuery.sort == sort
-                                        ? "checkmark" : "circle"
-                                )
-                            }
-                        }
-                    }
-                } label: {
-                    Image(systemName: "line.3.horizontal.decrease")
-                        .frame(width: 26, height: 26)
-                }
-                .menuStyle(.borderlessButton)
-                .help("Filter and sort")
-                .accessibilityLabel("Filter and sort")
             }
             .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity)
             .frame(height: 34)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(palette.glassHighlight.opacity(palette.isDark ? 0.16 : 0.46))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(palette.coolBorder.opacity(0.72), lineWidth: 0.8)
-                    )
-            )
+            .background(plannerControlBackground)
+
+            plannerIconButton(
+                model.activePlanningQuery.starredOnly ? "star.fill" : "star",
+                label: "Favorites only",
+                selected: model.activePlanningQuery.starredOnly
+            ) {
+                model.updatePlanningQuery { $0.starredOnly.toggle() }
+                model.applyPlanningQuery()
+            }
+
+            Menu {
+                Section("Review") {
+                    ForEach(
+                        [VoicePlanningAttention.due, .needsReview],
+                        id: \.rawValue
+                    ) { attention in
+                        planningAttentionButton(attention)
+                    }
+                }
+                Section("Result") {
+                    ForEach(
+                        [
+                            VoicePlanningAttention.solved,
+                            .helped,
+                            .failed,
+                            .todo,
+                        ],
+                        id: \.rawValue
+                    ) { attention in
+                        planningAttentionButton(attention)
+                    }
+                }
+                Section("Difficulty") {
+                    ForEach(VoicePlanningDifficulty.allCases, id: \.rawValue) { difficulty in
+                        Button {
+                            model.updatePlanningQuery { query in
+                                if query.difficulty.contains(difficulty) {
+                                    query.difficulty.remove(difficulty)
+                                } else {
+                                    query.difficulty.insert(difficulty)
+                                }
+                            }
+                            model.applyPlanningQuery()
+                        } label: {
+                            Label(
+                                "\(difficulty.rawValue.capitalized)  \(model.planningDifficultyCount(difficulty))",
+                                systemImage: model.activePlanningQuery.difficulty.contains(difficulty)
+                                    ? "checkmark" : "circle"
+                            )
+                        }
+                    }
+                }
+            } label: {
+                plannerMenuIcon(
+                    "line.3.horizontal.decrease",
+                    selected: !model.activePlanningQuery.attention.isEmpty
+                        || !model.activePlanningQuery.difficulty.isEmpty
+                )
+            }
+            .menuStyle(.borderlessButton)
+            .help("Filter activities")
+            .accessibilityLabel("Filter activities")
+
+            Menu {
+                Section("Order by") {
+                    ForEach(VoicePlanningSort.allCases, id: \.rawValue) { sort in
+                        Button {
+                            model.updatePlanningQuery { $0.sort = sort }
+                            model.applyPlanningQuery()
+                        } label: {
+                            Label(
+                                sort.rawValue.capitalized,
+                                systemImage: model.activePlanningQuery.sort == sort
+                                    ? "checkmark" : "circle"
+                            )
+                        }
+                    }
+                }
+                Section("Direction") {
+                    ForEach(
+                        [VoicePlanningDirection.descending, .ascending],
+                        id: \.rawValue
+                    ) { direction in
+                        Button {
+                            model.updatePlanningQuery { $0.direction = direction }
+                            model.applyPlanningQuery()
+                        } label: {
+                            Label(
+                                direction == .descending ? "High to low" : "Low to high",
+                                systemImage: model.activePlanningQuery.direction == direction
+                                    ? "checkmark" : "circle"
+                            )
+                        }
+                    }
+                }
+            } label: {
+                plannerMenuIcon(
+                    model.activePlanningQuery.direction == .descending
+                        ? "arrow.down" : "arrow.up",
+                    selected: false,
+                    badge: "arrow.up.arrow.down"
+                )
+            }
+            .menuStyle(.borderlessButton)
+            .help("Sort activities")
+            .accessibilityLabel("Sort activities")
         }
         .padding(.horizontal, 9)
+    }
+
+    private var plannerControlBackground: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(palette.glassHighlight.opacity(palette.isDark ? 0.16 : 0.46))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(palette.coolBorder.opacity(0.72), lineWidth: 0.8)
+            )
+    }
+
+    private func plannerMenuIcon(
+        _ symbol: String,
+        selected: Bool,
+        badge: String? = nil
+    ) -> some View {
+        ZStack(alignment: .bottomTrailing) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+            if let badge {
+                Image(systemName: badge)
+                    .font(.system(size: 5, weight: .bold))
+                    .offset(x: 4, y: 4)
+            }
+        }
+        .foregroundStyle(selected ? palette.tealDark : palette.secondaryInk)
+        .frame(width: 32, height: 32)
+        .contentShape(Rectangle())
+        .background(plannerControlBackground)
+    }
+
+    private func planningAttentionButton(
+        _ attention: VoicePlanningAttention
+    ) -> some View {
+        Button {
+            model.updatePlanningQuery { query in
+                if query.attention.contains(attention) {
+                    query.attention.remove(attention)
+                } else {
+                    query.attention.insert(attention)
+                }
+            }
+            model.applyPlanningQuery()
+        } label: {
+            Label(
+                "\(attention.title)  \(model.planningAttentionCount(attention))",
+                systemImage: model.activePlanningQuery.attention.contains(attention)
+                    ? "checkmark" : "circle"
+            )
+        }
     }
 
     private var catalogList: some View {
@@ -2329,28 +2524,31 @@ private struct FloatingTodayPlannerPanel: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 5) {
                         ForEach(model.planningState.selections) { selection in
-                            HStack(spacing: 4) {
+                            Button {
+                                model.removePlanningSelection(selection.id)
+                            } label: {
                                 Text(selection.title)
                                     .font(.system(size: 9, weight: .semibold))
                                     .lineLimit(1)
-                                Button {
-                                    model.removePlanningSelection(selection.id)
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 7, weight: .bold))
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Remove \(selection.title)")
+                                    .padding(.horizontal, 9)
+                                    .frame(height: 24)
+                                    .contentShape(Capsule())
+                                    .background(
+                                        Capsule()
+                                            .fill(
+                                                palette.teal.opacity(
+                                                    palette.isDark ? 0.22 : 0.12
+                                                )
+                                            )
+                                    )
                             }
-                            .padding(.horizontal, 7)
-                            .frame(height: 24)
-                            .background(
-                                Capsule()
-                                    .fill(palette.teal.opacity(palette.isDark ? 0.22 : 0.12))
-                            )
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Deselect \(selection.title)")
                         }
                     }
                 }
+                .scrollClipDisabled()
+                .accessibilityLabel("Selected activities")
             }
             HStack(spacing: 7) {
                 VStack(alignment: .leading, spacing: 1) {
@@ -2383,61 +2581,109 @@ private struct FloatingTodayPlannerPanel: View {
     }
 
     private var fullSessionComposer: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             Text("Build one timed session from the highest-frequency eligible work.")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(palette.secondaryInk)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            fullSessionStepper("Coding", value: $model.planningFullCoding)
-            fullSessionStepper("System design", value: $model.planningFullSystemDesign)
-            fullSessionStepper("Behavioral", value: $model.planningFullBehavioral)
-            Spacer()
-            Button(action: model.createPlanningFullSession) {
-                HStack {
-                    if model.planningMutationInFlight {
-                        ProgressView().controlSize(.small)
-                    }
-                    Text("Create full session")
-                        .font(.system(size: 11, weight: .bold))
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 34)
+            HStack(spacing: 7) {
+                fullSessionCard(
+                    "Coding",
+                    mark: "C",
+                    minutes: VoicePlanningFullSessionPolicy.codingMinutes,
+                    value: $model.planningFullCoding
+                )
+                fullSessionCard(
+                    "System design",
+                    mark: "S",
+                    minutes: VoicePlanningFullSessionPolicy.interviewMinutes,
+                    value: $model.planningFullSystemDesign
+                )
+                fullSessionCard(
+                    "Behavioral",
+                    mark: "B",
+                    minutes: VoicePlanningFullSessionPolicy.interviewMinutes,
+                    value: $model.planningFullBehavioral
+                )
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(
-                model.planningMutationInFlight
-                    || model.planningFullCoding
-                        + model.planningFullSystemDesign
-                        + model.planningFullBehavioral == 0
-            )
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("SESSION COUNTDOWN")
+                        .font(.system(size: 8, weight: .bold))
+                        .tracking(0.7)
+                        .foregroundStyle(palette.secondaryInk)
+                    Text("Coding 40m · interviews 60m each")
+                        .font(.system(size: 9))
+                        .foregroundStyle(palette.secondaryInk)
+                }
+                Spacer()
+                Text("\(model.planningFullSessionMinutes)m")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.tealDark)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 46)
+            .background(plannerControlBackground)
+            Spacer()
+            HStack(spacing: 7) {
+                Button(action: model.createPlanningFullSession) {
+                    HStack {
+                        if model.planningMutationInFlight {
+                            ProgressView().controlSize(.small)
+                        }
+                        Text("Create full session")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 32)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(
+                    model.planningMutationInFlight
+                        || model.planningFullCoding
+                            + model.planningFullSystemDesign
+                            + model.planningFullBehavioral == 0
+                )
+            }
         }
         .padding(14)
     }
 
-    private func fullSessionStepper(_ title: String, value: Binding<Int>) -> some View {
-        HStack {
+    private func fullSessionCard(
+        _ title: String,
+        mark: String,
+        minutes: Int,
+        value: Binding<Int>
+    ) -> some View {
+        VStack(spacing: 6) {
+            Text(mark)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(palette.tealDark)
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
-            Spacer()
-            Stepper("", value: value, in: 0...20)
-                .labelsHidden()
+                .font(.system(size: 9, weight: .bold))
+                .lineLimit(1)
+            Text("\(minutes)m each")
+                .font(.system(size: 8))
+                .foregroundStyle(palette.secondaryInk)
+            Stepper(value: value, in: 0...20) {
+                Text("\(value.wrappedValue)")
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+            }
+            .labelsHidden()
+            .accessibilityLabel("\(title) count")
             Text("\(value.wrappedValue)")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .frame(width: 24, alignment: .trailing)
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
         }
-        .padding(.horizontal, 10)
-        .frame(height: 40)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(palette.glassHighlight.opacity(palette.isDark ? 0.14 : 0.42))
-        )
+        .padding(9)
+        .frame(maxWidth: .infinity, minHeight: 122)
+        .background(plannerControlBackground)
     }
 
     private func catalogRow(_ item: VoicePlanningCatalogItem) -> some View {
         let draftID = "practice:\(model.planningState.selectedSpecialty.rawValue):\(item.id)"
         let selected = model.planningState.selections.contains { $0.id == draftID }
-        return HStack(spacing: 8) {
-            Button {
+        return Button {
                 model.togglePlanningSelection(item)
             } label: {
                 HStack(spacing: 8) {
@@ -2461,19 +2707,16 @@ private struct FloatingTodayPlannerPanel: View {
                         .lineLimit(1)
                     }
                     Spacer()
+                    Image(systemName: "flag")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.secondaryInk)
+                        .frame(width: 28, height: 28)
+                        .accessibilityHidden(true)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(!item.eligible)
-            plannerIconButton(
-                item.starred ? "star.fill" : "star",
-                label: item.starred ? "Remove favorite" : "Add favorite",
-                selected: item.starred
-            ) {
-                model.togglePlanningStar(item)
-            }
-        }
         .padding(.horizontal, 9)
         .frame(height: 47)
         .background(
@@ -2507,6 +2750,7 @@ private struct FloatingTodayPlannerPanel: View {
                 .font(.system(size: 9, weight: .bold))
                 .frame(maxWidth: .infinity)
                 .frame(height: 28)
+                .contentShape(Rectangle())
                 .foregroundStyle(
                     model.planningState.selectedCategory == value
                         ? palette.tealDark
@@ -2529,6 +2773,8 @@ private struct FloatingTodayPlannerPanel: View {
         eyebrow: String,
         title: String,
         detail: String,
+        status: VoicePlanningCurrentStatus,
+        liveTime: String?,
         removeKind: String,
         id: String
     ) -> some View {
@@ -2547,6 +2793,18 @@ private struct FloatingTodayPlannerPanel: View {
                     .foregroundStyle(palette.secondaryInk)
             }
             Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(status.title)
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(
+                        status == .running ? palette.connectedIdle : palette.secondaryInk
+                    )
+                if let liveTime {
+                    Text(liveTime)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(palette.tealDark)
+                }
+            }
             plannerIconButton("trash", label: "Remove \(title)") {
                 model.removePlanningItem(kind: removeKind, id: id)
             }
@@ -2558,8 +2816,17 @@ private struct FloatingTodayPlannerPanel: View {
                 .fill(palette.glassHighlight.opacity(palette.isDark ? 0.12 : 0.38))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(palette.coolBorder.opacity(0.62), lineWidth: 0.7)
+                        .stroke(
+                            status == .running
+                                ? palette.connectedIdle.opacity(0.84)
+                                : palette.coolBorder.opacity(0.62),
+                            lineWidth: status == .running ? 1.4 : 0.7
+                        )
                 )
+        )
+        .shadow(
+            color: status == .running ? palette.connectedIdle.opacity(0.16) : .clear,
+            radius: 5
         )
     }
 
@@ -2595,6 +2862,7 @@ private struct FloatingTodayPlannerPanel: View {
                 .font(.system(size: 10, weight: .bold))
                 .frame(maxWidth: .infinity)
                 .frame(height: 28)
+                .contentShape(Rectangle())
                 .foregroundStyle(selected ? palette.tealDark : palette.secondaryInk)
                 .background(
                     RoundedRectangle(cornerRadius: 9)

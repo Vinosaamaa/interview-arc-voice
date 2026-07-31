@@ -102,8 +102,8 @@ import Testing
     )
 }
 
-@Test func expandedTimerReplacesDuplicateClockClusterWithPreviousMemoActions() {
-    #expect(FloatingWidgetCompactTimerLayoutPolicy.showsPreviousMemoActionsWhenExpanded)
+@Test func expandedTimerKeepsTheTitleAndClockClusterReadable() {
+    #expect(!FloatingWidgetCompactTimerLayoutPolicy.showsPreviousMemoActionsWhenExpanded)
 }
 
 @Test func backgroundReconciliationNeverReplacesAnActiveRecordingPresentation() {
