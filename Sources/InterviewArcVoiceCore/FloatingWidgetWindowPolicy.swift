@@ -56,7 +56,6 @@ public enum FloatingWidgetRecoveryPolicy {
 public enum FloatingWidgetWindowPolicy {
     public static let hostIsOpaque = false
     public static let usesNativeWindowShadow = false
-    public static let usesNativeBackgroundDrag = false
     public static let collapsedWidth: CGFloat = 250
     public static let recordingWidth: CGFloat = 340
     public static let miniMicrophoneWidth: CGFloat = 48
@@ -82,6 +81,12 @@ public enum FloatingWidgetWindowPolicy {
     public static let timerPanelContentAnchorsToCapsule = true
     public static let contentFillsAnimatedHost = true
     public static let contentAlignment: FloatingWidgetContentAlignment = .bottomTrailing
+
+    public static func usesNativeBackgroundDrag(
+        for mode: VoiceWidgetSizeMode
+    ) -> Bool {
+        mode == .standard
+    }
 
     public static func recordingWaveformBarWidth(
         availableWidth: CGFloat
@@ -110,6 +115,14 @@ public enum FloatingWidgetWindowPolicy {
             finishingActivityID: nil,
             activityPickerExpanded: false
         )
+    }
+}
+
+public enum PlannerSelectionTrayPolicy {
+    public static let collapsedVisibleCount = 3
+
+    public static func hiddenCount(selectionCount: Int) -> Int {
+        max(0, selectionCount - collapsedVisibleCount)
     }
 }
 

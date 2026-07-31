@@ -196,6 +196,38 @@ func plannerDecodesTheAuthoritativeWorkerShape() throws {
 }
 
 @Test
+func plannerMutationCarriesTheAuthoritativeTodaySnapshot() throws {
+    let payload = """
+    {
+      "protocolVersion": 1,
+      "duplicate": false,
+      "authoritative": {
+        "workbench": {"id": "workbench-1", "date": "2026-07-31"},
+        "sessions": [{
+          "id": "session-2",
+          "label": "Session 2",
+          "allocatedSeconds": 3600,
+          "activityIds": ["activity-2"]
+        }],
+        "activities": [{
+          "id": "activity-2",
+          "title": "Number of Islands",
+          "allocatedSeconds": 2400,
+          "questionId": "number-of-islands",
+          "sessionId": "session-2",
+          "status": "planned"
+        }],
+        "focusBlocks": []
+      }
+    }
+    """.data(using: .utf8)!
+
+    let decoded = try JSONDecoder().decode(VoicePlanningMutationResponse.self, from: payload)
+    #expect(decoded.authoritative?.sessions.first?.id == "session-2")
+    #expect(decoded.authoritative?.activities.first?.title == "Number of Islands")
+}
+
+@Test
 func plannerGeometryKeepsTheRecorderAsTheBottomAnchor() {
     #expect(FloatingWidgetWindowPolicy.plannerWidth > FloatingWidgetWindowPolicy.expandedWidth)
     #expect(FloatingWidgetWindowPolicy.plannerHostHeight > FloatingWidgetWindowPolicy.expandedDrawerHostHeight)
