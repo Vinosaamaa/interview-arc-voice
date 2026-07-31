@@ -2707,7 +2707,10 @@ private struct FloatingTodayPlannerPanel: View {
             ),
             anchor: .top
         )
-        .frame(minHeight: 176, maxHeight: 244)
+        // The catalog owns the flexible middle of the Activities surface. Letting
+        // it absorb the available height keeps Custom activity attached to the
+        // fixed selection tray instead of leaving a dead band beneath it.
+        .frame(minHeight: 176, maxHeight: .infinity)
     }
 
     private var careerFocus: some View {
@@ -2905,76 +2908,6 @@ private struct FloatingTodayPlannerPanel: View {
                                 .stroke(palette.coolBorder.opacity(0.72), lineWidth: 0.8)
                         )
                 )
-            }
-            .frame(height: 25)
-
-            HStack(spacing: 7) {
-                Group {
-                    if model.planningState.selections.isEmpty {
-                        Text("Selected activities will appear here")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(palette.secondaryInk)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    } else {
-                        HorizontalDragScrollView {
-                            HStack(spacing: 5) {
-                                ForEach(model.planningState.selections) { selection in
-                                    Button {
-                                        model.removePlanningSelection(selection.id)
-                                    } label: {
-                                        HStack(spacing: 5) {
-                                            Image(systemName: "circle.grid.2x3.fill")
-                                                .font(.system(size: 7, weight: .semibold))
-                                            Text(selection.title)
-                                                .font(.system(size: 9, weight: .semibold))
-                                                .lineLimit(1)
-                                        }
-                                        .padding(.horizontal, 9)
-                                        .frame(height: 26)
-                                        .contentShape(Capsule())
-                                        .background(
-                                            Capsule()
-                                                .fill(
-                                                    palette.teal.opacity(
-                                                        palette.isDark ? 0.22 : 0.12
-                                                    )
-                                                )
-                                                .overlay(
-                                                    Capsule()
-                                                        .stroke(
-                                                            palette.teal.opacity(0.42),
-                                                            lineWidth: 0.7
-                                                        )
-                                                )
-                                        )
-                                    }
-                                    .buttonStyle(PlannerPressButtonStyle())
-                                    .voiceHoverFeedback(cornerRadius: 13, tint: palette.teal)
-                                    .accessibilityLabel("Deselect \(selection.title)")
-                                }
-                            }
-                            .fixedSize(horizontal: true, vertical: false)
-                        }
-                        .padding(.trailing, 6)
-                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                        .accessibilityLabel("Selected activities")
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .layoutPriority(0)
-                .frame(height: 30)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(palette.glassHighlight.opacity(palette.isDark ? 0.10 : 0.30))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .stroke(
-                                    palette.coolBorder.opacity(0.62),
-                                    style: StrokeStyle(lineWidth: 0.7, dash: [4])
-                                )
-                        )
-                )
-
                 Button(action: model.submitPlanningSelection) {
                     Text(
                         model.planningSelectionCount == 0
@@ -3016,7 +2949,72 @@ private struct FloatingTodayPlannerPanel: View {
                             || model.planningResponse?.workbench == nil
                     )
             }
-            .frame(height: 32)
+            .frame(height: 30)
+
+            Group {
+                if model.planningState.selections.isEmpty {
+                    Text("Selected activities will appear here")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(palette.secondaryInk)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                } else {
+                    HorizontalDragScrollView {
+                        HStack(spacing: 5) {
+                            ForEach(model.planningState.selections) { selection in
+                                Button {
+                                    model.removePlanningSelection(selection.id)
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "circle.grid.2x3.fill")
+                                            .font(.system(size: 7, weight: .semibold))
+                                        Text(selection.title)
+                                            .font(.system(size: 9, weight: .semibold))
+                                            .lineLimit(1)
+                                    }
+                                    .padding(.horizontal, 9)
+                                    .frame(height: 26)
+                                    .contentShape(Capsule())
+                                    .background(
+                                        Capsule()
+                                            .fill(
+                                                palette.teal.opacity(
+                                                    palette.isDark ? 0.22 : 0.12
+                                                )
+                                            )
+                                            .overlay(
+                                                Capsule()
+                                                    .stroke(
+                                                        palette.teal.opacity(0.42),
+                                                        lineWidth: 0.7
+                                                    )
+                                            )
+                                    )
+                                }
+                                .buttonStyle(PlannerPressButtonStyle())
+                                .voiceHoverFeedback(cornerRadius: 13, tint: palette.teal)
+                                .accessibilityLabel("Deselect \(selection.title)")
+                            }
+                        }
+                        .fixedSize(horizontal: true, vertical: false)
+                    }
+                    .padding(.horizontal, 6)
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .accessibilityLabel("Selected activities")
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 30)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(palette.glassHighlight.opacity(palette.isDark ? 0.10 : 0.30))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(
+                                palette.coolBorder.opacity(0.62),
+                                style: StrokeStyle(lineWidth: 0.7, dash: [4])
+                            )
+                    )
+            )
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

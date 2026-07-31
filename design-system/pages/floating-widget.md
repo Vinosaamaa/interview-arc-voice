@@ -188,10 +188,10 @@ least 58 points for the activity title.
   cards, and one persistent review tray. Selected cards use a tinted border
   and fill; they do not add a checkbox before the title or copy their title
   into search.
-- The review tray keeps its summary, destination, and Add action in fixed
-  geometry. Its selected-chip rail ends before the Add action and clips at its
-  own rounded boundary, with a visible gutter separating the moving rail from
-  the fixed action. Trackpad scrolling, vertical mouse-wheel scrolling,
+- The review tray keeps its summary, destination, and Add action together in a
+  fixed top row. Its selected-chip rail owns the full-width row beneath those
+  controls and clips at its own rounded boundary. Trackpad scrolling, vertical
+  mouse-wheel scrolling,
   and click-dragging all pan the rail horizontally. A stationary click
   deselects a chip; crossing the native drag threshold must never deselect it.
   The entire tray is bottom-pinned at the same vertical position for every
@@ -385,10 +385,10 @@ least 58 points for the activity title.
 - Plan Today preserves a stationary microphone, independent specialty
   filters, selected work, and the exact previous Focus/collapsed disclosure
   through open, close, Mini entry, recording, and server-conflict refresh.
-- Standard idle memo actions use one in-place shelf: Play, Insert, and More.
-  More swaps those controls for Back, Copy, Save, and Plan Today while the
-  title viewport and trailing microphone remain fixed. Active timer capsules
-  never expose this memo shelf.
+- Standard idle memo actions use one in-place shelf containing every applicable
+  action—Play, Insert, Copy, Save, and Plan Today—while the title viewport and
+  trailing microphone remain fixed. There is no More or Back mode. Active timer
+  capsules never expose this memo shelf.
 - Plan Today uses an outer Focus/Plan Today switcher and an independent inner
   Today/Activities/Full session tab row. Today is the default and highlights
   the authoritative running item with its live clock.
