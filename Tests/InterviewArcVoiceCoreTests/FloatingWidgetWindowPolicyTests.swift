@@ -60,29 +60,19 @@ import Foundation
     #expect(FloatingWidgetCompactTimerLayoutPolicy.titleFillsAvailableHeight)
 }
 
-@Test func floatingMemoShelfKeepsOnlyPrimaryActionsBesideTheTitle() {
+@Test func expandedFloatingMemoShelfShowsEveryAvailableActionWithoutMore() {
     #expect(
         FloatingWidgetMemoActionPolicy.actions(
-            shelf: .primary,
             hasTranscript: true,
             hasAudio: true,
             canPlanToday: true
-        ) == [.play, .insert, .more]
-    )
-    #expect(
-        FloatingWidgetMemoActionPolicy.actions(
-            shelf: .secondary,
-            hasTranscript: true,
-            hasAudio: true,
-            canPlanToday: true
-        ) == [.back, .copy, .save, .planToday]
+        ) == [.play, .insert, .copy, .save, .planToday]
     )
 }
 
 @Test func floatingMemoShelfAvoidsAnEmptyMoreMode() {
     #expect(
         FloatingWidgetMemoActionPolicy.actions(
-            shelf: .primary,
             hasTranscript: false,
             hasAudio: false,
             canPlanToday: true
@@ -90,7 +80,6 @@ import Foundation
     )
     #expect(
         FloatingWidgetMemoActionPolicy.actions(
-            shelf: .primary,
             hasTranscript: false,
             hasAudio: false,
             canPlanToday: false

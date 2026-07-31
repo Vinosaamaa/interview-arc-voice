@@ -177,6 +177,9 @@ least 58 points for the activity title.
   timers keeps the compact capsule free of a Plan icon. Mini has no visible
   Plan control; its configurable shortcut and the menu-bar command open the
   same upper surface.
+- Standard expanded memo state has no More/Back shelf. It shows every applicable
+  action in one row—Play, Insert, Copy, Save, and Plan Today—while preserving
+  the reserved title width and far-right microphone anchor.
 - The recorder remains the bottom-right anchor. Planner expansion grows left
   and upward, preserves the real ten-point transparent gap, and never moves
   the microphone. Reduce Motion replaces geometry emphasis with a short
@@ -187,15 +190,45 @@ least 58 points for the activity title.
   into search.
 - The review tray keeps its summary, destination, and Add action in fixed
   geometry. Its selected-chip rail ends before the Add action and clips at its
-  own rounded boundary. Trackpad scrolling, vertical mouse-wheel scrolling,
+  own rounded boundary, with a visible gutter separating the moving rail from
+  the fixed action. Trackpad scrolling, vertical mouse-wheel scrolling,
   and click-dragging all pan the rail horizontally. A stationary click
   deselects a chip; crossing the native drag threshold must never deselect it.
+  The entire tray is bottom-pinned at the same vertical position for every
+  specialty, regardless of the category content height above it.
 - Coding, System design, and Behavioral each own independent search, favorite,
   difficulty, and sort state. Career contains the Job applications focus block
   inside Activities, never inside Full session.
 - The surface tabs and specialty chips are top-anchored. Switching among
   Coding, System design, Behavioral, and Career preserves the exact vertical
   gap between those two control families even when their content heights differ.
+- Favorite, Filter, and Sort are full hit-target controls with consistent hover
+  and press feedback. Filter and Sort popover footer actions are surfaced
+  buttons, not bare text; Clear, Reset, and Done expose the same feedback.
+- Standalone, One session, and Add activities use the same planner hover and
+  press language. Destination buttons expose an unmistakable selected state;
+  Add activities exposes distinct enabled and disabled states without moving.
+- Custom activity expands as a surfaced form with genuinely focusable title,
+  URL, prompt, and minutes inputs. Duration is labeled in minutes rather than
+  shown as an unexplained number. Cancel and Add to selection use the planner's
+  surfaced hover, press, enabled, and disabled states.
+- Today renders each session as a distinct parent card. Its activities live in
+  an inset child stack with a visible hierarchy rail and their own quiet row
+  surfaces; standalone work stays outside beneath its own heading. Parent and
+  child rows must never share one visually flat list treatment.
+- Start fresh today is one surfaced footer button containing its action label
+  and eligibility message. It exposes hover, press, and disabled feedback and
+  uses a sunrise icon rather than the header's refresh symbol; it must never
+  render as loose footer text.
+- Switching Today, Activities, and Full session never cross-composites their
+  content trees. Only the selected tab and direct controls animate, preventing
+  ghost images when a populated Activities view replaces Full session.
+- Full session keeps its Create action directly beneath the three specialty
+  cards' supporting content and anchored at the bottom of the panel. Beneath
+  the cards, a high-contrast Session countdown summarizes the live specialty
+  minute breakdown and total duration, followed by concise recipe/eligibility
+  guidance. Cards, count controls, and the primary action expose consistent
+  hover and press feedback; empty space must not replace useful session context.
 - Voice caches selection and presentation only. Eligibility, current Today
   work, removability, mutation identity, and conflict decisions come from the
   authenticated Worker. Exact retries reuse one mutation ID; changed work

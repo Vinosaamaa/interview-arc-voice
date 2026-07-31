@@ -718,6 +718,11 @@ private struct PasteboardSnapshot {
 }
 
 @MainActor
+private final class VoiceFloatingPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
+
+@MainActor
 final class FloatingPanelController {
     static let shared = FloatingPanelController()
     private var panel: NSPanel?
@@ -731,7 +736,7 @@ final class FloatingPanelController {
             return
         }
         let initialSize = model.floatingSize
-        let panel = NSPanel(
+        let panel = VoiceFloatingPanel(
             contentRect: NSRect(
                 x: 0,
                 y: 0,
@@ -782,6 +787,16 @@ final class FloatingPanelController {
     func toggle(model: VoiceBridgeModel) {
         guard let panel else { show(model: model); return }
         panel.isVisible ? panel.orderOut(nil) : panel.orderFrontRegardless()
+    }
+
+    func beginPlannerTextEntry() {
+        guard let panel else { return }
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.makeKey()
+    }
+
+    func endPlannerTextEntry() {
+        panel?.becomesKeyOnlyIfNeeded = true
     }
 
     func setSize(width: CGFloat, height: CGFloat, reduceMotion: Bool) {
@@ -974,6 +989,10 @@ private final class HorizontalDragScrollNSView: NSScrollView {
         super.init(frame: frameRect)
         drawsBackground = false
         borderType = .noBorder
+        wantsLayer = true
+        layer?.masksToBounds = true
+        contentView.wantsLayer = true
+        contentView.layer?.masksToBounds = true
         hasHorizontalScroller = false
         hasVerticalScroller = false
         horizontalScrollElasticity = .automatic
@@ -1138,7 +1157,6 @@ struct FloatingRecorderView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var miniSmoothedLevel = 0.0
     @State private var suppressMiniClick = false
-    @State private var memoShelf: FloatingWidgetMemoShelf = .primary
 
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
@@ -1196,15 +1214,6 @@ struct FloatingRecorderView: View {
                 previous: miniSmoothedLevel,
                 current: current
             )
-        }
-        .onChange(of: model.hasTimerInstrument) { _, _ in
-            memoShelf = .primary
-        }
-        .onChange(of: model.lastTranscript) { _, _ in
-            memoShelf = .primary
-        }
-        .onChange(of: model.hasLastAudio) { _, _ in
-            memoShelf = .primary
         }
     }
 
@@ -1358,7 +1367,6 @@ struct FloatingRecorderView: View {
             isBusy: model.isBusy
         )
         let actions = FloatingWidgetMemoActionPolicy.actions(
-            shelf: memoShelf,
             hasTranscript: !model.lastTranscript.isEmpty,
             hasAudio: model.hasLastAudio,
             canPlanToday: canPlanToday
@@ -1388,24 +1396,6 @@ struct FloatingRecorderView: View {
                 label: "Insert last transcript",
                 action: model.reinsertLastTranscript
             )
-        case .more:
-            memoButton(
-                symbol: "ellipsis",
-                label: "More memo actions"
-            ) {
-                withAnimation(memoShelfAnimation) {
-                    memoShelf = .secondary
-                }
-            }
-        case .back:
-            memoButton(
-                symbol: "chevron.right",
-                label: "Back to primary memo actions"
-            ) {
-                withAnimation(memoShelfAnimation) {
-                    memoShelf = .primary
-                }
-            }
         case .copy:
             memoButton(
                 symbol: "doc.on.doc",
@@ -1423,16 +1413,9 @@ struct FloatingRecorderView: View {
                 symbol: "calendar.badge.plus",
                 label: "Plan today"
             ) {
-                memoShelf = .primary
                 model.togglePlanner()
             }
         }
-    }
-
-    private var memoShelfAnimation: Animation? {
-        reduceMotion
-            ? nil
-            : .easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)
     }
 
     @ViewBuilder
@@ -2033,6 +2016,7 @@ private struct FloatingTodayPlannerPanel: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var filterPresented = false
     @State private var sortPresented = false
+    @FocusState private var customTitleFocused: Bool
 
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
@@ -2140,9 +2124,7 @@ private struct FloatingTodayPlannerPanel: View {
         HStack(spacing: 0) {
             ForEach(VoicePlanningSurface.allCases, id: \.rawValue) { surface in
                 Button {
-                    withAnimation(plannerAnimation) {
-                        model.setPlanningSurface(surface)
-                    }
+                    model.setPlanningSurface(surface)
                 } label: {
                     Text(surface.rawValue)
                         .font(.system(size: 10, weight: .bold))
@@ -2160,6 +2142,10 @@ private struct FloatingTodayPlannerPanel: View {
                                     model.planningState.surface == surface
                                         ? palette.linkOff.opacity(palette.isDark ? 0.92 : 0.96)
                                         : Color.clear
+                                )
+                                .animation(
+                                    plannerAnimation,
+                                    value: model.planningState.surface == surface
                                 )
                         )
                 }
@@ -2244,7 +2230,7 @@ private struct FloatingTodayPlannerPanel: View {
     private var startFreshControl: some View {
         Button(action: model.startFreshPlanningDay) {
             HStack(spacing: 6) {
-                Image(systemName: "arrow.counterclockwise")
+                Image(systemName: "sunrise.fill")
                 Text("Start fresh today")
                 Spacer()
                 Text("Available after active work is finished")
@@ -2256,12 +2242,20 @@ private struct FloatingTodayPlannerPanel: View {
             .padding(.horizontal, 11)
             .frame(height: 32)
             .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(palette.glassHighlight.opacity(palette.isDark ? 0.14 : 0.44))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(palette.coolBorder.opacity(0.76), lineWidth: 0.8)
+                    )
+            )
         }
         .buttonStyle(PlannerPressButtonStyle())
         .voiceHoverFeedback(
             enabled: !model.planningMutationInFlight
                 && model.planningResponse?.workbench != nil,
-            cornerRadius: 0,
+            cornerRadius: 9,
             tint: palette.linkOff
         )
         .disabled(
@@ -2269,18 +2263,25 @@ private struct FloatingTodayPlannerPanel: View {
                 || model.planningResponse?.workbench == nil
         )
         .help("Start fresh after every started activity has a result")
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
     }
 
     private var activityComposer: some View {
         VStack(spacing: 8) {
             categoryTabs
-            if model.planningState.selectedCategory == .career {
-                careerFocus
-            } else {
-                catalogControls
-                catalogList
+            Group {
+                if model.planningState.selectedCategory == .career {
+                    careerFocus
+                } else {
+                    VStack(spacing: 8) {
+                        catalogControls
+                        catalogList
+                        customComposer
+                    }
+                }
             }
-            customComposer
+            .frame(maxHeight: .infinity, alignment: .top)
             selectionTray
         }
         .padding(.top, 2)
@@ -2349,6 +2350,7 @@ private struct FloatingTodayPlannerPanel: View {
                 }
             }
             .buttonStyle(PlannerPressButtonStyle())
+            .voiceHoverFeedback(cornerRadius: 10, tint: palette.linkOff)
             .help("Filter activities")
             .accessibilityLabel("Filter activities")
             .accessibilityValue("\(model.activePlanningQuery.activeFilterCount) active")
@@ -2371,6 +2373,7 @@ private struct FloatingTodayPlannerPanel: View {
                 }
             }
             .buttonStyle(PlannerPressButtonStyle())
+            .voiceHoverFeedback(cornerRadius: 10, tint: palette.linkOff)
             .help("Sort activities")
             .accessibilityLabel(
                 "Sort activities by \(model.activePlanningQuery.sort.title), "
@@ -2427,22 +2430,20 @@ private struct FloatingTodayPlannerPanel: View {
 
             Divider()
             HStack(spacing: 8) {
-                Button("Clear") {
+                plannerPopoverFooterButton(
+                    "Clear",
+                    enabled: model.activePlanningQuery.activeFilterCount > 0
+                ) {
                     model.updatePlanningQuery { query in
                         query.attention.removeAll()
                         query.difficulty.removeAll()
                     }
                     model.applyPlanningQuery()
                 }
-                .buttonStyle(PlannerPressButtonStyle())
-                .foregroundStyle(palette.linkOff)
-                .frame(maxWidth: .infinity, minHeight: 30)
-                .disabled(model.activePlanningQuery.activeFilterCount == 0)
 
-                Button("Done") { filterPresented = false }
-                    .buttonStyle(.borderedProminent)
-                    .tint(palette.linkOff)
-                    .frame(maxWidth: .infinity)
+                plannerPopoverFooterButton("Done", prominent: true) {
+                    filterPresented = false
+                }
             }
         }
         .padding(12)
@@ -2520,25 +2521,58 @@ private struct FloatingTodayPlannerPanel: View {
 
             Divider()
             HStack(spacing: 8) {
-                Button("Reset") {
+                plannerPopoverFooterButton("Reset") {
                     model.updatePlanningQuery { query in
                         query.sort = .frequency
                         query.direction = .descending
                     }
                     model.applyPlanningQuery()
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(palette.linkOff)
-                .frame(maxWidth: .infinity, minHeight: 30)
 
-                Button("Done") { sortPresented = false }
-                    .buttonStyle(.borderedProminent)
-                    .tint(palette.linkOff)
-                    .frame(maxWidth: .infinity)
+                plannerPopoverFooterButton("Done", prominent: true) {
+                    sortPresented = false
+                }
             }
         }
         .padding(12)
         .frame(width: 280)
+    }
+
+    private func plannerPopoverFooterButton(
+        _ title: String,
+        prominent: Bool = false,
+        enabled: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(prominent ? Color.white : palette.linkOff)
+                .frame(maxWidth: .infinity)
+                .frame(height: 31)
+                .contentShape(Rectangle())
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(
+                            prominent
+                                ? palette.linkOff
+                                : palette.glassHighlight.opacity(palette.isDark ? 0.14 : 0.46)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(
+                                    prominent
+                                        ? palette.linkOff.opacity(0.92)
+                                        : palette.coolBorder.opacity(0.78),
+                                    lineWidth: 0.8
+                                )
+                        )
+                )
+        }
+        .buttonStyle(PlannerPressButtonStyle())
+        .voiceHoverFeedback(enabled: enabled, cornerRadius: 8, tint: palette.linkOff)
+        .opacity(enabled ? 1 : 0.48)
+        .disabled(!enabled)
     }
 
     private func planningFilterSection<Content: View>(
@@ -2727,38 +2761,89 @@ private struct FloatingTodayPlannerPanel: View {
     @ViewBuilder
     private var customComposer: some View {
         if model.planningCustomPresented {
-            VStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
-                    TextField("Required title", text: $model.planningCustomTitle)
-                    TextField(
-                        "Minutes",
-                        value: $model.planningCustomMinutes,
-                        format: .number
+                    plannerCustomTextField(
+                        "Required activity title",
+                        text: $model.planningCustomTitle
                     )
-                    .frame(width: 64)
-                }
-                TextField("Optional public URL", text: $model.planningCustomURL)
-                TextField("Optional prompt or context", text: $model.planningCustomPrompt)
-                HStack {
-                    Button("Cancel") { model.planningCustomPresented = false }
-                    Spacer()
-                    Button("Add to selection", action: model.addCustomPlanningSelection)
-                        .disabled(
-                            model.planningCustomTitle
-                                .trimmingCharacters(in: .whitespacesAndNewlines)
-                                .isEmpty
+                    .focused($customTitleFocused)
+
+                    HStack(spacing: 5) {
+                        TextField(
+                            "40",
+                            value: $model.planningCustomMinutes,
+                            format: .number
                         )
+                        .textFieldStyle(.plain)
+                        .multilineTextAlignment(.trailing)
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .frame(width: 34)
+                        Text("min")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(palette.secondaryInk)
+                    }
+                    .padding(.horizontal, 9)
+                    .frame(width: 84, height: 32)
+                    .background(plannerControlBackground)
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            FloatingPanelController.shared.beginPlannerTextEntry()
+                        }
+                    )
+                    .accessibilityLabel("Planned minutes")
+                }
+                plannerCustomTextField("Optional public URL", text: $model.planningCustomURL)
+                plannerCustomTextField(
+                    "Optional prompt or context",
+                    text: $model.planningCustomPrompt
+                )
+                HStack(spacing: 8) {
+                    plannerPopoverFooterButton("Cancel") {
+                        withAnimation(plannerAnimation) {
+                            model.planningCustomPresented = false
+                        }
+                        FloatingPanelController.shared.endPlannerTextEntry()
+                    }
+                    Spacer()
+                    plannerPopoverFooterButton(
+                        "Add to selection",
+                        prominent: true,
+                        enabled: !model.planningCustomTitle
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                            .isEmpty
+                    ) {
+                        withAnimation(plannerAnimation) {
+                            model.addCustomPlanningSelection()
+                        }
+                        FloatingPanelController.shared.endPlannerTextEntry()
+                    }
+                    .frame(width: 116)
                 }
             }
-            .font(.system(size: 10))
-            .textFieldStyle(.roundedBorder)
-            .padding(9)
-            .background(palette.timerSurface.opacity(0.55))
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(palette.timerSurface.opacity(0.58))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .stroke(palette.coolBorder.opacity(0.76), lineWidth: 0.8)
+                    )
+            )
+            .padding(.horizontal, 10)
             .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .bottom)))
+            .onDisappear {
+                FloatingPanelController.shared.endPlannerTextEntry()
+            }
         } else if model.planningState.selectedCategory != .career {
             Button {
                 withAnimation(plannerAnimation) {
                     model.planningCustomPresented = true
+                }
+                Task { @MainActor in
+                    await Task.yield()
+                    FloatingPanelController.shared.beginPlannerTextEntry()
+                    customTitleFocused = true
                 }
             } label: {
                 Label("Custom activity", systemImage: "plus")
@@ -2766,7 +2851,8 @@ private struct FloatingTodayPlannerPanel: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 27)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PlannerPressButtonStyle())
+            .voiceHoverFeedback(cornerRadius: 9, tint: palette.teal)
             .foregroundStyle(palette.tealDark)
             .background(
                 RoundedRectangle(cornerRadius: 9)
@@ -2774,6 +2860,24 @@ private struct FloatingTodayPlannerPanel: View {
             )
             .padding(.horizontal, 10)
         }
+    }
+
+    private func plannerCustomTextField(
+        _ placeholder: String,
+        text: Binding<String>
+    ) -> some View {
+        TextField(placeholder, text: text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 10, weight: .medium))
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity)
+            .frame(height: 32)
+            .background(plannerControlBackground)
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    FloatingPanelController.shared.beginPlannerTextEntry()
+                }
+            )
     }
 
     private var selectionTray: some View {
@@ -2787,13 +2891,20 @@ private struct FloatingTodayPlannerPanel: View {
                     .font(.system(size: 10, weight: .bold, design: .rounded))
                     .monospacedDigit()
                 Spacer()
-                Picker("", selection: $model.planningDestination) {
-                    Text("Standalone").tag("standalone")
-                    Text("One session").tag("session")
+                HStack(spacing: 0) {
+                    planningDestinationButton("Standalone", value: "standalone")
+                    planningDestinationButton("One session", value: "session")
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 170)
+                .padding(2)
+                .frame(width: 170, height: 27)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(palette.glassHighlight.opacity(palette.isDark ? 0.14 : 0.42))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(palette.coolBorder.opacity(0.72), lineWidth: 0.8)
+                        )
+                )
             }
             .frame(height: 25)
 
@@ -2844,6 +2955,7 @@ private struct FloatingTodayPlannerPanel: View {
                             }
                             .fixedSize(horizontal: true, vertical: false)
                         }
+                        .padding(.trailing, 6)
                         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                         .accessibilityLabel("Selected activities")
                     }
@@ -2870,13 +2982,34 @@ private struct FloatingTodayPlannerPanel: View {
                             : "Add \(model.planningSelectionCount) activities"
                     )
                     .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.white)
                     .frame(width: 116, height: 30)
                     .contentShape(Rectangle())
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(palette.linkOff)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(palette.linkOff.opacity(0.92), lineWidth: 0.8)
+                            )
+                    )
                 }
                     .frame(width: 116)
                     .layoutPriority(1)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .buttonStyle(PlannerPressButtonStyle())
+                    .voiceHoverFeedback(
+                        enabled: !model.planningState.selections.isEmpty
+                            && !model.planningMutationInFlight
+                            && model.planningResponse?.workbench != nil,
+                        cornerRadius: 8,
+                        tint: palette.linkOff
+                    )
+                    .opacity(
+                        model.planningState.selections.isEmpty
+                            || model.planningMutationInFlight
+                            || model.planningResponse?.workbench == nil
+                            ? 0.46 : 1
+                    )
                     .disabled(
                         model.planningState.selections.isEmpty
                             || model.planningMutationInFlight
@@ -2889,6 +3022,28 @@ private struct FloatingTodayPlannerPanel: View {
         .padding(.vertical, 8)
         .frame(height: 86)
         .background(palette.timerSurface.opacity(palette.isDark ? 0.72 : 0.48))
+    }
+
+    private func planningDestinationButton(_ title: String, value: String) -> some View {
+        let selected = model.planningDestination == value
+        return Button {
+            withAnimation(plannerAnimation) {
+                model.planningDestination = value
+            }
+        } label: {
+            Text(title)
+                .font(.system(size: 9, weight: selected ? .bold : .semibold))
+                .foregroundStyle(selected ? Color.white : palette.secondaryInk)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(selected ? palette.linkOff : Color.clear)
+                )
+        }
+        .buttonStyle(PlannerPressButtonStyle())
+        .voiceHoverFeedback(cornerRadius: 6, tint: palette.linkOff)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private var fullSessionComposer: some View {
@@ -2936,7 +3091,41 @@ private struct FloatingTodayPlannerPanel: View {
                     value: $model.planningFullBehavioral
                 )
             }
-            Spacer()
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("SESSION COUNTDOWN")
+                        .font(.system(size: 8, weight: .heavy))
+                        .tracking(0.8)
+                        .foregroundStyle(palette.connectedIdle)
+                    Text(planningFullSessionBreakdown)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.78))
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 8)
+                Text(planningFullSessionDurationLabel)
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.white)
+            }
+            .padding(.horizontal, 12)
+            .frame(minHeight: 70)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(palette.ink.opacity(palette.isDark ? 0.92 : 0.96))
+            )
+
+            Text(
+                "Interview Arc places eligible due reviews first, then fills "
+                    + "the remaining slots with new high-frequency questions. "
+                    + "The recipe locks after its timer or activity work begins."
+            )
+            .font(.system(size: 9, weight: .medium))
+            .foregroundStyle(palette.secondaryInk)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer(minLength: 0)
             Button(action: model.createPlanningFullSession) {
                 HStack {
                     if model.planningMutationInFlight {
@@ -2948,8 +3137,32 @@ private struct FloatingTodayPlannerPanel: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 34)
                 .contentShape(Rectangle())
+                .foregroundStyle(Color.white)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(palette.linkOff)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .stroke(palette.linkOff.opacity(0.92), lineWidth: 0.8)
+                        )
+                )
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(PlannerPressButtonStyle())
+            .voiceHoverFeedback(
+                enabled: !model.planningMutationInFlight
+                    && model.planningFullCoding
+                        + model.planningFullSystemDesign
+                        + model.planningFullBehavioral > 0,
+                cornerRadius: 9,
+                tint: palette.linkOff
+            )
+            .opacity(
+                model.planningMutationInFlight
+                    || model.planningFullCoding
+                        + model.planningFullSystemDesign
+                        + model.planningFullBehavioral == 0
+                    ? 0.46 : 1
+            )
             .disabled(
                 model.planningMutationInFlight
                     || model.planningFullCoding
@@ -2958,6 +3171,24 @@ private struct FloatingTodayPlannerPanel: View {
             )
         }
         .padding(14)
+    }
+
+    private var planningFullSessionBreakdown: String {
+        let coding = model.planningFullCoding * VoicePlanningFullSessionPolicy.codingMinutes
+        let systemDesign = model.planningFullSystemDesign
+            * VoicePlanningFullSessionPolicy.interviewMinutes
+        let behavioral = model.planningFullBehavioral
+            * VoicePlanningFullSessionPolicy.interviewMinutes
+        return "\(coding)m coding + \(systemDesign)m system design + \(behavioral)m behavioral"
+    }
+
+    private var planningFullSessionDurationLabel: String {
+        let minutes = model.planningFullSessionMinutes
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        if hours == 0 { return "\(remainder) min" }
+        if remainder == 0 { return "\(hours) hr" }
+        return "\(hours)h \(remainder)m"
     }
 
     private func fullSessionCard(
@@ -3014,6 +3245,7 @@ private struct FloatingTodayPlannerPanel: View {
                         .stroke(tint.opacity(0.34), lineWidth: 0.8)
                 )
         )
+        .voiceHoverFeedback(cornerRadius: 12, tint: tint)
     }
 
     private func fullSessionCountButton(
@@ -3200,7 +3432,7 @@ private struct FloatingTodayPlannerPanel: View {
                 ) == .upcoming
             }
 
-        return VStack(spacing: 0) {
+        return VStack(spacing: 7) {
             HStack(spacing: 9) {
                 Image(systemName: "timer")
                     .font(.system(size: 12, weight: .semibold))
@@ -3229,23 +3461,29 @@ private struct FloatingTodayPlannerPanel: View {
                     model.removePlanningItem(kind: "session", id: session.id)
                 }
             }
-            .padding(.horizontal, 9)
-            .frame(height: 48)
+            .padding(.horizontal, 8)
+            .frame(height: 44)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(palette.teal.opacity(palette.isDark ? 0.16 : 0.07))
+            )
 
             if !activities.isEmpty {
-                Divider()
-                    .overlay(palette.divider.opacity(0.52))
-                    .padding(.leading, 46)
-                ForEach(activities) { activity in
-                    currentActivityRow(activity, now: now, nested: true)
-                    if activity.id != activities.last?.id {
-                        Divider()
-                            .overlay(palette.divider.opacity(0.42))
-                            .padding(.leading, 46)
+                HStack(alignment: .top, spacing: 7) {
+                    RoundedRectangle(cornerRadius: 1, style: .continuous)
+                        .fill(palette.teal.opacity(0.34))
+                        .frame(width: 2)
+                        .padding(.vertical, 7)
+                    VStack(spacing: 4) {
+                        ForEach(activities) { activity in
+                            currentActivityRow(activity, now: now, nested: true)
+                        }
                     }
                 }
+                .padding(.leading, 12)
             }
         }
+        .padding(7)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(palette.glassHighlight.opacity(palette.isDark ? 0.13 : 0.40))
@@ -3305,9 +3543,21 @@ private struct FloatingTodayPlannerPanel: View {
         .padding(.horizontal, nested ? 9 : 10)
         .frame(height: 44)
         .background(
-            nested
-                ? Color.clear
-                : palette.glassHighlight.opacity(palette.isDark ? 0.13 : 0.40)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(
+                    nested
+                        ? palette.timerSurface.opacity(palette.isDark ? 0.64 : 0.50)
+                        : palette.glassHighlight.opacity(palette.isDark ? 0.13 : 0.40)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(
+                            nested
+                                ? palette.coolBorder.opacity(0.42)
+                                : Color.clear,
+                            lineWidth: 0.7
+                        )
+                )
         )
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
