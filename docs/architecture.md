@@ -205,7 +205,11 @@ Successful planning mutations apply the authoritative Today snapshot carried
 by their response immediately, then refresh planning and timer context
 concurrently. The UI exposes the active create/remove operation instead of an
 unlabeled frozen state. Today session cards preserve session/activity hierarchy
-and provide an animated disclosure without changing server state.
+and provide an animated disclosure without changing server state. The
+borderless panel never uses native whole-window background dragging because it
+steals clicks from SwiftUI controls. Dragging is limited to explicit title
+surfaces; opening Plan Today activates the accessory app for TextField input,
+and closing it restores the previously foreground application.
 Focus and Plan Today are exclusive presentations of one top surface. Recording
 hides and restores the exact disclosure without delaying microphone startup.
 

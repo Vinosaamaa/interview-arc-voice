@@ -726,6 +726,7 @@ private final class VoiceFloatingPanel: NSPanel {
 final class FloatingPanelController {
     static let shared = FloatingPanelController()
     private var panel: NSPanel?
+    private var previousFrontmostApplication: NSRunningApplication?
     private var miniDragStartFrame: NSRect?
     private var miniDragStartPointer: CGPoint?
     private var miniDragDidMove = false
@@ -787,12 +788,22 @@ final class FloatingPanelController {
 
     func beginPlannerTextEntry() {
         guard let panel else { return }
+        if let frontmost = NSWorkspace.shared.frontmostApplication,
+           frontmost.bundleIdentifier != Bundle.main.bundleIdentifier {
+            previousFrontmostApplication = frontmost
+        }
         panel.becomesKeyOnlyIfNeeded = false
+        NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
     }
 
     func endPlannerTextEntry() {
         panel?.becomesKeyOnlyIfNeeded = true
+        if let previousFrontmostApplication,
+           !previousFrontmostApplication.isTerminated {
+            previousFrontmostApplication.activate(options: [.activateIgnoringOtherApps])
+        }
+        previousFrontmostApplication = nil
     }
 
     func setSize(width: CGFloat, height: CGFloat, reduceMotion: Bool) {
@@ -1176,6 +1187,7 @@ struct FloatingRecorderView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var miniSmoothedLevel = 0.0
     @State private var suppressMiniClick = false
+    @State private var suppressStandardClick = false
 
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
@@ -1588,6 +1600,7 @@ struct FloatingRecorderView: View {
                             minHeight: 24
                         )
                         .layoutPriority(1)
+                        .simultaneousGesture(standardDragGesture)
                         memoButton(
                             symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
                             label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
@@ -1617,7 +1630,10 @@ struct FloatingRecorderView: View {
                     .frame(maxWidth: .infinity)
                 } else {
                     TimelineView(.periodic(from: .now, by: 1)) { timeline in
-                        Button(action: model.toggleTimerPanel) {
+                        Button {
+                            guard !suppressStandardClick else { return }
+                            model.toggleTimerPanel()
+                        } label: {
                             HStack(spacing: 3) {
                                 OverflowMarqueeText(
                                     text: model.compactTimerTitle,
@@ -1630,6 +1646,7 @@ struct FloatingRecorderView: View {
                                     minHeight: 24
                                 )
                                 .layoutPriority(1)
+                                .simultaneousGesture(standardDragGesture)
                                 compactTimerCluster(at: timeline.date)
                                 Image(systemName: model.timerPanelExpanded ? "chevron.down" : "chevron.up")
                                     .font(.system(size: 8, weight: .bold))
@@ -1655,6 +1672,8 @@ struct FloatingRecorderView: View {
                         maxWidth: .infinity,
                         alignment: model.shouldCenterFloatingTitle ? .center : .leading
                     )
+                    .contentShape(Rectangle())
+                    .simultaneousGesture(standardDragGesture)
             }
         }
     }
@@ -2013,6 +2032,35 @@ struct FloatingRecorderView: View {
                     }
                 } else {
                     suppressMiniClick = false
+                }
+            }
+    }
+
+    private var standardDragGesture: some Gesture {
+        DragGesture(minimumDistance: 5, coordinateSpace: .global)
+            .onChanged { _ in
+                guard model.widgetSizeMode == .standard,
+                      !model.plannerPresented else { return }
+                let pointer = NSEvent.mouseLocation
+                FloatingPanelController.shared.beginMiniDrag(
+                    pointerLocation: pointer
+                )
+                if FloatingPanelController.shared.updateMiniDrag(
+                    pointerLocation: pointer
+                ) {
+                    suppressStandardClick = true
+                }
+            }
+            .onEnded { _ in
+                guard model.widgetSizeMode == .standard else { return }
+                let didDrag = FloatingPanelController.shared.endMiniDrag()
+                if didDrag {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(120))
+                        suppressStandardClick = false
+                    }
+                } else {
+                    suppressStandardClick = false
                 }
             }
     }
@@ -3175,7 +3223,7 @@ private struct FloatingTodayPlannerPanel: View {
     }
 
     private var fullSessionComposer: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 9) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Build a full interview session")
@@ -3228,7 +3276,7 @@ private struct FloatingTodayPlannerPanel: View {
                     .foregroundStyle(Color.white)
             }
             .padding(.horizontal, 12)
-            .frame(minHeight: 70)
+            .frame(minHeight: 62)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(palette.ink.opacity(palette.isDark ? 0.92 : 0.96))
@@ -3260,7 +3308,7 @@ private struct FloatingTodayPlannerPanel: View {
                 )
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 9)
+            .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(palette.glassHighlight.opacity(palette.isDark ? 0.10 : 0.34))
@@ -3270,7 +3318,7 @@ private struct FloatingTodayPlannerPanel: View {
                     )
             )
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 4)
             Button(action: model.createPlanningFullSession) {
                 HStack {
                     if model.planningMutationInFlight {
@@ -3315,7 +3363,8 @@ private struct FloatingTodayPlannerPanel: View {
                         + model.planningFullBehavioral == 0
             )
         }
-        .padding(14)
+        .padding(10)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var planningFullSessionBreakdown: String {
@@ -3361,7 +3410,7 @@ private struct FloatingTodayPlannerPanel: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(minHeight: 38)
+        .frame(minHeight: 32)
     }
 
     private func fullSessionCard(
@@ -3409,7 +3458,7 @@ private struct FloatingTodayPlannerPanel: View {
             .accessibilityLabel("\(title) count")
         }
         .padding(10)
-        .frame(maxWidth: .infinity, minHeight: 142)
+        .frame(maxWidth: .infinity, minHeight: 128)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(tint.opacity(palette.isDark ? 0.13 : 0.055))
@@ -3665,21 +3714,24 @@ private struct FloatingTodayPlannerPanel: View {
                     .fill(palette.teal.opacity(palette.isDark ? 0.16 : 0.07))
             )
 
-            if !activities.isEmpty, !collapsed {
-                HStack(alignment: .top, spacing: 7) {
-                    RoundedRectangle(cornerRadius: 1, style: .continuous)
-                        .fill(palette.teal.opacity(0.34))
-                        .frame(width: 2)
-                        .padding(.vertical, 7)
-                    VStack(spacing: 4) {
-                        ForEach(activities) { activity in
-                            currentActivityRow(activity, now: now, nested: true)
+            VStack(spacing: 0) {
+                if !activities.isEmpty, !collapsed {
+                    HStack(alignment: .top, spacing: 7) {
+                        RoundedRectangle(cornerRadius: 1, style: .continuous)
+                            .fill(palette.teal.opacity(0.34))
+                            .frame(width: 2)
+                            .padding(.vertical, 7)
+                        VStack(spacing: 4) {
+                            ForEach(activities) { activity in
+                                currentActivityRow(activity, now: now, nested: true)
+                            }
                         }
                     }
+                    .padding(.leading, 12)
+                    .transition(.move(edge: .top))
                 }
-                .padding(.leading, 12)
-                .transition(.opacity.combined(with: .move(edge: .top)))
             }
+            .clipped()
         }
         .animation(plannerAnimation, value: collapsed)
         .padding(7)

@@ -70,8 +70,8 @@ import Foundation
     )
 }
 
-@Test func standardWidgetUsesNativeBackgroundDragWhileMiniKeepsItsCustomDrag() {
-    #expect(FloatingWidgetWindowPolicy.usesNativeBackgroundDrag(for: .standard))
+@Test func floatingWidgetUsesExplicitDragSurfacesSoControlsReceiveClicks() {
+    #expect(!FloatingWidgetWindowPolicy.usesNativeBackgroundDrag(for: .standard))
     #expect(!FloatingWidgetWindowPolicy.usesNativeBackgroundDrag(for: .mini))
 }
 

@@ -85,7 +85,12 @@ public enum FloatingWidgetWindowPolicy {
     public static func usesNativeBackgroundDrag(
         for mode: VoiceWidgetSizeMode
     ) -> Bool {
-        mode == .standard
+        // NSPanel's native background dragging treats large portions of a
+        // borderless SwiftUI hosting view as window chrome. That steals the
+        // first click from Buttons and TextFields. Both widget modes use an
+        // explicit drag gesture on non-control surfaces instead.
+        _ = mode
+        return false
     }
 
     public static func recordingWaveformBarWidth(
