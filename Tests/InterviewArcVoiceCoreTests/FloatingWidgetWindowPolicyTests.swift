@@ -73,6 +73,7 @@ import Foundation
 @Test func floatingWidgetUsesExplicitDragSurfacesSoControlsReceiveClicks() {
     #expect(!FloatingWidgetWindowPolicy.usesNativeBackgroundDrag(for: .standard))
     #expect(!FloatingWidgetWindowPolicy.usesNativeBackgroundDrag(for: .mini))
+    #expect(MiniWidgetPointerPolicy.dragThreshold == 5)
 }
 
 @Test func floatingWidgetClipsDisclosuresAtTheRecorderBoundary() {
