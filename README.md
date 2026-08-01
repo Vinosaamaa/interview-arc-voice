@@ -287,6 +287,9 @@ The long-dictation integrity analysis and repair record is in
 [`docs/postmortems/2026-07-24-long-dictation-transcript-integrity.md`](docs/postmortems/2026-07-24-long-dictation-transcript-integrity.md).
 The packaged capture regression and recovery-policy repair are documented in
 [`docs/postmortems/2026-07-24-header-only-recording-regression.md`](docs/postmortems/2026-07-24-header-only-recording-regression.md).
+The partial-transcript recurrence caused by non-lexical trailing provider
+segments is documented in
+[`docs/postmortems/2026-08-01-partial-transcript-delivery.md`](docs/postmortems/2026-08-01-partial-transcript-delivery.md).
 The Keychain readiness and empty-credential repair is documented in
 [`docs/postmortems/2026-07-24-keychain-readiness-regression.md`](docs/postmortems/2026-07-24-keychain-readiness-regression.md).
 The recording-start self-rejection and lifecycle-policy repair is documented

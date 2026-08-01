@@ -1,7 +1,7 @@
 # Postmortem: Partial transcript delivered while speech remained in the recording
 
 **Date**: 2026-08-01  
-**Status**: Draft — release verification pending  
+**Status**: Final<br>
 **Severity**: P0 silent data loss  
 **Issue**: [interview-arc-voice#123](https://github.com/Vinosaamaa/interview-arc-voice/issues/123)  
 **Pull request**: [interview-arc-voice#136](https://github.com/Vinosaamaa/interview-arc-voice/pull/136)
@@ -65,6 +65,11 @@ evidence and are not committed to Git.
   retries executed but returned the same incomplete-provider result.
 - 2026-08-01 — Boundary inspection confirmed complete audio, retained tail
   speech, no Enhanced-filter omission, and an insufficient coverage decision.
+- 2026-08-01 — Pull request #136 passed the canonical macOS package workflow
+  and all configured quality gates, then merged as `58b30a1`.
+- 2026-08-01 — Merged main rebuilt and packaged tree `d275b7e` in workflow
+  run `30715292109`; the exact artifact was stably signed, staged, installed,
+  and launched.
 
 ## Root cause
 
@@ -131,13 +136,39 @@ when Groq returned incomplete text twice.
 - Reliability release requires the exact merged-main package and installed-app
   verification; merge and CI alone do not close issue #123.
 
-## Verification status
+## Merged-release verification
 
-- Production evidence boundary inspection: complete.
-- Swift parser and diff checks: pending final run.
-- Full Swift tests and package build: require the compatible macOS CI toolchain;
-  the local compiler/SDK pair is incompatible.
-- Merged-main package installation and recurrence smoke test: pending.
+- Production evidence boundary inspection confirmed both original recordings
+  were complete before implementation.
+- Every changed Swift source and test file passed the parser check, and
+  `git diff --check`, artifact-promotion policy, signing policy, and the public
+  safety audit passed.
+- The authoritative pull-request workflow passed in 1 minute 40 seconds,
+  including the complete Swift test suite and package build. All configured
+  quality, security, dependency, duplication, and coverage gates passed.
+- Pull request #136 merged as `58b30a1908a7433cbc4952d1f20ab63bf42e8b62`.
+- Because another mainline change preceded the merge, the main workflow
+  correctly rejected PR-artifact promotion and rebuilt the combined merged
+  tree `d275b7ed665f708971ef5657153b3e628556b0fb`. Workflow run
+  `30715292109` passed in 2 minutes 33 seconds.
+- The downloaded artifact's provenance manifest matched that merge commit,
+  tree, workflow run, and `push` event. Its package self-check found all 21
+  bundled vocabulary packs.
+- The artifact was signed with the existing stable local identity, launched
+  from temporary staging, then installed. The staged and installed executable
+  SHA-256 values matched exactly:
+  `5112132e6bd0dd79e86625529bcef2eb312750aff61cd4924b92d79961f161c0`.
+- The installed application launched successfully, retained its existing
+  Keychain-backed settings, exposed the recorder controls, and kept the
+  preserved 46.78-second recovery recording complete and decodable.
+
+The provider's exact empty-trailing-segment response is nondeterministic and
+cannot be requested from the live API on demand. The merged release therefore
+verifies that response shape with the production-shaped deterministic fixture,
+while installed-app verification covers package identity, startup, retained
+state, credentials, recorder availability, and recovery evidence. A future
+provider response that remains partial after the single automatic retry will
+now fail visibly and preserve the recording instead of being delivered.
 
 ## Lessons
 
