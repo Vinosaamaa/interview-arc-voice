@@ -106,25 +106,32 @@ only when a persisted failure explicitly advertises audio recovery and no
 reference exists. Missing or unsafe references are discarded rather than
 rendered as dead controls.
 
-The normal transcription path performs one provider request for recordings up
-to 30 seconds. Longer recordings are divided into overlapping windows of no
-more than 30 seconds because Whisper Large v3 is optimized around that acoustic
-context boundary. Window durations are balanced across the recording so a file
-just beyond 30 seconds does not produce one full request followed by a tiny,
-low-context tail request. The windows are uploaded concurrently, timestamp
-offsets are restored, and exact repeated text at the 1.5-second overlap is
-deduplicated.
-Compressed file size is not used as a proxy for acoustic duration: a small M4A
-can still exceed the model's reliable context window. Existing response
-metadata is checked without another validation call. A concrete failure,
-incomplete provider result, implausible duration, known prompt leakage, or
-missing output triggers exactly one unprompted retry. If the retry is also
-suspicious, Voice does not claim success; it retains the original audio and
-offers Play, Save, and Retry.
+The canonical upload-boundary and chunking policy is defined under
+[Audio model](#audio-model). Ordinary recordings are not split merely because
+they exceed a short acoustic context.
+
+Existing response metadata is checked without another validation call.
+Provider duration and the end of lexical transcript coverage are independent:
+Voice uses the final valid word timestamp only when those words normalize to
+the complete canonical text, then falls back to nonempty segments only when
+they represent that same text. Empty or metadata-only trailing segments never
+extend lexical coverage. When local evidence contains sustained speech after
+that boundary, the result is incomplete even if the provider reports the full
+audio duration. A concrete failure, incomplete provider result, implausible
+duration, known prompt leakage, or missing output triggers exactly one
+unprompted retry. If the retry is also suspicious, Voice does not claim
+success; it retains the original audio and offers Play, Save, and Retry.
+
+The local evidence pass that supports recording integrity and lexical-tail
+coverage is always active. Silence Protection `Off` bypasses whole-capture
+no-speech admission and segment/word filtering, but it cannot disable the P0
+guard against silently delivering a transcript while later recorded speech
+remains uncovered.
 
 Silence protection has three persistent modes:
 
-- **Off** skips local no-speech validation and displays a warning.
+- **Off** skips local no-speech admission and transcript filtering, while the
+  integrity-only local scan continues to protect against silent data loss.
 - **Basic** is the default. Its whole-recording gate requires both the
   deterministic acoustic-frame heuristic and a pinned local WebRTC VAD to
   report sustained voice activity.
@@ -159,8 +166,10 @@ upload object.
 
 Every completed attempt appends one bounded, permission-0600 diagnostic record
 containing only numeric stage timings, the selected protection mode, omission
-counts, exact-alignment status, timestamp coverage counts, microphone recovery
-count, WebRTC VAD speech-frame count/longest run, and outcome. The
+counts, exact-alignment status, timestamp coverage counts, lexical coverage
+end, trailing speech evidence, retry status, integrity reason codes,
+microphone recovery count, WebRTC VAD speech-frame count/longest run, and
+outcome. The
 Settings diagnostics surface can copy, reveal, and clear that file. It never
 records transcript text, audio, credentials, tokens, private URLs, or activity
 descriptions. Validation time is recorded separately from decoding,

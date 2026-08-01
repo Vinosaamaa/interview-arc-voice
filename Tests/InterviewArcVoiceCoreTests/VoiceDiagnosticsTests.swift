@@ -36,6 +36,10 @@ import Testing
                 microphoneRecoveryCount: 2,
                 vadSpeechFrameCount: 18,
                 vadLongestSpeechRunFrames: 15,
+                providerRetryOccurred: true,
+                lexicalCoverageEndSeconds: 58.4,
+                trailingSpeechLikeFrameCount: 0,
+                trailingSpeechLikeFraction: 0,
                 outcome: .delivered
             )
         )
@@ -79,7 +83,12 @@ import Testing
         microphoneRecoveryCount: 2,
         vadSpeechFrameCount: 18,
         vadLongestSpeechRunFrames: 15,
-        outcome: .delivered
+        providerRetryOccurred: true,
+        lexicalCoverageEndSeconds: 4.8,
+        trailingSpeechLikeFrameCount: 0,
+        trailingSpeechLikeFraction: 0,
+        integrityReasons: [.missingSpeechCoverage],
+        outcome: .failed
     )
 
     #expect(record.report.contains("Response processing: <1 ms"))
@@ -89,6 +98,11 @@ import Testing
     #expect(record.report.contains("Microphone recovery attempts: 2"))
     #expect(record.report.contains("WebRTC VAD speech frames: 18"))
     #expect(record.report.contains("WebRTC VAD longest run: 15"))
+    #expect(record.report.contains("Transcription retried: true"))
+    #expect(record.report.contains("Provider lexical coverage end: 4.80 s"))
+    #expect(record.report.contains("Trailing speech-like frames: 0"))
+    #expect(record.report.contains("Trailing speech-like fraction: 0.000"))
+    #expect(record.report.contains("Transcription integrity reasons: missingSpeechCoverage"))
 }
 
 @Test func diagnosticsDecodeRecordsWrittenBeforeWordLevelMetrics() throws {
@@ -124,6 +138,11 @@ import Testing
     #expect(records[0].microphoneRecoveryCount == nil)
     #expect(records[0].vadSpeechFrameCount == nil)
     #expect(records[0].vadLongestSpeechRunFrames == nil)
+    #expect(records[0].providerRetryOccurred == nil)
+    #expect(records[0].lexicalCoverageEndSeconds == nil)
+    #expect(records[0].trailingSpeechLikeFrameCount == nil)
+    #expect(records[0].trailingSpeechLikeFraction == nil)
+    #expect(records[0].integrityReasons == nil)
 }
 
 @Test func diagnosticsStoreCanBeCleared() async throws {

@@ -39,6 +39,10 @@ public struct VoicePipelineResult: Equatable, Sendable {
     public let evaluatedSegmentCount: Int
     public let wordTimestampCount: Int
     public let segmentValidationSeconds: Double
+    public let transcriptionWasRetried: Bool
+    public let providerLexicalCoverageEndSeconds: Double?
+    public let trailingSpeechLikeFrameCount: Int?
+    public let trailingSpeechLikeFraction: Double?
     public let transcriptionTiming: TranscriptionTiming?
 
     public var hasQueuedRetry: Bool {
@@ -156,6 +160,13 @@ public actor VoicePipeline {
             evaluatedSegmentCount: reliable.evaluatedSegmentCount,
             wordTimestampCount: reliable.wordTimestampCount,
             segmentValidationSeconds: reliable.segmentValidationSeconds,
+            transcriptionWasRetried: reliable.wasRetried,
+            providerLexicalCoverageEndSeconds:
+                reliable.providerLexicalCoverageEndSeconds,
+            trailingSpeechLikeFrameCount:
+                reliable.trailingSpeechLikeFrameCount,
+            trailingSpeechLikeFraction:
+                reliable.trailingSpeechLikeFraction,
             transcriptionTiming: transcription.timing
         )
     }

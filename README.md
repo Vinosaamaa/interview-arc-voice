@@ -151,6 +151,13 @@ discarded.
 - The finalized AAC payload must contain a plausible amount of encoded audio
   for its duration. A timed but near-silent container is rejected before Groq
   so ambient noise cannot become a guessed one-word transcript.
+- A provider-reported duration is not proof that every spoken interval was
+  transcribed. Voice ties word or segment timestamps to the canonical text and
+  compares the final lexical timestamp with local speech evidence. Sustained
+  speech after that boundary triggers one prompt-free retry; a second partial
+  result preserves the recording and fails visibly instead of inserting text.
+  This completeness check remains active when optional Silence Protection is
+  Off; that setting controls hallucination filtering, not silent-loss safety.
 - Settings → Silence protection offers `Off`, `Basic`, and
   `Enhanced — Experimental`. Basic rejects an entire recording with no
   sustained speech. Whole-capture admission requires both the existing
