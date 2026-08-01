@@ -95,10 +95,14 @@ discarded.
   chain icon family: an intact teal chain for an active Interview Arc link, a
   quieter intact chain while link mode waits with no open session, a deep-amber
   intact chain when a session is connected but no activity is running, and a
-  dark-blue hollow broken chain when linking is off. The capsule exposes Play, Copy, and Save for the
-  latest capture, offers a native filename/location save dialog with an
-  optional sibling transcript, and replaces its activity label with a live
-  waveform while recording. Its timer surface, activity picker, and finish
+  dark-blue hollow broken chain when linking is off. The resting Standard
+  capsule reserves Play, Insert, and Plan Today beside the readable activity
+  title. An expanded upper surface adds context-aware Copy and Save without
+  moving the title, Plan Today control, or trailing microphone; unavailable
+  memo actions stay in their fixed slots with a disabled treatment. Save uses
+  a native filename/location dialog with an optional sibling transcript. The
+  capsule replaces its activity label with a live waveform while recording.
+  Its timer surface, activity picker, and finish
   drawer grow upward from the fixed bottom capsule across a true 10-point
   visible gap. When the experimental dynamic recording interface is enabled,
   recording from any disclosure state uses one focused recording capsule;

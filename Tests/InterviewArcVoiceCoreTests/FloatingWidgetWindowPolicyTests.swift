@@ -60,13 +60,82 @@ import Foundation
     #expect(FloatingWidgetCompactTimerLayoutPolicy.titleFillsAvailableHeight)
 }
 
-@Test func expandedFloatingMemoShelfShowsEveryAvailableActionWithoutMore() {
+@Test func restingFloatingMemoShelfKeepsThreeStablePrimaryActions() {
     #expect(
         FloatingWidgetMemoActionPolicy.actions(
-            hasTranscript: true,
+            for: .compact
+        ) == [.play, .insert, .planToday]
+    )
+}
+
+@Test func expandedFloatingMemoShelfAddsCopyAndSaveWithoutReorderingPrimaryActions() {
+    #expect(
+        FloatingWidgetMemoActionPolicy.actions(
+            for: .expanded
+        ) == [.play, .insert, .copy, .save, .planToday]
+    )
+}
+
+@Test func floatingMemoShelfAvailabilityDoesNotChangeItsGeometry() {
+    #expect(
+        !FloatingWidgetMemoActionPolicy.isEnabled(
+            .play,
+            hasTranscript: false,
+            hasAudio: false,
+            canPlanToday: true
+        )
+    )
+    #expect(
+        !FloatingWidgetMemoActionPolicy.isEnabled(
+            .insert,
+            hasTranscript: false,
             hasAudio: true,
             canPlanToday: true
-        ) == [.play, .insert, .copy, .save, .planToday]
+        )
+    )
+    #expect(
+        FloatingWidgetMemoActionPolicy.isEnabled(
+            .copy,
+            hasTranscript: true,
+            hasAudio: false,
+            canPlanToday: true
+        )
+    )
+    #expect(
+        FloatingWidgetMemoActionPolicy.isEnabled(
+            .save,
+            hasTranscript: false,
+            hasAudio: true,
+            canPlanToday: true
+        )
+    )
+    #expect(
+        !FloatingWidgetMemoActionPolicy.isEnabled(
+            .planToday,
+            hasTranscript: true,
+            hasAudio: true,
+            canPlanToday: false
+        )
+    )
+}
+
+@Test func memoShelfRevealsExpandedActionsOnlyAfterTheCapsuleHasUsableWidth() {
+    #expect(
+        FloatingWidgetMemoActionLayoutPolicy.presentation(
+            capsuleWidth: FloatingWidgetWindowPolicy.collapsedWidth
+        ) == .compact
+    )
+    #expect(
+        FloatingWidgetMemoActionLayoutPolicy.presentation(
+            capsuleWidth:
+                FloatingWidgetMemoActionLayoutPolicy.expandedRevealWidth - 1
+        ) == .compact
+    )
+    #expect(
+        FloatingWidgetMemoActionLayoutPolicy.presentation(
+            capsuleWidth:
+                FloatingWidgetMemoActionLayoutPolicy.expandedRevealWidth
+        ) == .expanded
     )
 }
 
@@ -108,25 +177,21 @@ import Foundation
     #expect(PlannerSelectionTrayPolicy.expandedContentScrolls(selectionCount: 17))
 }
 
-@Test func floatingMemoShelfAvoidsAnEmptyMoreMode() {
+@Test func floatingMemoShelfKeepsStableSlotsWhenMemoContentIsMissing() {
     #expect(
         FloatingWidgetMemoActionPolicy.actions(
-            hasTranscript: false,
-            hasAudio: false,
-            canPlanToday: true
-        ) == [.planToday]
+            for: .compact
+        ).count == 3
     )
     #expect(
         FloatingWidgetMemoActionPolicy.actions(
-            hasTranscript: false,
-            hasAudio: false,
-            canPlanToday: false
-        ).isEmpty
+            for: .expanded
+        ).count == 5
     )
 }
 
 @Test func activeTimerCapsuleStaysReadableInsteadOfShowingMemoActions() {
-    #expect(!FloatingWidgetCompactTimerLayoutPolicy.showsPreviousMemoActionsWhenExpanded)
+    #expect(FloatingWidgetCompactTimerLayoutPolicy.showsPreviousMemoActionsWhenExpanded)
 }
 
 @Test func recentTranscriptCardKeepsOneStableReadableGeometry() {

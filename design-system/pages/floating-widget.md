@@ -90,9 +90,11 @@ Timer values must never change width as they count.
 ## Information hierarchy
 
 The compact state prioritizes the link state, activity/general-dictation
-identity, previous-capture actions, and microphone. Previous-capture actions
-are Insert, Play, context-aware Copy, and Save; they appear only when their
-underlying transcript or audio exists. When an open D1 timer
+identity, previous-capture actions, and microphone. Resting Standard reserves
+three stable trailing actions—Play, Insert, and Plan Today. An expanded upper
+surface adds context-aware Copy and Save between Insert and Plan Today. Memo
+actions remain visible but disabled when their transcript or audio prerequisite
+is unavailable, so their slots never reflow the title viewport. When an open D1 timer
 instrument exists, the activity title includes a quiet disclosure chevron.
 Linked recording and playback may widen to reveal timing or transport
 controls. Long activity names scroll on one line when motion is allowed.
@@ -297,8 +299,9 @@ least 58 points for the activity title.
   its finalized audio, present a high-visibility recovery state, and offer
   Retry transcription, Record again, Play, and Save without submitting a
   partial linked answer automatically.
-- No previous capture: Insert, Play, Copy, and Save controls are absent, not
-  disabled.
+- No previous capture: the applicable three- or five-action shelf keeps its
+  exact geometry while Play, Insert, Copy, and Save use the shared disabled
+  treatment.
 - Failure: show the concise cause in the capsule and an anchored recovery
   popover narrower than the 250-point widget.
 
@@ -394,10 +397,13 @@ least 58 points for the activity title.
   moves the widget without converting clicks into drags. Planner text fields
   make the nonactivating panel key only after the user clicks a field; the last
   eligible external editor remains the insertion destination.
-- Standard idle memo actions use one in-place shelf containing every applicable
-  action—Play, Insert, Copy, Save, and Plan Today—while the title viewport and
-  trailing microphone remain fixed. There is no More or Back mode. Active timer
-  capsules never expose this memo shelf.
+- Standard resting memo actions use one three-slot shelf—Play, Insert, and Plan
+  Today—while the title viewport and trailing microphone remain fixed. Once an
+  upper Focus or Plan Today surface has expanded and the live capsule reaches
+  usable width, Copy and Save fade into two reserved slots before Plan Today,
+  producing Play, Insert, Copy, Save, and Plan Today. There is no More or Back
+  mode. Compact timer capsules retain their dense clock cluster; expanded Focus
+  moves those authoritative clocks above and uses the five-action recorder row.
 - Plan Today uses an outer Focus/Plan Today switcher and an independent inner
   Today/Activities/Full session tab row. Today is the default and highlights
   the authoritative running item with its live clock.

@@ -1332,7 +1332,7 @@ struct FloatingRecorderView: View {
                     palette: palette,
                     isRecording: model.isRecording
                 )
-                standardCapsuleContent
+                standardCapsuleContent(width: width)
                     .frame(
                         width: width,
                         height: FloatingWidgetWindowPolicy.capsuleHeight
@@ -1393,7 +1393,7 @@ struct FloatingRecorderView: View {
             || model.miniWidgetLayout != .microphoneOnly
     }
 
-    private var standardCapsuleContent: some View {
+    private func standardCapsuleContent(width: CGFloat) -> some View {
         HStack(spacing: model.isRecording ? 4 : 6) {
             linkButton
             if model.isStartingRecording {
@@ -1444,8 +1444,15 @@ struct FloatingRecorderView: View {
                 processingLabel
             } else {
                 activityLabel
-                if !model.hasTimerInstrument {
-                    memoActionShelf
+                if !model.hasTimerInstrument
+                    || model.timerPanelExpanded
+                    || model.plannerPresented {
+                    memoActionShelf(
+                        presentation:
+                            FloatingWidgetMemoActionLayoutPolicy.presentation(
+                                capsuleWidth: width
+                            )
+                    )
                 }
             }
             Color.clear
@@ -1456,27 +1463,47 @@ struct FloatingRecorderView: View {
     }
 
     @ViewBuilder
-    private var memoActionShelf: some View {
-        let canPlanToday = VoicePlannerEntryPolicy.showsStandardEntry(
-            linkEnabled: model.linkToInterviewArc,
-            hasTimerInstrument: model.hasTimerInstrument,
-            isRecording: model.isRecording,
-            isBusy: model.isBusy
-        )
+    private func memoActionShelf(
+        presentation: FloatingWidgetMemoActionPresentation
+    ) -> some View {
+        let hasTranscript = !model.lastTranscript.isEmpty
+        let hasAudio = model.hasLastAudio
+        let canPlanToday = model.linkToInterviewArc
+            && !model.isRecording
+            && !model.isBusy
         let actions = FloatingWidgetMemoActionPolicy.actions(
-            hasTranscript: !model.lastTranscript.isEmpty,
-            hasAudio: model.hasLastAudio,
-            canPlanToday: canPlanToday
+            for: presentation
         )
-        ForEach(actions, id: \.self) { action in
-            memoActionButton(action)
-                .transition(.opacity.combined(with: .scale(scale: 0.94)))
+        Group {
+            ForEach(actions, id: \.self) { action in
+                memoActionButton(
+                    action,
+                    enabled: FloatingWidgetMemoActionPolicy.isEnabled(
+                        action,
+                        hasTranscript: hasTranscript,
+                        hasAudio: hasAudio,
+                        canPlanToday: canPlanToday
+                    )
+                )
+                .transition(
+                    reduceMotion
+                        ? .opacity
+                        : .opacity.combined(with: .scale(scale: 0.94))
+                )
+            }
         }
+        .animation(
+            reduceMotion
+                ? .easeOut(duration: 0.12)
+                : .easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds),
+            value: presentation
+        )
     }
 
     @ViewBuilder
     private func memoActionButton(
-        _ action: FloatingWidgetMemoAction
+        _ action: FloatingWidgetMemoAction,
+        enabled: Bool
     ) -> some View {
         switch action {
         case .play:
@@ -1485,30 +1512,39 @@ struct FloatingRecorderView: View {
                 label: model.isPlayingLastAudio
                     ? "Pause last recording"
                     : "Play last recording",
+                enabled: enabled,
                 action: model.toggleLastAudioPlayback
             )
         case .insert:
             memoButton(
                 symbol: "text.cursor",
                 label: "Insert last transcript",
+                enabled: enabled,
                 action: model.reinsertLastTranscript
             )
         case .copy:
             memoButton(
                 symbol: "doc.on.doc",
                 label: "Copy last transcript",
+                enabled: enabled,
                 action: model.copyLastTranscript
             )
         case .save:
             memoButton(
                 symbol: "square.and.arrow.down",
                 label: "Save last audio and transcript",
+                enabled: enabled,
                 action: model.exportLastMemo
             )
         case .planToday:
             memoButton(
-                symbol: "calendar.badge.plus",
-                label: "Plan today"
+                symbol: model.plannerPresented
+                    ? "calendar.badge.minus"
+                    : "calendar.badge.plus",
+                label: model.plannerPresented
+                    ? "Close Plan Today"
+                    : "Plan today",
+                enabled: enabled
             ) {
                 model.togglePlanner()
             }
@@ -1632,49 +1668,42 @@ struct FloatingRecorderView: View {
     private var activityLabel: some View {
         Group {
             if model.hasTimerInstrument, !model.isBusy {
-                if model.timerPanelExpanded,
-                   model.hasLastAudio,
-                   !model.lastTranscript.isEmpty,
+                if (model.timerPanelExpanded || model.plannerPresented),
                    FloatingWidgetCompactTimerLayoutPolicy.showsPreviousMemoActionsWhenExpanded {
-                    HStack(spacing: 5) {
-                        OverflowMarqueeText(
-                            text: model.compactTimerTitle,
-                            font: .system(size: 11, weight: .semibold),
-                            color: palette.ink
-                        )
-                        .frame(
-                            minWidth: FloatingWidgetCompactTimerLayoutPolicy.minimumTitleWidth,
-                            maxWidth: .infinity,
-                            minHeight: 24
-                        )
-                        .layoutPriority(1)
-                        memoButton(
-                            symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
-                            label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
-                            action: model.toggleLastAudioPlayback
-                        )
-                        memoButton(
-                            symbol: "text.cursor",
-                            label: "Insert last transcript",
-                            action: model.reinsertLastTranscript
-                        )
-                        memoButton(
-                            symbol: "doc.on.doc",
-                            label: "Copy last transcript",
-                            action: model.copyLastTranscript
-                        )
-                        memoButton(
-                            symbol: "square.and.arrow.down",
-                            label: "Save last audio and transcript",
-                            action: model.exportLastMemo
-                        )
-                        memoButton(
-                            symbol: "chevron.down",
-                            label: "Hide timers",
-                            action: model.toggleTimerPanel
-                        )
+                    Button {
+                        if model.plannerPresented {
+                            model.togglePlanner()
+                        } else {
+                            model.toggleTimerPanel()
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            OverflowMarqueeText(
+                                text: model.compactTimerTitle,
+                                font: .system(size: 11, weight: .semibold),
+                                color: palette.ink
+                            )
+                            .frame(
+                                minWidth: FloatingWidgetCompactTimerLayoutPolicy.minimumTitleWidth,
+                                maxWidth: .infinity,
+                                minHeight: 24
+                            )
+                            .layoutPriority(1)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(palette.secondaryInk)
+                                .frame(width: 10, alignment: .trailing)
+                        }
+                        .foregroundStyle(palette.ink)
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
                     }
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.plain)
+                    .voiceHoverFeedback(cornerRadius: 7, tint: palette.teal)
+                    .help(model.plannerPresented ? "Close Plan Today" : "Hide timers")
+                    .accessibilityLabel(
+                        model.plannerPresented ? "Close Plan Today" : "Hide timers"
+                    )
                 } else {
                     TimelineView(.periodic(from: .now, by: 1)) { timeline in
                         Button {
@@ -1894,6 +1923,7 @@ struct FloatingRecorderView: View {
     private func memoButton(
         symbol: String,
         label: String,
+        enabled: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
         Button {
@@ -1906,11 +1936,11 @@ struct FloatingRecorderView: View {
         .buttonStyle(LayeredWidgetButtonStyle(tint: palette.teal, palette: palette))
         .foregroundStyle(palette.ink)
         .voiceHoverFeedback(
-            enabled: !model.isBusy,
+            enabled: !model.isBusy && enabled,
             cornerRadius: 11,
             tint: palette.teal
         )
-        .disabled(model.isBusy)
+        .disabled(model.isBusy || !enabled)
         .help(label)
         .accessibilityLabel(label)
     }
