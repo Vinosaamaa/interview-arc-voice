@@ -247,6 +247,9 @@ public struct ReliableTranscription: Equatable, Sendable {
     public let evaluatedSegmentCount: Int
     public let wordTimestampCount: Int
     public let segmentValidationSeconds: Double
+    public let providerLexicalCoverageEndSeconds: Double?
+    public let trailingSpeechLikeFrameCount: Int?
+    public let trailingSpeechLikeFraction: Double?
 
     public init(
         transcription: TranscriptionResult,
@@ -256,7 +259,10 @@ public struct ReliableTranscription: Equatable, Sendable {
         wordAlignmentComplete: Bool = false,
         evaluatedSegmentCount: Int = 0,
         wordTimestampCount: Int = 0,
-        segmentValidationSeconds: Double = 0
+        segmentValidationSeconds: Double = 0,
+        providerLexicalCoverageEndSeconds: Double? = nil,
+        trailingSpeechLikeFrameCount: Int? = nil,
+        trailingSpeechLikeFraction: Double? = nil
     ) {
         self.transcription = transcription
         self.wasRetried = wasRetried
@@ -266,10 +272,49 @@ public struct ReliableTranscription: Equatable, Sendable {
         self.evaluatedSegmentCount = evaluatedSegmentCount
         self.wordTimestampCount = wordTimestampCount
         self.segmentValidationSeconds = segmentValidationSeconds
+        self.providerLexicalCoverageEndSeconds =
+            providerLexicalCoverageEndSeconds
+        self.trailingSpeechLikeFrameCount = trailingSpeechLikeFrameCount
+        self.trailingSpeechLikeFraction = trailingSpeechLikeFraction
+    }
+}
+
+public struct TranscriptionIntegrityFailure: LocalizedError, Sendable {
+    public let reasons: [TranscriptionIntegrityReason]
+    public let timing: TranscriptionTiming?
+    public let providerRetryOccurred: Bool
+    public let lexicalCoverageEndSeconds: Double?
+    public let trailingSpeechLikeFrameCount: Int?
+    public let trailingSpeechLikeFraction: Double?
+
+    public init(
+        reasons: [TranscriptionIntegrityReason],
+        timing: TranscriptionTiming?,
+        providerRetryOccurred: Bool,
+        lexicalCoverageEndSeconds: Double?,
+        trailingSpeechLikeFrameCount: Int?,
+        trailingSpeechLikeFraction: Double?
+    ) {
+        self.reasons = reasons
+        self.timing = timing
+        self.providerRetryOccurred = providerRetryOccurred
+        self.lexicalCoverageEndSeconds = lexicalCoverageEndSeconds
+        self.trailingSpeechLikeFrameCount = trailingSpeechLikeFrameCount
+        self.trailingSpeechLikeFraction = trailingSpeechLikeFraction
+    }
+
+    public var errorDescription: String? {
+        "Groq returned incomplete text twice. The original audio was preserved; use Play, Save, or Retry."
     }
 }
 
 public actor ReliableSpeechTranscriber {
+    private struct IntegrityCheck {
+        let result: TranscriptionIntegrityResult
+        let providerLexicalCoverageEndSeconds: Double?
+        let trailingSpeechEvidence: SpeechIntervalEvidence?
+    }
+
     private let base: any SpeechTranscribing
 
     public init(base: any SpeechTranscribing) {
@@ -305,14 +350,18 @@ public actor ReliableSpeechTranscriber {
                 expectedChunkCount: expectedChunkCount,
                 speechEvidence: speechEvidence
             )
-            guard !retryCheck.isSuspicious else {
-                throw VoiceBridgeError.suspiciousTranscript(retryCheck.reasons)
+            guard !retryCheck.result.isSuspicious else {
+                throw integrityFailure(
+                    retryCheck,
+                    timing: retry.timing
+                )
             }
             return try protectedResult(
                 retry,
                 wasRetried: true,
                 speechEvidence: speechEvidence,
-                protectionMode: protectionMode
+                protectionMode: protectionMode,
+                integrityCheck: retryCheck
             )
         }
         let firstCheck = check(
@@ -322,12 +371,13 @@ public actor ReliableSpeechTranscriber {
             expectedChunkCount: expectedChunkCount,
             speechEvidence: speechEvidence
         )
-        guard firstCheck.isSuspicious else {
+        guard firstCheck.result.isSuspicious else {
             return try protectedResult(
                 first,
                 wasRetried: false,
                 speechEvidence: speechEvidence,
-                protectionMode: protectionMode
+                protectionMode: protectionMode,
+                integrityCheck: firstCheck
             )
         }
 
@@ -343,14 +393,18 @@ public actor ReliableSpeechTranscriber {
             expectedChunkCount: expectedChunkCount,
             speechEvidence: speechEvidence
         )
-        guard !retryCheck.isSuspicious else {
-            throw VoiceBridgeError.suspiciousTranscript(retryCheck.reasons)
+        guard !retryCheck.result.isSuspicious else {
+            throw integrityFailure(
+                retryCheck,
+                timing: combinedTiming(first.timing, retry.timing)
+            )
         }
         return try protectedResult(
             retry,
             wasRetried: true,
             speechEvidence: speechEvidence,
-            protectionMode: protectionMode
+            protectionMode: protectionMode,
+            integrityCheck: retryCheck
         )
     }
 
@@ -358,12 +412,21 @@ public actor ReliableSpeechTranscriber {
         _ transcription: TranscriptionResult,
         wasRetried: Bool,
         speechEvidence: SpeechEvidenceResult?,
-        protectionMode: SpeechProtectionMode
+        protectionMode: SpeechProtectionMode,
+        integrityCheck: IntegrityCheck
     ) throws -> ReliableTranscription {
         guard let speechEvidence else {
             return ReliableTranscription(
                 transcription: transcription,
-                wasRetried: wasRetried
+                wasRetried: wasRetried,
+                providerLexicalCoverageEndSeconds:
+                    integrityCheck.providerLexicalCoverageEndSeconds,
+                trailingSpeechLikeFrameCount:
+                    integrityCheck.trailingSpeechEvidence?
+                        .speechLikeFrameCount,
+                trailingSpeechLikeFraction:
+                    integrityCheck.trailingSpeechEvidence?
+                        .speechLikeFraction
             )
         }
         let validationStartedAt = Date()
@@ -376,7 +439,19 @@ public actor ReliableSpeechTranscriber {
         guard !protected.transcription.text
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .isEmpty else {
-            throw VoiceBridgeError.suspiciousTranscript([.emptyTranscript])
+            throw TranscriptionIntegrityFailure(
+                reasons: [.emptyTranscript],
+                timing: transcription.timing,
+                providerRetryOccurred: wasRetried,
+                lexicalCoverageEndSeconds:
+                    integrityCheck.providerLexicalCoverageEndSeconds,
+                trailingSpeechLikeFrameCount:
+                    integrityCheck.trailingSpeechEvidence?
+                        .speechLikeFrameCount,
+                trailingSpeechLikeFraction:
+                    integrityCheck.trailingSpeechEvidence?
+                        .speechLikeFraction
+            )
         }
         return ReliableTranscription(
             transcription: protected.transcription,
@@ -386,7 +461,15 @@ public actor ReliableSpeechTranscriber {
             wordAlignmentComplete: protected.wordAlignmentComplete,
             evaluatedSegmentCount: protected.evaluatedSegmentCount,
             wordTimestampCount: protected.wordTimestampCount,
-            segmentValidationSeconds: validationSeconds
+            segmentValidationSeconds: validationSeconds,
+            providerLexicalCoverageEndSeconds:
+                integrityCheck.providerLexicalCoverageEndSeconds,
+            trailingSpeechLikeFrameCount:
+                integrityCheck.trailingSpeechEvidence?
+                    .speechLikeFrameCount,
+            trailingSpeechLikeFraction:
+                integrityCheck.trailingSpeechEvidence?
+                    .speechLikeFraction
         )
     }
 
@@ -396,36 +479,115 @@ public actor ReliableSpeechTranscriber {
         audioDurationSeconds: Double,
         expectedChunkCount: Int,
         speechEvidence: SpeechEvidenceResult?
-    ) -> TranscriptionIntegrityResult {
-        let providerCoverageEnd = result.segments?.map(\.end).max()
-        let hasSustainedSpeechAfterProviderCoverage: Bool
+    ) -> IntegrityCheck {
+        let providerCoverageEnd = providerLexicalCoverageEnd(result)
+        let trailingSpeechEvidence: SpeechIntervalEvidence?
         if let speechEvidence,
            let providerCoverageEnd,
            audioDurationSeconds >= 8,
            providerCoverageEnd + 1 < audioDurationSeconds {
-            let tail = speechEvidence.evidence(
+            trailingSpeechEvidence = speechEvidence.evidence(
                 from: providerCoverageEnd + 0.25,
                 to: min(
                     audioDurationSeconds,
                     speechEvidence.analyzedDurationSeconds
                 )
             )
-            hasSustainedSpeechAfterProviderCoverage =
-                tail.hasSustainedSpeech && tail.speechLikeFraction >= 0.05
         } else {
-            hasSustainedSpeechAfterProviderCoverage = false
+            trailingSpeechEvidence = nil
         }
-        return TranscriptionIntegrityEvaluator.evaluate(
-            TranscriptionIntegrityEvidence(
-                audioDurationSeconds: audioDurationSeconds,
-                providerDurationSeconds: result.durationSeconds,
-                expectedChunkCount: expectedChunkCount,
-                returnedChunkCount: result.chunkCount,
-                transcript: result.text,
-                prompt: prompt,
-                hasSustainedSpeechAfterProviderCoverage:
-                    hasSustainedSpeechAfterProviderCoverage
-            )
+        let hasSustainedSpeechAfterProviderCoverage =
+            trailingSpeechEvidence?.hasSustainedSpeech == true
+            && (trailingSpeechEvidence?.speechLikeFraction ?? 0) >= 0.05
+        return IntegrityCheck(
+            result: TranscriptionIntegrityEvaluator.evaluate(
+                TranscriptionIntegrityEvidence(
+                    audioDurationSeconds: audioDurationSeconds,
+                    providerDurationSeconds: result.durationSeconds,
+                    expectedChunkCount: expectedChunkCount,
+                    returnedChunkCount: result.chunkCount,
+                    transcript: result.text,
+                    prompt: prompt,
+                    hasSustainedSpeechAfterProviderCoverage:
+                        hasSustainedSpeechAfterProviderCoverage
+                )
+            ),
+            providerLexicalCoverageEndSeconds: providerCoverageEnd,
+            trailingSpeechEvidence: trailingSpeechEvidence
+        )
+    }
+
+    private func providerLexicalCoverageEnd(
+        _ result: TranscriptionResult
+    ) -> Double? {
+        let canonicalTokens = normalizedTokens(result.text)
+        guard !canonicalTokens.isEmpty else { return nil }
+
+        let alignedWords = result.words.filter {
+            $0.end.isFinite && $0.start.isFinite && $0.end > $0.start
+        }
+        let wordTokens = alignedWords.flatMap { normalizedTokens($0.word) }
+        if !alignedWords.isEmpty, wordTokens == canonicalTokens {
+            return alignedWords.map(\.end).max()
+        }
+
+        let lexicalSegments = (result.segments ?? []).filter {
+            !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && $0.end.isFinite
+                && $0.start.isFinite
+                && $0.end > $0.start
+        }
+        let segmentTokens = lexicalSegments.flatMap {
+            normalizedTokens($0.text)
+        }
+        if !lexicalSegments.isEmpty, segmentTokens == canonicalTokens {
+            return lexicalSegments.map(\.end).max()
+        }
+
+        // Sparse or ambiguous provider alignment must fail open. Duration and
+        // chunk-count checks still apply, but timestamps that cannot be tied
+        // to the canonical text are not evidence of missing speech.
+        return nil
+    }
+
+    private func normalizedTokens(_ value: String) -> [String] {
+        value.lowercased()
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init)
+    }
+
+    private func integrityFailure(
+        _ check: IntegrityCheck,
+        timing: TranscriptionTiming?
+    ) -> TranscriptionIntegrityFailure {
+        TranscriptionIntegrityFailure(
+            reasons: check.result.reasons,
+            timing: timing,
+            providerRetryOccurred: true,
+            lexicalCoverageEndSeconds:
+                check.providerLexicalCoverageEndSeconds,
+            trailingSpeechLikeFrameCount:
+                check.trailingSpeechEvidence?.speechLikeFrameCount,
+            trailingSpeechLikeFraction:
+                check.trailingSpeechEvidence?.speechLikeFraction
+        )
+    }
+
+    private func combinedTiming(
+        _ first: TranscriptionTiming?,
+        _ second: TranscriptionTiming?
+    ) -> TranscriptionTiming? {
+        guard first != nil || second != nil else { return nil }
+        return TranscriptionTiming(
+            chunkPreparationSeconds:
+                (first?.chunkPreparationSeconds ?? 0)
+                + (second?.chunkPreparationSeconds ?? 0),
+            providerWaitSeconds:
+                (first?.providerWaitSeconds ?? 0)
+                + (second?.providerWaitSeconds ?? 0),
+            responseProcessingSeconds:
+                (first?.responseProcessingSeconds ?? 0)
+                + (second?.responseProcessingSeconds ?? 0)
         )
     }
 }

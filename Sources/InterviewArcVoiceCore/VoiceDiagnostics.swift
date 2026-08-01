@@ -27,6 +27,11 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
     public let microphoneRecoveryCount: Int?
     public let vadSpeechFrameCount: Int?
     public let vadLongestSpeechRunFrames: Int?
+    public let providerRetryOccurred: Bool?
+    public let lexicalCoverageEndSeconds: Double?
+    public let trailingSpeechLikeFrameCount: Int?
+    public let trailingSpeechLikeFraction: Double?
+    public let integrityReasons: [TranscriptionIntegrityReason]?
     public let outcome: VoiceDiagnosticOutcome
 
     public init(
@@ -50,6 +55,11 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         microphoneRecoveryCount: Int? = nil,
         vadSpeechFrameCount: Int? = nil,
         vadLongestSpeechRunFrames: Int? = nil,
+        providerRetryOccurred: Bool? = nil,
+        lexicalCoverageEndSeconds: Double? = nil,
+        trailingSpeechLikeFrameCount: Int? = nil,
+        trailingSpeechLikeFraction: Double? = nil,
+        integrityReasons: [TranscriptionIntegrityReason]? = nil,
         outcome: VoiceDiagnosticOutcome
     ) {
         self.id = id
@@ -72,6 +82,11 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         self.microphoneRecoveryCount = microphoneRecoveryCount
         self.vadSpeechFrameCount = vadSpeechFrameCount
         self.vadLongestSpeechRunFrames = vadLongestSpeechRunFrames
+        self.providerRetryOccurred = providerRetryOccurred
+        self.lexicalCoverageEndSeconds = lexicalCoverageEndSeconds
+        self.trailingSpeechLikeFrameCount = trailingSpeechLikeFrameCount
+        self.trailingSpeechLikeFraction = trailingSpeechLikeFraction
+        self.integrityReasons = integrityReasons
         self.outcome = outcome
     }
 
@@ -96,6 +111,11 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
             "Microphone recovery attempts: \(microphoneRecoveryCount.map { String($0) } ?? "Unavailable")",
             "WebRTC VAD speech frames: \(vadSpeechFrameCount.map { String($0) } ?? "Unavailable")",
             "WebRTC VAD longest run: \(vadLongestSpeechRunFrames.map { String($0) } ?? "Unavailable")",
+            "Transcription retried: \(providerRetryOccurred.map { String($0) } ?? "Unavailable")",
+            "Provider lexical coverage end: \(seconds(lexicalCoverageEndSeconds))",
+            "Trailing speech-like frames: \(trailingSpeechLikeFrameCount.map { String($0) } ?? "Unavailable")",
+            "Trailing speech-like fraction: \(fraction(trailingSpeechLikeFraction))",
+            "Transcription integrity reasons: \(integrityReasons?.map(\.rawValue).joined(separator: ", ") ?? "None")",
             "Outcome: \(outcome.rawValue)",
         ].joined(separator: "\n")
     }
@@ -104,6 +124,14 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         let value = max(0, seconds) * 1_000
         if value > 0, value < 1 { return "<1 ms" }
         return String(format: "%.0f ms", value)
+    }
+
+    private func seconds(_ value: Double?) -> String {
+        value.map { String(format: "%.2f s", $0) } ?? "Unavailable"
+    }
+
+    private func fraction(_ value: Double?) -> String {
+        value.map { String(format: "%.3f", $0) } ?? "Unavailable"
     }
 }
 

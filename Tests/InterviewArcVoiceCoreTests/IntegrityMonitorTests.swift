@@ -183,23 +183,52 @@ import Testing
 
 @Test func transcriptEndingBeforeSustainedTailSpeechRetriesInsteadOfDeliveringPartialText() async throws {
     let partial = TranscriptionResult(
-        text: "The first chunk was transcribed, but the ending was lost.",
-        words: [],
+        text: "The first part was transcribed but the complete ending was lost.",
+        words: timestampedWords(
+            "The first part was transcribed but the complete ending was lost.",
+            endingAt: 34
+        ),
         segments: [
-            TranscriptSegment(start: 0, end: 18, text: "The first chunk was transcribed."),
+            TranscriptSegment(
+                start: 0,
+                end: 34,
+                text: "The first part was transcribed but the complete ending was lost."
+            ),
+            // Groq can report a final no-text segment that reaches the audio
+            // duration. It must not count as lexical transcript coverage.
+            TranscriptSegment(
+                start: 34,
+                end: 53,
+                text: "",
+                averageLogProbability: -1.4,
+                noSpeechProbability: 0.91
+            ),
         ],
-        durationSeconds: 36,
-        chunkCount: 2
+        durationSeconds: 53,
+        chunkCount: 1,
+        timing: TranscriptionTiming(
+            chunkPreparationSeconds: 0.01,
+            providerWaitSeconds: 0.60,
+            responseProcessingSeconds: 0.01
+        )
     )
     let complete = TranscriptionResult(
         text: "The first chunk was transcribed, and the complete ending is present.",
-        words: [],
+        words: timestampedWords(
+            "The first chunk was transcribed and the complete ending is present.",
+            endingAt: 52.7
+        ),
         segments: [
             TranscriptSegment(start: 0, end: 18, text: "The first chunk was transcribed,"),
-            TranscriptSegment(start: 18, end: 35.5, text: "and the complete ending is present."),
+            TranscriptSegment(start: 18, end: 52.7, text: "and the complete ending is present."),
         ],
-        durationSeconds: 36,
-        chunkCount: 2
+        durationSeconds: 53,
+        chunkCount: 1,
+        timing: TranscriptionTiming(
+            chunkPreparationSeconds: 0.01,
+            providerWaitSeconds: 0.60,
+            responseProcessingSeconds: 0.01
+        )
     )
     let transcriber = CountingTranscriber(results: [partial, complete])
     let reliable = ReliableSpeechTranscriber(base: transcriber)
@@ -208,13 +237,57 @@ import Testing
         fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
         prompt: "Context vocabulary",
         temporaryDirectory: URL(fileURLWithPath: "/tmp"),
-        audioDurationSeconds: 36,
-        expectedChunkCount: 2,
-        speechEvidence: sustainedSpeechEvidence(durationSeconds: 36)
+        audioDurationSeconds: 53,
+        expectedChunkCount: 1,
+        speechEvidence: sustainedSpeechEvidence(durationSeconds: 53)
     )
 
     #expect(result.wasRetried)
     #expect(result.transcription.text.contains("complete ending"))
+    let callCount = await transcriber.callCount
+    #expect(callCount == 2)
+}
+
+@Test func twoPartialProviderResultsFailRecoverablyInsteadOfDeliveringEitherOne() async {
+    let partial = TranscriptionResult(
+        text: "Only the beginning is present.",
+        words: timestampedWords("Only the beginning is present.", endingAt: 21),
+        segments: [
+            TranscriptSegment(start: 0, end: 21, text: "Only the beginning is present."),
+            TranscriptSegment(start: 21, end: 53, text: ""),
+        ],
+        durationSeconds: 53,
+        chunkCount: 1,
+        timing: TranscriptionTiming(
+            chunkPreparationSeconds: 0.01,
+            providerWaitSeconds: 0.60,
+            responseProcessingSeconds: 0.01
+        )
+    )
+    let transcriber = CountingTranscriber(results: [partial, partial])
+    let reliable = ReliableSpeechTranscriber(base: transcriber)
+
+    do {
+        _ = try await reliable.transcribe(
+            fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+            prompt: "Context vocabulary",
+            temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+            audioDurationSeconds: 53,
+            expectedChunkCount: 1,
+            speechEvidence: sustainedSpeechEvidence(durationSeconds: 53)
+        )
+        Issue.record("Expected a recoverable suspicious-transcript failure")
+    } catch let failure as TranscriptionIntegrityFailure {
+        #expect(failure.reasons.contains(.missingSpeechCoverage))
+        #expect(failure.providerRetryOccurred)
+        #expect(failure.lexicalCoverageEndSeconds == 21)
+        #expect(failure.trailingSpeechLikeFrameCount != nil)
+        #expect(failure.trailingSpeechLikeFraction != nil)
+        #expect(failure.timing?.providerWaitSeconds == 1.20)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+
     let callCount = await transcriber.callCount
     #expect(callCount == 2)
 }
@@ -290,4 +363,20 @@ private func sustainedSpeechEvidence(durationSeconds: Double) -> SpeechEvidenceR
         speechLikeFrames: Array(repeating: true, count: frameCount),
         frameDecibels: levels
     )
+}
+
+private func timestampedWords(
+    _ text: String,
+    endingAt end: Double
+) -> [TranscriptWord] {
+    let values = text.split(separator: " ").map(String.init)
+    guard !values.isEmpty else { return [] }
+    let duration = end / Double(values.count)
+    return values.enumerated().map { index, value in
+        TranscriptWord(
+            word: value,
+            start: Double(index) * duration,
+            end: Double(index + 1) * duration
+        )
+    }
 }

@@ -1920,6 +1920,11 @@ final class VoiceBridgeModel: ObservableObject {
         wordAlignmentComplete: Bool? = nil,
         evaluatedSegmentCount: Int? = nil,
         wordTimestampCount: Int? = nil,
+        transcriptionWasRetried: Bool? = nil,
+        providerLexicalCoverageEndSeconds: Double? = nil,
+        trailingSpeechLikeFrameCount: Int? = nil,
+        trailingSpeechLikeFraction: Double? = nil,
+        transcriptionIntegrityReasons: [TranscriptionIntegrityReason]? = nil,
         outcome: VoiceDiagnosticOutcome
     ) async {
         let record = VoiceDiagnosticRecord(
@@ -1945,6 +1950,12 @@ final class VoiceBridgeModel: ObservableObject {
             microphoneRecoveryCount: seed.microphoneRecoveryCount,
             vadSpeechFrameCount: seed.vadSpeechFrameCount,
             vadLongestSpeechRunFrames: seed.vadLongestSpeechRunFrames,
+            providerRetryOccurred: transcriptionWasRetried,
+            lexicalCoverageEndSeconds:
+                providerLexicalCoverageEndSeconds,
+            trailingSpeechLikeFrameCount: trailingSpeechLikeFrameCount,
+            trailingSpeechLikeFraction: trailingSpeechLikeFraction,
+            integrityReasons: transcriptionIntegrityReasons,
             outcome: outcome
         )
         try? await diagnosticsStore?.append(record)
@@ -2492,12 +2503,30 @@ final class VoiceBridgeModel: ObservableObject {
             )
         }
         if let diagnosticSeed {
+            let integrityFailure = error as? TranscriptionIntegrityFailure
+            let integrityReasons: [TranscriptionIntegrityReason]?
+            if let integrityFailure {
+                integrityReasons = integrityFailure.reasons
+            } else if case let VoiceBridgeError.suspiciousTranscript(reasons) = error {
+                integrityReasons = reasons
+            } else {
+                integrityReasons = nil
+            }
             await recordDiagnostic(
                 seed: diagnosticSeed,
-                timing: nil,
+                timing: integrityFailure?.timing,
                 segmentValidationSeconds: 0,
                 insertionSeconds: currentInsertionDurationSeconds,
                 omittedUnsupportedSegmentCount: 0,
+                transcriptionWasRetried:
+                    integrityFailure?.providerRetryOccurred,
+                providerLexicalCoverageEndSeconds:
+                    integrityFailure?.lexicalCoverageEndSeconds,
+                trailingSpeechLikeFrameCount:
+                    integrityFailure?.trailingSpeechLikeFrameCount,
+                trailingSpeechLikeFraction:
+                    integrityFailure?.trailingSpeechLikeFraction,
+                transcriptionIntegrityReasons: integrityReasons,
                 outcome: .failed
             )
         }
@@ -3132,6 +3161,13 @@ final class VoiceBridgeModel: ObservableObject {
                     wordAlignmentComplete: result.wordAlignmentComplete,
                     evaluatedSegmentCount: result.evaluatedSegmentCount,
                     wordTimestampCount: result.wordTimestampCount,
+                    transcriptionWasRetried: result.wasRetried,
+                    providerLexicalCoverageEndSeconds:
+                        result.providerLexicalCoverageEndSeconds,
+                    trailingSpeechLikeFrameCount:
+                        result.trailingSpeechLikeFrameCount,
+                    trailingSpeechLikeFraction:
+                        result.trailingSpeechLikeFraction,
                     outcome: inserted ? .delivered : .failed
                 )
             }
@@ -3219,6 +3255,14 @@ final class VoiceBridgeModel: ObservableObject {
                     wordAlignmentComplete: result.wordAlignmentComplete,
                     evaluatedSegmentCount: result.evaluatedSegmentCount,
                     wordTimestampCount: result.wordTimestampCount,
+                    transcriptionWasRetried:
+                        result.transcriptionWasRetried,
+                    providerLexicalCoverageEndSeconds:
+                        result.providerLexicalCoverageEndSeconds,
+                    trailingSpeechLikeFrameCount:
+                        result.trailingSpeechLikeFrameCount,
+                    trailingSpeechLikeFraction:
+                        result.trailingSpeechLikeFraction,
                     outcome: lastInsertionSucceeded ? .delivered : .failed
                 )
             }
