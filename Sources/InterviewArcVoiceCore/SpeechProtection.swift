@@ -63,6 +63,7 @@ public enum SegmentLocalTranscriptValidator {
     private static let minimumWordEvidenceSeconds = 0.45
     private static let maximumUnsupportedWordGapSeconds = 0.30
     private static let maximumTerminalSpeechFraction = 0.10
+    private static let minimumTerminalTimestampOverrunSeconds = 0.20
     private static let terminalHallucinationPhrases = [
         ["thank", "you"],
     ]
@@ -430,6 +431,14 @@ public enum SegmentLocalTranscriptValidator {
         let lastWord = words[lastIndex]
         let audioEnd = speechEvidence.analyzedDurationSeconds
         guard lastWord.end >= audioEnd - 0.75 else { return nil }
+        guard terminalProviderCorroboratesRejection(
+            wordIndices: wordIndices,
+            words: words,
+            segments: segments,
+            audioEnd: audioEnd
+        ) else {
+            return nil
+        }
         let evidenceStart = max(0, firstWord.start - segmentPaddingSeconds)
         let local = speechEvidence.evidence(
             from: evidenceStart,
@@ -445,6 +454,35 @@ public enum SegmentLocalTranscriptValidator {
             wordIndices: Array(wordIndices),
             tokenInterval: tokenInterval
         )
+    }
+
+    private static func terminalProviderCorroboratesRejection(
+        wordIndices: [Int],
+        words: [TranscriptWord],
+        segments: [TranscriptSegment],
+        audioEnd: Double
+    ) -> Bool {
+        guard let lastIndex = wordIndices.last else { return false }
+        if words[lastIndex].end - audioEnd
+            >= minimumTerminalTimestampOverrunSeconds {
+            return true
+        }
+
+        let overlappingSegments = segments.filter { segment in
+            wordIndices.contains { index in
+                words[index].end > segment.start
+                    && words[index].start < segment.end
+            }
+        }
+        guard !overlappingSegments.isEmpty else { return false }
+        return overlappingSegments.allSatisfy { segment in
+            guard let noSpeechProbability = segment.noSpeechProbability,
+                  let averageLogProbability = segment.averageLogProbability else {
+                return false
+            }
+            return noSpeechProbability >= providerNoSpeechThreshold
+                && averageLogProbability <= providerLogProbabilityThreshold
+        }
     }
 
     private static func uniqueTokenInterval(

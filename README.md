@@ -180,10 +180,12 @@ discarded.
   word run may still be removed if its normalized text maps to exactly one
   source range in the canonical provider transcript. Missing or ambiguous
   candidate alignment preserves the text. A terminal “thank you” is removed
-  only when complete word alignment identifies that exact ending and the
-  combined timestamped tail contains no sustained local speech; evaluating the
-  phrase as one tail prevents a brief Stop transient from authorizing two short
-  invented words. Genuinely spoken instances remain. This uses no second Groq request or
+  only when complete word alignment identifies that exact ending, the combined
+  timestamped tail contains no sustained local speech, and Groq also reports
+  either unsupported confidence metadata or a material word-timestamp overrun
+  beyond the real audio. Evaluating the phrase as one tail prevents a brief
+  Stop transient from authorizing two short invented words while preserving a
+  quiet, high-confidence closing. This uses no second Groq request or
   audio decode and never cuts, rewrites, or replaces the original M4A.
 - Settings → Diagnostics records a bounded local timing breakdown for capture,
   validation, Groq, transcript corroboration, response handling, and insertion,
