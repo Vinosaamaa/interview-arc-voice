@@ -2056,7 +2056,10 @@ struct FloatingRecorderView: View {
     }
 
     private var miniDragGesture: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+        DragGesture(
+            minimumDistance: MiniWidgetPointerPolicy.dragThreshold,
+            coordinateSpace: .global
+        )
             .onChanged { _ in
                 guard model.widgetSizeMode == .mini else { return }
                 let pointer = NSEvent.mouseLocation
@@ -2084,7 +2087,10 @@ struct FloatingRecorderView: View {
     }
 
     private var standardDragGesture: some Gesture {
-        DragGesture(minimumDistance: 5, coordinateSpace: .global)
+        DragGesture(
+            minimumDistance: MiniWidgetPointerPolicy.dragThreshold,
+            coordinateSpace: .global
+        )
             .onChanged { _ in
                 guard model.widgetSizeMode == .standard else { return }
                 let pointer = NSEvent.mouseLocation
