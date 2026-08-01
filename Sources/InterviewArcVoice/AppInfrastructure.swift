@@ -720,6 +720,36 @@ private struct PasteboardSnapshot {
 @MainActor
 private final class VoiceFloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
+
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            // The planner lives above the recorder. Only the bottom capsule is
+            // window chrome; lists, selection rails, and text fields must keep
+            // their native click/scroll/drag behavior.
+            if event.locationInWindow.y <= FloatingWidgetWindowPolicy.hostHeight {
+                FloatingPanelController.shared.beginMiniDrag(
+                    pointerLocation: NSEvent.mouseLocation
+                )
+            }
+        case .leftMouseDragged:
+            if FloatingPanelController.shared.updateMiniDrag(
+                pointerLocation: NSEvent.mouseLocation
+            ) {
+                return
+            }
+        case .leftMouseUp:
+            // A stationary click is forwarded unchanged. Once the pointer has
+            // crossed the drag threshold, swallow mouse-up so the Button under
+            // the original down event cannot fire after moving the window.
+            if FloatingPanelController.shared.endMiniDrag() {
+                return
+            }
+        default:
+            break
+        }
+        super.sendEvent(event)
+    }
 }
 
 @MainActor
@@ -1187,8 +1217,6 @@ struct FloatingRecorderView: View {
     @ObservedObject var model: VoiceBridgeModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var miniSmoothedLevel = 0.0
-    @State private var suppressMiniClick = false
-    @State private var suppressStandardClick = false
 
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
@@ -1358,10 +1386,6 @@ struct FloatingRecorderView: View {
                 : .easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds),
             value: model.miniWidgetLayout
         )
-        .simultaneousGesture(
-            miniDragGesture,
-            including: model.widgetSizeMode == .mini ? .all : .none
-        )
     }
 
     private var showsSharedCapsuleSurface: Bool {
@@ -1498,7 +1522,6 @@ struct FloatingRecorderView: View {
                 HStack(spacing: 0) {
                     if model.canExpandMiniSessionTimer {
                         Button {
-                            guard !suppressMiniClick else { return }
                             model.toggleMiniSessionTimer()
                         } label: {
                             HStack(spacing: 0) {
@@ -1585,7 +1608,6 @@ struct FloatingRecorderView: View {
 
     private var linkButton: some View {
         Button {
-            guard !suppressStandardClick else { return }
             model.toggleLinkMode()
         } label: {
             LinkStatusIcon(
@@ -1626,7 +1648,6 @@ struct FloatingRecorderView: View {
                             minHeight: 24
                         )
                         .layoutPriority(1)
-                        .simultaneousGesture(standardDragGesture)
                         memoButton(
                             symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
                             label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
@@ -1657,7 +1678,6 @@ struct FloatingRecorderView: View {
                 } else {
                     TimelineView(.periodic(from: .now, by: 1)) { timeline in
                         Button {
-                            guard !suppressStandardClick else { return }
                             model.toggleTimerPanel()
                         } label: {
                             HStack(spacing: 3) {
@@ -1672,7 +1692,6 @@ struct FloatingRecorderView: View {
                                     minHeight: 24
                                 )
                                 .layoutPriority(1)
-                                .simultaneousGesture(standardDragGesture)
                                 compactTimerCluster(at: timeline.date)
                                 Image(systemName: model.timerPanelExpanded ? "chevron.down" : "chevron.up")
                                     .font(.system(size: 8, weight: .bold))
@@ -1699,7 +1718,6 @@ struct FloatingRecorderView: View {
                         alignment: model.shouldCenterFloatingTitle ? .center : .leading
                     )
                     .contentShape(Rectangle())
-                    .simultaneousGesture(standardDragGesture)
             }
         }
     }
@@ -1879,7 +1897,6 @@ struct FloatingRecorderView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button {
-            guard !suppressStandardClick else { return }
             action()
         } label: {
             Image(systemName: symbol)
@@ -1925,13 +1942,6 @@ struct FloatingRecorderView: View {
 
     private var recordButton: some View {
         Button {
-            guard !(
-                model.widgetSizeMode == .mini
-                    && suppressMiniClick
-            ), !(
-                model.widgetSizeMode == .standard
-                    && suppressStandardClick
-            ) else { return }
             model.toggleRecording()
         } label: {
             ZStack {
@@ -2038,73 +2048,6 @@ struct FloatingRecorderView: View {
         )
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-    }
-
-    private var miniDragGesture: some Gesture {
-        DragGesture(
-            // The mini widget lives in a nonactivating NSPanel. It must claim
-            // mouse-down immediately or AppKit treats a stationary click as
-            // activation-only and the recorder Button never fires. Movement
-            // is still classified with MiniWidgetPointerPolicy below, so a
-            // real drag keeps suppressMiniClick set through button delivery.
-            minimumDistance: 0,
-            coordinateSpace: .global
-        )
-            .onChanged { _ in
-                guard model.widgetSizeMode == .mini else { return }
-                let pointer = NSEvent.mouseLocation
-                FloatingPanelController.shared.beginMiniDrag(
-                    pointerLocation: pointer
-                )
-                if FloatingPanelController.shared.updateMiniDrag(
-                    pointerLocation: pointer
-                ) {
-                    suppressMiniClick = true
-                }
-            }
-            .onEnded { _ in
-                guard model.widgetSizeMode == .mini else { return }
-                let didDrag = FloatingPanelController.shared.endMiniDrag()
-                if didDrag {
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(120))
-                        suppressMiniClick = false
-                    }
-                } else {
-                    suppressMiniClick = false
-                }
-            }
-    }
-
-    private var standardDragGesture: some Gesture {
-        DragGesture(
-            minimumDistance: MiniWidgetPointerPolicy.dragThreshold,
-            coordinateSpace: .global
-        )
-            .onChanged { _ in
-                guard model.widgetSizeMode == .standard else { return }
-                let pointer = NSEvent.mouseLocation
-                FloatingPanelController.shared.beginMiniDrag(
-                    pointerLocation: pointer
-                )
-                if FloatingPanelController.shared.updateMiniDrag(
-                    pointerLocation: pointer
-                ) {
-                    suppressStandardClick = true
-                }
-            }
-            .onEnded { _ in
-                guard model.widgetSizeMode == .standard else { return }
-                let didDrag = FloatingPanelController.shared.endMiniDrag()
-                if didDrag {
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(120))
-                        suppressStandardClick = false
-                    }
-                } else {
-                    suppressStandardClick = false
-                }
-            }
     }
 
     private var recordHaloColor: Color {
