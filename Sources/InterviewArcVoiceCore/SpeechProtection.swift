@@ -133,11 +133,18 @@ public enum SegmentLocalTranscriptValidator {
             transcription.words,
             canonicalTokens: canonicalTokens
         )
+        let terminalTokenInterval = terminalPhraseTokenInterval(
+            canonicalTokens: canonicalTokens
+        )
         var rejectedWordRuns: [RejectedWordRun]
         if wordAlignment.isComplete {
             rejectedWordRuns = transcription.words.indices.compactMap { index in
                 guard
-                    !overlapsRejectedSegment(
+                    !overlaps(
+                        wordAlignment.intervals[index],
+                        terminalTokenInterval
+                    )
+                    && !overlapsRejectedSegment(
                         transcription.words[index],
                         segments: segments,
                         rejectedSegmentIndices: rejectedSegmentIndices
@@ -396,16 +403,9 @@ public enum SegmentLocalTranscriptValidator {
     ) -> RejectedWordRun? {
         guard speechEvidence.analyzedDurationSeconds > 0 else { return nil }
 
-        let normalizedTokens = canonicalTokens.map(\.normalized)
-        guard let phrase = terminalHallucinationPhrases.first(where: {
-            normalizedTokens.suffix($0.count).elementsEqual($0)
-        }) else {
-            return nil
-        }
-        let tokenInterval = TokenInterval(
-            lowerBound: canonicalTokens.count - phrase.count,
-            upperBound: canonicalTokens.count
-        )
+        guard let tokenInterval = terminalPhraseTokenInterval(
+            canonicalTokens: canonicalTokens
+        ) else { return nil }
         let wordIndices = words.indices.filter { index in
             let interval = wordAlignment.intervals[index]
             return interval.lowerBound < tokenInterval.upperBound
@@ -454,6 +454,30 @@ public enum SegmentLocalTranscriptValidator {
             wordIndices: Array(wordIndices),
             tokenInterval: tokenInterval
         )
+    }
+
+    private static func terminalPhraseTokenInterval(
+        canonicalTokens: [TextToken]
+    ) -> TokenInterval? {
+        let normalizedTokens = canonicalTokens.map(\.normalized)
+        guard let phrase = terminalHallucinationPhrases.first(where: {
+            normalizedTokens.suffix($0.count).elementsEqual($0)
+        }) else {
+            return nil
+        }
+        return TokenInterval(
+            lowerBound: canonicalTokens.count - phrase.count,
+            upperBound: canonicalTokens.count
+        )
+    }
+
+    private static func overlaps(
+        _ interval: TokenInterval,
+        _ optionalOther: TokenInterval?
+    ) -> Bool {
+        guard let other = optionalOther else { return false }
+        return interval.lowerBound < other.upperBound
+            && interval.upperBound > other.lowerBound
     }
 
     private static func terminalProviderCorroboratesRejection(
