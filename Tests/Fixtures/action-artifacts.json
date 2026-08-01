@@ -1,0 +1,28 @@
+{
+  "artifacts": [
+    {
+      "id": 101,
+      "name": "Interview-Arc-Voice-tree-tree-other",
+      "expired": false,
+      "workflow_run": { "id": 1001 }
+    },
+    {
+      "id": 202,
+      "name": "Interview-Arc-Voice-tree-tree-match",
+      "expired": true,
+      "workflow_run": { "id": 2002 }
+    },
+    {
+      "id": 303,
+      "name": "Interview-Arc-Voice-tree-tree-match",
+      "expired": false,
+      "workflow_run": { "id": 3003 }
+    },
+    {
+      "id": 404,
+      "name": "Interview-Arc-Voice-tree-tree-match",
+      "expired": false,
+      "workflow_run": { "id": 4004 }
+    }
+  ]
+}
