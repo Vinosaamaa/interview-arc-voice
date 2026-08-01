@@ -93,7 +93,12 @@ The menu-bar panel is content-sized vertically. Adding or removing recovery,
 resolver, retry, capture, or transcript sections must update the window's
 intrinsic height; a shorter state must never remain centered inside a taller
 stale material frame. macOS may constrain exceptionally tall content to the
-visible screen, but ordinary states always hug their current content.
+visible screen, but ordinary states always hug their current content. The
+ordinary intrinsic-content path must not be wrapped in a scroll container;
+scrolling is a fallback selected only when the complete content cannot fit
+within the visible-screen cap. A permanent scroll root is prohibited because
+it advertises the cap as the menu's ideal height and creates translucent bands
+above and below short content.
 
 ## Material and depth
 

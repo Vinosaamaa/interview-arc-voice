@@ -4291,37 +4291,44 @@ private struct VoiceBridgeMenu: View {
     @State private var showsAllCaptures = false
 
     var body: some View {
-        ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 10) {
-                statusHeader
-                modeCard
-                if model.linkToInterviewArc { planTodayControl }
-                recordingControl
-                if model.recorder.isRecording, model.recorder.signalHealth == .absent {
-                    microphoneSignalWarning
-                }
-                if model.isFailurePresented { failureCard }
-                if model.sessionFinishResolutionRequested {
-                    SessionFinishResolverCard(model: model)
-                }
-                if model.showsDeliverySteps { deliveryProgress }
-                if model.hasLastMemo || model.hasMenuTranscript { transcriptPreview }
-                if !model.pendingVoiceCaptures.isEmpty { recentCapturesCard }
-                if !model.legacyVoiceOrphans.isEmpty { legacyVoiceOrphansCard }
-                if model.pendingRetryCount > 0 { retryRow }
-                settings
-                providerFooter
+        ViewThatFits(in: .vertical) {
+            menuContent
+            ScrollView(.vertical) {
+                menuContent
             }
-            .padding(12)
-            .frame(width: 260)
-            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxHeight: maximumHeight)
         }
         .frame(width: 260)
-        .frame(maxHeight: maximumHeight)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxHeight: maximumHeight, alignment: .top)
         .task {
             await model.refreshTranscriptHistory()
         }
+    }
+
+    private var menuContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            statusHeader
+            modeCard
+            if model.linkToInterviewArc { planTodayControl }
+            recordingControl
+            if model.recorder.isRecording, model.recorder.signalHealth == .absent {
+                microphoneSignalWarning
+            }
+            if model.isFailurePresented { failureCard }
+            if model.sessionFinishResolutionRequested {
+                SessionFinishResolverCard(model: model)
+            }
+            if model.showsDeliverySteps { deliveryProgress }
+            if model.hasLastMemo || model.hasMenuTranscript { transcriptPreview }
+            if !model.pendingVoiceCaptures.isEmpty { recentCapturesCard }
+            if !model.legacyVoiceOrphans.isEmpty { legacyVoiceOrphansCard }
+            if model.pendingRetryCount > 0 { retryRow }
+            settings
+            providerFooter
+        }
+        .padding(12)
+        .frame(width: 260)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var maximumHeight: CGFloat {

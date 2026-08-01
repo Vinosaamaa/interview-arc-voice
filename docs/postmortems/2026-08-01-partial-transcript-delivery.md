@@ -1,10 +1,17 @@
 # Postmortem: Partial transcript delivered while speech remained in the recording
 
 **Date**: 2026-08-01  
-**Status**: Final<br>
+**Status**: Reopened — recurrence repair in verification<br>
 **Severity**: P0 silent data loss  
 **Issue**: [interview-arc-voice#123](https://github.com/Vinosaamaa/interview-arc-voice/issues/123)  
 **Pull request**: [interview-arc-voice#136](https://github.com/Vinosaamaa/interview-arc-voice/pull/136)
+
+> **Recurrence update:** The exact #136/#140 installed artifact delivered a
+> second incomplete 80.89-second transcript on 2026-08-01. The follow-up root
+> cause was a malformed provider word timestamp combined with an unsafe
+> nonempty-segment fallback. The chronology, failed control, and corrective
+> action below have been updated; the incident is not considered closed until
+> the replacement merged-main artifact completes installed verification.
 
 ## Executive summary
 
@@ -27,6 +34,9 @@ cover the full recording, bypassing the retry and recoverable-failure path.
   recoverable.
 - The application reported success instead of an incomplete-transcript error.
 - A previous report had the same failure class, establishing recurrence.
+- A later 80.89-second dictation contained independently recoverable speech
+  through approximately 80.66 seconds, while the delivered provider text ended
+  at approximately 73.46 seconds. The app again reported `delivered`.
 - A separate clear 46.78-second recording was rejected safely, but the original
   attempt and two manual retries all displayed the same generic failure while
   diagnostics falsely reported zero provider time.
@@ -70,6 +80,16 @@ evidence and are not committed to Git.
 - 2026-08-01 — Merged main rebuilt and packaged tree `d275b7e` in workflow
   run `30715292109`; the exact artifact was stably signed, staged, installed,
   and launched.
+- 2026-08-01 14:13 — That exact installed artifact delivered an 80.89-second
+  capture with approximately 7.20 seconds of later speech absent. Diagnostics
+  reported complete word alignment but omitted the lexical-coverage field.
+- 2026-08-01 14:18 — Issues #123 and #138 were reopened. The preserved audio
+  was confirmed complete and independently transcribed without committing
+  audio or transcript content to Git.
+- 2026-08-01 — A production-shaped regression reproduced the false pass: one
+  canonical word had zero duration, the remaining valid word timings ended
+  before sustained local speech, and a nonempty provider segment reached the
+  full recording duration.
 
 ## Root cause
 
@@ -88,6 +108,27 @@ the full audio duration without contributing any words to the canonical text.
 4. The diagnostic record did not include the chosen coverage boundary, tail
    evidence, retry status, or integrity reasons, delaying direct detection.
 
+### Why the second guard still did not prevent recurrence
+
+1. The follow-up correctly ignored empty trailing segments, but retained a
+   fallback to nonempty segment timing.
+2. It filtered malformed word timestamps before comparing returned word tokens
+   with the canonical transcript. One zero-duration word therefore made an
+   otherwise complete word-token alignment appear incomplete.
+3. The code then accepted the enclosing nonempty segment because its text
+   normalized to the canonical transcript.
+4. Provider segments are acoustic decoding windows. A segment can reach the
+   end of processed audio even when the words returned for that window omit
+   later speech, so its end time was not a trustworthy lexical boundary.
+5. The resulting boundary equaled the recording duration. No trailing local
+   interval was evaluated, no retry ran, and the partial response was inserted.
+
+The recurrence diagnostic's combination of `wordAlignmentComplete: true` and
+an absent lexical-coverage field was consistent with this path. Independent
+local transcription recovered 165 normalized words versus the delivered 146,
+with material speech continuing for roughly 7.20 seconds after the delivered
+ending.
+
 ### Contributing factors
 
 - Provider top-level duration described processed audio, not lexical coverage.
@@ -99,9 +140,9 @@ the full audio duration without contributing any words to the canonical text.
   making an executed retry look like a dead control and a zero-millisecond
   provider call.
 
-## Resolution
+## Initial resolution (superseded)
 
-The repair:
+The superseded repair:
 
 1. normalizes the canonical provider text;
 2. uses word coverage only when all valid timestamped words map exactly to that
@@ -122,10 +163,33 @@ and fraction, whether transcription retried, and integrity reason codes on
 both success and recoverable failure. The recovery message explicitly states
 when Groq returned incomplete text twice.
 
+## Recurrence repair
+
+The follow-up repair removes provider segments from lexical completeness
+decisions entirely:
+
+1. compare every returned word token with the canonical provider text before
+   discarding malformed timing metadata;
+2. when those tokens align, compute coverage from only finite,
+   positive-duration word ends;
+3. preserve usable word boundaries even when one aligned word has malformed
+   timing;
+4. never use an acoustic segment end as a lexical fallback; and
+5. retain the existing fail-open behavior when no trustworthy word boundary is
+   available rather than inventing coverage from unrelated metadata.
+
+The regression fixture matches the recurrence topology: a full-duration
+nonempty segment, complete word-token alignment, one zero-duration word, local
+speech beyond the final valid word end, and a complete prompt-free retry. The
+old implementation delivers the partial first response; the repaired
+implementation retries it.
+
 ## Regression prevention
 
 - Production-shaped test: full-duration response with complete partial-word
   alignment plus an empty trailing segment.
+- Recurrence-shaped test: one malformed aligned word timestamp plus a
+  full-duration nonempty segment must not suppress the lexical-tail retry.
 - Failure test: two partial results must throw `missingSpeechCoverage` after
   exactly two provider calls while retaining their combined timing and tail
   evidence for diagnostics.
@@ -136,7 +200,7 @@ when Groq returned incomplete text twice.
 - Reliability release requires the exact merged-main package and installed-app
   verification; merge and CI alone do not close issue #123.
 
-## Merged-release verification
+## Previous merged-release verification (superseded by recurrence)
 
 - Production evidence boundary inspection confirmed both original recordings
   were complete before implementation.
@@ -169,6 +233,12 @@ while installed-app verification covers package identity, startup, retained
 state, credentials, recorder availability, and recovery evidence. A future
 provider response that remains partial after the single automatic retry will
 now fail visibly and preserve the recording instead of being delivered.
+
+This verification proved artifact provenance and the empty-segment fixture,
+but it did not cover the later malformed-word/nonempty-segment response shape.
+It is therefore not final verification for issue #123. The recurrence repair
+requires a new canonical workflow, exact merged-main artifact installation,
+and a fresh long-dictation acceptance check before closure.
 
 ## Lessons
 
