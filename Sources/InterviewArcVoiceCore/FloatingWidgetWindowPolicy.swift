@@ -317,6 +317,24 @@ public enum RecentTranscriptCardLayoutPolicy {
     }
 }
 
+public enum VoiceMenuWindowLayoutPolicy {
+    public static let preferredMaximumHeight: CGFloat = 720
+    public static let minimumMaximumHeight: CGFloat = 360
+    public static let visibleScreenMargin: CGFloat = 48
+
+    public static func maximumHeight(
+        visibleScreenHeight: CGFloat
+    ) -> CGFloat {
+        min(
+            preferredMaximumHeight,
+            max(
+                minimumMaximumHeight,
+                visibleScreenHeight - visibleScreenMargin
+            )
+        )
+    }
+}
+
 public enum FloatingWidgetGeometryPolicy {
     public static func visibleCapsuleWidth(hostWidth: CGFloat) -> CGFloat {
         max(0, hostWidth)
