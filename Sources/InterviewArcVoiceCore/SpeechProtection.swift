@@ -62,6 +62,11 @@ public enum SegmentLocalTranscriptValidator {
     private static let providerLogProbabilityThreshold = -1.0
     private static let minimumWordEvidenceSeconds = 0.45
     private static let maximumUnsupportedWordGapSeconds = 0.30
+    private static let maximumTerminalSpeechFraction = 0.10
+    private static let minimumTerminalTimestampOverrunSeconds = 0.20
+    private static let terminalHallucinationPhrases = [
+        ["thank", "you"],
+    ]
 
     private struct TextToken {
         let normalized: String
@@ -128,11 +133,18 @@ public enum SegmentLocalTranscriptValidator {
             transcription.words,
             canonicalTokens: canonicalTokens
         )
-        let rejectedWordRuns: [RejectedWordRun]
+        let terminalTokenInterval = terminalPhraseTokenInterval(
+            canonicalTokens: canonicalTokens
+        )
+        var rejectedWordRuns: [RejectedWordRun]
         if wordAlignment.isComplete {
             rejectedWordRuns = transcription.words.indices.compactMap { index in
                 guard
-                    !overlapsRejectedSegment(
+                    !overlaps(
+                        wordAlignment.intervals[index],
+                        terminalTokenInterval
+                    )
+                    && !overlapsRejectedSegment(
                         transcription.words[index],
                         segments: segments,
                         rejectedSegmentIndices: rejectedSegmentIndices
@@ -157,6 +169,17 @@ public enum SegmentLocalTranscriptValidator {
                 rejectedSegmentIndices: rejectedSegmentIndices,
                 speechEvidence: speechEvidence
             )
+        }
+        if wordAlignment.isComplete,
+           let terminalRun = unsupportedTerminalPhraseRun(
+               transcription.words,
+               canonicalTokens: canonicalTokens,
+               wordAlignment: wordAlignment,
+               segments: segments,
+               rejectedSegmentIndices: rejectedSegmentIndices,
+               speechEvidence: speechEvidence
+           ) {
+            rejectedWordRuns.append(terminalRun)
         }
         let rejectedWordIndices = Set(rejectedWordRuns.flatMap(\.wordIndices))
 
@@ -367,6 +390,122 @@ public enum SegmentLocalTranscriptValidator {
                 wordIndices: indices,
                 tokenInterval: interval
             )
+        }
+    }
+
+    private static func unsupportedTerminalPhraseRun(
+        _ words: [TranscriptWord],
+        canonicalTokens: [TextToken],
+        wordAlignment: WordTokenAlignment,
+        segments: [TranscriptSegment],
+        rejectedSegmentIndices: Set<Int>,
+        speechEvidence: SpeechEvidenceResult
+    ) -> RejectedWordRun? {
+        guard speechEvidence.analyzedDurationSeconds > 0 else { return nil }
+
+        guard let tokenInterval = terminalPhraseTokenInterval(
+            canonicalTokens: canonicalTokens
+        ) else { return nil }
+        let wordIndices = words.indices.filter { index in
+            let interval = wordAlignment.intervals[index]
+            return interval.lowerBound < tokenInterval.upperBound
+                && interval.upperBound > tokenInterval.lowerBound
+        }
+        guard let firstIndex = wordIndices.first,
+              let lastIndex = wordIndices.last,
+              wordAlignment.intervals[firstIndex].lowerBound
+                == tokenInterval.lowerBound,
+              wordAlignment.intervals[lastIndex].upperBound
+                == tokenInterval.upperBound,
+              !wordIndices.contains(where: {
+                  overlapsRejectedSegment(
+                      words[$0],
+                      segments: segments,
+                      rejectedSegmentIndices: rejectedSegmentIndices
+                  )
+              }) else {
+            return nil
+        }
+
+        let firstWord = words[firstIndex]
+        let lastWord = words[lastIndex]
+        let audioEnd = speechEvidence.analyzedDurationSeconds
+        guard lastWord.end >= audioEnd - 0.75 else { return nil }
+        guard terminalProviderCorroboratesRejection(
+            wordIndices: wordIndices,
+            words: words,
+            segments: segments,
+            audioEnd: audioEnd
+        ) else {
+            return nil
+        }
+        let evidenceStart = max(0, firstWord.start - segmentPaddingSeconds)
+        let local = speechEvidence.evidence(
+            from: evidenceStart,
+            to: audioEnd
+        )
+        guard audioEnd - evidenceStart >= minimumWordEvidenceSeconds,
+              local.frameCount > 0,
+              !local.hasSustainedSpeech,
+              local.speechLikeFraction <= maximumTerminalSpeechFraction else {
+            return nil
+        }
+        return RejectedWordRun(
+            wordIndices: Array(wordIndices),
+            tokenInterval: tokenInterval
+        )
+    }
+
+    private static func terminalPhraseTokenInterval(
+        canonicalTokens: [TextToken]
+    ) -> TokenInterval? {
+        let normalizedTokens = canonicalTokens.map(\.normalized)
+        guard let phrase = terminalHallucinationPhrases.first(where: {
+            normalizedTokens.suffix($0.count).elementsEqual($0)
+        }) else {
+            return nil
+        }
+        return TokenInterval(
+            lowerBound: canonicalTokens.count - phrase.count,
+            upperBound: canonicalTokens.count
+        )
+    }
+
+    private static func overlaps(
+        _ interval: TokenInterval,
+        _ optionalOther: TokenInterval?
+    ) -> Bool {
+        guard let other = optionalOther else { return false }
+        return interval.lowerBound < other.upperBound
+            && interval.upperBound > other.lowerBound
+    }
+
+    private static func terminalProviderCorroboratesRejection(
+        wordIndices: [Int],
+        words: [TranscriptWord],
+        segments: [TranscriptSegment],
+        audioEnd: Double
+    ) -> Bool {
+        guard let lastIndex = wordIndices.last else { return false }
+        if words[lastIndex].end - audioEnd
+            >= minimumTerminalTimestampOverrunSeconds {
+            return true
+        }
+
+        let overlappingSegments = segments.filter { segment in
+            wordIndices.contains { index in
+                words[index].end > segment.start
+                    && words[index].start < segment.end
+            }
+        }
+        guard !overlappingSegments.isEmpty else { return false }
+        return overlappingSegments.allSatisfy { segment in
+            guard let noSpeechProbability = segment.noSpeechProbability,
+                  let averageLogProbability = segment.averageLogProbability else {
+                return false
+            }
+            return noSpeechProbability >= providerNoSpeechThreshold
+                && averageLogProbability <= providerLogProbabilityThreshold
         }
     }
 

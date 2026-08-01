@@ -302,3 +302,38 @@ private func writeAudio(
 
     #expect(records.map(\.transcript) == [visible.transcript])
 }
+
+@Test func replacingATranscriptPreservesItsRetainedAudio() async throws {
+    let root = try retentionRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = try writeAudio(
+        32,
+        named: "source.m4a",
+        in: root.appending(path: "Transcription")
+    )
+    let store = try LocalTranscriptHistoryStore(
+        directory: root.appending(path: "Metadata"),
+        audioDirectory: root.appending(path: "Audio")
+    )
+    let original = try await store.append(
+        LocalTranscriptRecord(
+            transcript: "Partial transcript",
+            editorText: "Partial transcript",
+            durationSeconds: 14.4
+        ),
+        recordingURL: source
+    )
+    let originalAudioURL = await store.audioURL(for: original)
+
+    let replaced = try await store.replaceTranscript(
+        id: original.id,
+        transcript: "Complete transcript",
+        editorText: "Complete transcript"
+    )
+
+    #expect(replaced?.id == original.id)
+    #expect(replaced?.transcript == "Complete transcript")
+    #expect(replaced?.audioReference == original.audioReference)
+    #expect(originalAudioURL != nil)
+    #expect(FileManager.default.fileExists(atPath: originalAudioURL!.path))
+}

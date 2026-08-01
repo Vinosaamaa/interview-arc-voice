@@ -70,6 +70,17 @@ therefore disabled word-level removal globally and inserted one contiguous
 42-token fabricated passage even though its independently timestamped region
 could be checked against local evidence.
 
+A terminal recurrence was retained in Recent History on August 1. The
+58.12-second delivered transcript ended with a two-word generic closing phrase,
+while an independent local transcription did not. Independent speech ended at
+56.26 seconds. Across the remaining 1.98 seconds, the median level was
+approximately -83.7 dBFS and only 5 of 99 20-millisecond frames exceeded
+-38 dBFS. Groq's final lexical timestamp nevertheless extended to 58.50
+seconds. Complete word alignment was true, but the validator evaluated the two
+short terminal words independently. A brief Stop transient could make each
+small padded interval exceed the one-percent local-frame threshold even though
+the combined phrase and remaining tail contained no sustained speech.
+
 ## Root cause
 
 The pre-transcription gate measured file integrity and broad signal presence,
@@ -194,6 +205,18 @@ The repair deliberately rejected heavier alternatives:
   verbose response);
 - no punctuation or wording rewrite.
 
+The August 1 terminal repair adds one deliberately narrow combined-tail rule in
+Enhanced mode. When complete word alignment maps the canonical transcript's
+exact final tokens to “thank you,” the validator evaluates both timestamped
+words plus the remainder of the real audio as one interval. It removes the
+pair only when it reaches the recording tail, Groq corroborates the rejection
+through unsupported confidence metadata or a material timestamp overrun beyond
+the real audio, analyzed local frames contain no sustained speech-shaped run,
+and at most ten percent of the combined interval is speech-like. The higher
+combined-interval allowance tolerates a short Stop transient; it is not applied
+to arbitrary text or non-terminal occurrences. Sustained local evidence and a
+quiet, high-confidence in-range closing are both preserved.
+
 ## Verification
 
 Deterministic regression fixtures cover:
@@ -219,6 +242,9 @@ Deterministic regression fixtures cover:
 - one-provider-call behavior and older saved-result compatibility;
 - bounded permission-0600 diagnostics with no private content.
 - backward-compatible diagnostic decoding with optional VAD metrics.
+- a terminal two-word hallucination separated from silence by brief Stop noise;
+- genuinely spoken terminal “Thank you” remains preserved;
+- a quiet, high-confidence, in-range terminal “Thank you” remains preserved.
 
 The optimized frame comparison remains linear and uses the already decoded
 timeline. Word alignment and source-range filtering are also linear in the
