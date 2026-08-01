@@ -224,6 +224,33 @@ public actor LocalTranscriptHistoryStore {
         }
     }
 
+    @discardableResult
+    public func replaceTranscript(
+        id: UUID,
+        transcript: String,
+        editorText: String,
+        now: Date = Date()
+    ) throws -> LocalTranscriptRecord? {
+        var current = try readRecords()
+        guard let index = current.firstIndex(where: { $0.id == id }) else {
+            return nil
+        }
+        let previous = current[index]
+        let replacement = LocalTranscriptRecord(
+            id: previous.id,
+            createdAt: previous.createdAt,
+            transcript: transcript,
+            editorText: editorText,
+            durationSeconds: previous.durationSeconds,
+            activityTitle: previous.activityTitle,
+            captureID: previous.captureID,
+            audioReference: previous.audioReference
+        )
+        current[index] = replacement
+        try write(pruned(current, now: now))
+        return replacement
+    }
+
     public func audioURL(
         for record: LocalTranscriptRecord
     ) -> URL? {

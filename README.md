@@ -190,8 +190,12 @@ discarded.
 - Settings → Diagnostics records a bounded local timing breakdown for capture,
   validation, Groq, transcript corroboration, response handling, and insertion,
   plus privacy-safe WebRTC VAD frame/run counts, segment/word coverage, and
-  omission counts. The report can be copied, revealed, or cleared and never
-  contains transcript text, audio, credentials, tokens, or private URLs.
+  omission counts. A delivered general-dictation diagnostic can retry its
+  retained audio without auto-inserting; the corrected local Recent Transcript
+  replaces the prior text while retaining the same audio. Linked correction is
+  disabled until Interview Arc can supersede the old canonical turn rather
+  than creating a duplicate. Reports can be copied, revealed, or cleared and
+  never contain transcript text, audio, credentials, tokens, or private URLs.
 
 ## First-time setup
 

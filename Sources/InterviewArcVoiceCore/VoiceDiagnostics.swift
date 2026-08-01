@@ -135,6 +135,51 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
     }
 }
 
+public enum DiagnosticTranscriptionRetryPolicy {
+    public static func matchingRecord(
+        for diagnostic: VoiceDiagnosticRecord,
+        in records: [LocalTranscriptRecord]
+    ) -> LocalTranscriptRecord? {
+        if let exact = records.first(where: {
+            $0.id == diagnostic.id && $0.audioReference != nil
+        }) {
+            return exact
+        }
+
+        return records
+            .filter {
+                $0.audioReference != nil
+                    && abs($0.durationSeconds
+                        - diagnostic.recordingDurationSeconds) <= 0.75
+                    && abs($0.createdAt.timeIntervalSince(
+                        diagnostic.createdAt
+                    )) <= 30
+            }
+            .min { lhs, rhs in
+                let lhsDateDistance = abs(lhs.createdAt.timeIntervalSince(
+                    diagnostic.createdAt
+                ))
+                let rhsDateDistance = abs(rhs.createdAt.timeIntervalSince(
+                    diagnostic.createdAt
+                ))
+                if lhsDateDistance != rhsDateDistance {
+                    return lhsDateDistance < rhsDateDistance
+                }
+                return abs(lhs.durationSeconds
+                    - diagnostic.recordingDurationSeconds)
+                    < abs(rhs.durationSeconds
+                        - diagnostic.recordingDurationSeconds)
+            }
+    }
+
+    public static func supportsLocalRetry(
+        _ record: LocalTranscriptRecord?
+    ) -> Bool {
+        guard let record else { return false }
+        return record.audioReference != nil && record.captureID == nil
+    }
+}
+
 public actor VoiceDiagnosticsStore {
     public nonisolated let fileURL: URL
 

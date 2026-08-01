@@ -499,6 +499,12 @@ public actor ReliableSpeechTranscriber {
         let hasSustainedSpeechAfterProviderCoverage =
             trailingSpeechEvidence?.hasSustainedSpeech == true
             && (trailingSpeechEvidence?.speechLikeFraction ?? 0) >= 0.05
+        let hasSustainedSpeechBetweenProviderWords =
+            containsSustainedSpeechBetweenProviderWords(
+                result,
+                audioDurationSeconds: audioDurationSeconds,
+                speechEvidence: speechEvidence
+            )
         return IntegrityCheck(
             result: TranscriptionIntegrityEvaluator.evaluate(
                 TranscriptionIntegrityEvidence(
@@ -510,11 +516,45 @@ public actor ReliableSpeechTranscriber {
                     prompt: prompt,
                     hasSustainedSpeechAfterProviderCoverage:
                         hasSustainedSpeechAfterProviderCoverage
+                        || hasSustainedSpeechBetweenProviderWords
                 )
             ),
             providerLexicalCoverageEndSeconds: providerCoverageEnd,
             trailingSpeechEvidence: trailingSpeechEvidence
         )
+    }
+
+    private func containsSustainedSpeechBetweenProviderWords(
+        _ result: TranscriptionResult,
+        audioDurationSeconds: Double,
+        speechEvidence: SpeechEvidenceResult?
+    ) -> Bool {
+        guard let speechEvidence else { return false }
+        let words = result.words
+            .filter {
+                $0.start.isFinite
+                    && $0.end.isFinite
+                    && $0.end > $0.start
+                    && $0.start >= 0
+                    && $0.end <= audioDurationSeconds + 0.5
+            }
+            .sorted { $0.start < $1.start }
+        guard words.count >= 2 else { return false }
+
+        for (previous, next) in zip(words, words.dropFirst()) {
+            let gapStart = previous.end + 0.15
+            let gapEnd = next.start - 0.15
+            guard gapEnd - gapStart >= 0.75 else { continue }
+            let local = speechEvidence.evidence(
+                from: gapStart,
+                to: min(gapEnd, speechEvidence.analyzedDurationSeconds)
+            )
+            if local.hasSustainedSpeech,
+               local.speechLikeFraction >= 0.10 {
+                return true
+            }
+        }
+        return false
     }
 
     private func providerLexicalCoverageEnd(

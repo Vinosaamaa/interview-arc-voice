@@ -40,6 +40,11 @@ cover the full recording, bypassing the retry and recoverable-failure path.
 - A separate clear 46.78-second recording was rejected safely, but the original
   attempt and two manual retries all displayed the same generic failure while
   diagnostics falsely reported zero provider time.
+- A later 14.40-second retained recording contained a second spoken section
+  recovered by independent local transcription. Groq returned only nine words,
+  but stretched its final lexical timestamp to 13.84 seconds. Enhanced mode
+  omitted zero segments and zero words, so the incomplete provider result was
+  delivered unchanged.
 
 No transcript or recording content was exposed outside the intended local and
 provider boundaries.
@@ -90,6 +95,10 @@ evidence and are not committed to Git.
   canonical word had zero duration, the remaining valid word timings ended
   before sustained local speech, and a nonempty provider segment reached the
   full recording duration.
+- 2026-08-01 15:52 — A 14.40-second dictation reproduced a second topology:
+  Groq omitted an internal spoken passage while a later word timestamp still
+  reached the recording tail. Independent local transcription recovered the
+  omitted passage; app diagnostics confirmed zero local-filter omissions.
 
 ## Root cause
 
@@ -184,12 +193,22 @@ speech beyond the final valid word end, and a complete prompt-free retry. The
 old implementation delivers the partial first response; the repaired
 implementation retries it.
 
+The subsequent internal-omission repair also scans meaningful gaps between
+consecutive provider word timestamps against the already-computed local VAD
+timeline. Sustained speech inside a provider lexical gap makes the response
+suspicious even when a later returned word reaches the end of the audio. The
+same one-retry/recoverable-failure rule then applies; no additional provider
+call is introduced for healthy responses.
+
 ## Regression prevention
 
 - Production-shaped test: full-duration response with complete partial-word
   alignment plus an empty trailing segment.
 - Recurrence-shaped test: one malformed aligned word timestamp plus a
   full-duration nonempty segment must not suppress the lexical-tail retry.
+- Internal-gap test: sustained local speech between provider word timestamps
+  must trigger the existing single provider retry even when the final word
+  timestamp reaches the recording tail.
 - Failure test: two partial results must throw `missingSpeechCoverage` after
   exactly two provider calls while retaining their combined timing and tail
   evidence for diagnostics.

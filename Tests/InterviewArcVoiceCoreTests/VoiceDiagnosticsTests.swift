@@ -105,6 +105,48 @@ import Testing
     #expect(record.report.contains("Transcription integrity reasons: missingSpeechCoverage"))
 }
 
+@Test func diagnosticRetryMatchesRetainedGeneralAudioWithoutEnablingLinkedDuplication() {
+    let createdAt = Date(timeIntervalSince1970: 1_700_000_000)
+    let diagnostic = VoiceDiagnosticRecord(
+        id: UUID(),
+        createdAt: createdAt,
+        recordingDurationSeconds: 14.4,
+        fileFinalizationSeconds: 0.01,
+        integrityInspectionSeconds: 0.01,
+        localSpeechScanSeconds: 0.01,
+        providerWaitSeconds: 0.5,
+        responseProcessingSeconds: 0.01,
+        insertionSeconds: 0.01,
+        totalSeconds: 0.6,
+        protectionMode: .enhanced,
+        omittedUnsupportedSegmentCount: 0,
+        outcome: .delivered
+    )
+    let general = LocalTranscriptRecord(
+        createdAt: createdAt.addingTimeInterval(0.6),
+        transcript: "Partial",
+        editorText: "Partial",
+        durationSeconds: 14.37,
+        audioReference: .init(storageName: "general.m4a")
+    )
+    let linked = LocalTranscriptRecord(
+        createdAt: createdAt.addingTimeInterval(0.4),
+        transcript: "Linked partial",
+        editorText: "Linked partial",
+        durationSeconds: 14.38,
+        captureID: "capture-1",
+        audioReference: .init(storageName: "linked.m4a")
+    )
+
+    let matched = DiagnosticTranscriptionRetryPolicy.matchingRecord(
+        for: diagnostic,
+        in: [general]
+    )
+    #expect(matched?.id == general.id)
+    #expect(DiagnosticTranscriptionRetryPolicy.supportsLocalRetry(matched))
+    #expect(!DiagnosticTranscriptionRetryPolicy.supportsLocalRetry(linked))
+}
+
 @Test func diagnosticsDecodeRecordsWrittenBeforeWordLevelMetrics() throws {
     let json = """
     [{

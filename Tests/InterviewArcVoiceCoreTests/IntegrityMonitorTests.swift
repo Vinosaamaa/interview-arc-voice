@@ -279,6 +279,52 @@ import Testing
     #expect(await transcriber.callCount == 2)
 }
 
+@Test func sustainedSpeechInsideAProviderWordGapTriggersRetry() async throws {
+    let partialText = "How do I actually search in Codex UI?"
+    let partialWords = [
+        TranscriptWord(word: "How", start: 0.1, end: 0.35),
+        TranscriptWord(word: "do", start: 0.4, end: 0.55),
+        TranscriptWord(word: "I", start: 0.6, end: 0.7),
+        TranscriptWord(word: "actually", start: 0.75, end: 1.15),
+        TranscriptWord(word: "search", start: 1.2, end: 1.55),
+        TranscriptWord(word: "in", start: 1.6, end: 1.75),
+        TranscriptWord(word: "Codex", start: 1.8, end: 2.2),
+        TranscriptWord(word: "UI?", start: 13.5, end: 13.84),
+    ]
+    let partial = TranscriptionResult(
+        text: partialText,
+        words: partialWords,
+        segments: [
+            TranscriptSegment(start: 0, end: 13.84, text: partialText),
+        ],
+        durationSeconds: 14.4,
+        chunkCount: 1
+    )
+    let completeText = partialText
+        + " And which model is active right now?"
+    let complete = TranscriptionResult(
+        text: completeText,
+        words: timestampedWords(completeText, endingAt: 14.2),
+        durationSeconds: 14.4,
+        chunkCount: 1
+    )
+    let transcriber = CountingTranscriber(results: [partial, complete])
+    let reliable = ReliableSpeechTranscriber(base: transcriber)
+
+    let result = try await reliable.transcribe(
+        fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+        prompt: "",
+        temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+        audioDurationSeconds: 14.4,
+        speechEvidence: sustainedSpeechEvidence(durationSeconds: 14.4),
+        protectionMode: .enhanced
+    )
+
+    #expect(result.wasRetried)
+    #expect(result.transcription.text == completeText)
+    #expect(await transcriber.callCount == 2)
+}
+
 @Test func repeatedMalformedWordTimestampPartialFailsInsteadOfDelivering() async {
     let partial = malformedFullLengthSegmentPartial()
     let transcriber = CountingTranscriber(results: [partial, partial])

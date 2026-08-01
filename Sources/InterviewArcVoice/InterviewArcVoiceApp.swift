@@ -228,6 +228,8 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var dynamicRecordingInterfaceEnabled: Bool
     @Published var speechProtectionMode: SpeechProtectionMode
     @Published private(set) var diagnosticRecords: [VoiceDiagnosticRecord] = []
+    @Published private(set) var diagnosticRetryInFlightID: UUID?
+    @Published private(set) var diagnosticRetryMessage: String?
     @Published private(set) var dynamicRecordingInterfaceActive = false
     @Published var shortcut: HotKeyShortcut
     @Published var shortcutCapturing = false
@@ -1921,6 +1923,141 @@ final class VoiceBridgeModel: ObservableObject {
         Task {
             try? await diagnosticsStore?.clear()
             await refreshDiagnostics()
+        }
+    }
+
+    func canRetryDiagnostic(_ diagnostic: VoiceDiagnosticRecord) -> Bool {
+        guard !isBusy, diagnosticRetryInFlightID == nil else { return false }
+        return DiagnosticTranscriptionRetryPolicy.supportsLocalRetry(
+            diagnosticHistoryRecord(for: diagnostic)
+        )
+    }
+
+    func diagnosticRetryHelp(_ diagnostic: VoiceDiagnosticRecord) -> String {
+        guard let record = diagnosticHistoryRecord(for: diagnostic) else {
+            return "The retained audio for this diagnostic is unavailable."
+        }
+        if record.captureID != nil {
+            return "Linked transcript correction requires the server supersede contract; retry is disabled to avoid creating a duplicate D1 turn."
+        }
+        return "Retranscribe the retained audio and replace this local Recent Transcript after review."
+    }
+
+    func retryDiagnostic(_ diagnostic: VoiceDiagnosticRecord) {
+        guard canRetryDiagnostic(diagnostic),
+              let record = diagnosticHistoryRecord(for: diagnostic) else {
+            return
+        }
+        diagnosticRetryInFlightID = diagnostic.id
+        diagnosticRetryMessage = nil
+        Task { [weak self] in
+            await self?.performDiagnosticRetry(record: record)
+        }
+    }
+
+    private func diagnosticHistoryRecord(
+        for diagnostic: VoiceDiagnosticRecord
+    ) -> LocalTranscriptRecord? {
+        DiagnosticTranscriptionRetryPolicy.matchingRecord(
+            for: diagnostic,
+            in: transcriptHistory
+        )
+    }
+
+    private func performDiagnosticRetry(
+        record: LocalTranscriptRecord
+    ) async {
+        defer { diagnosticRetryInFlightID = nil }
+        guard let recordingStore,
+              let transcriptHistoryStore,
+              let audioURL = await transcriptHistoryStore.audioURL(for: record)
+        else {
+            diagnosticRetryMessage = "Retry unavailable: retained audio could not be opened."
+            return
+        }
+
+        let startedAt = Date()
+        do {
+            let speechScanStartedAt = Date()
+            let speechEvidence = try LocalSpeechEvidenceAnalyzer.inspect(
+                audioURL
+            )
+            let speechScanSeconds = Date().timeIntervalSince(
+                speechScanStartedAt
+            )
+            let pipeline = GeneralDictationPipeline(
+                transcriber: GroqTranscriber(apiKey: groqKeyDraft),
+                temporaryDirectory: recordingStore.temporaryDirectory,
+                vocabularyPrompt: generalDictationPrompt
+            )
+            let result = try await pipeline.process(
+                recordingURL: audioURL,
+                durationSeconds: record.durationSeconds,
+                speechEvidence: speechEvidence,
+                protectionMode: speechProtectionMode
+            )
+            let transcript = result.transcription.text
+            guard try await transcriptHistoryStore.replaceTranscript(
+                id: record.id,
+                transcript: transcript,
+                editorText: transcript
+            ) != nil else {
+                diagnosticRetryMessage = "Retry completed, but the original Recent Transcript no longer exists."
+                return
+            }
+
+            rememberLastAudio(RecordedCapture(
+                url: audioURL,
+                duration: record.durationSeconds,
+                writtenFrameCount: 1,
+                writeErrorDescription: nil
+            ))
+            lastTranscript = transcript
+            lastInsertionText = transcript
+            await refreshTranscriptHistory()
+            selectedTranscriptIndex = transcriptHistory.firstIndex {
+                $0.id == record.id
+            } ?? 0
+            diagnosticRetryMessage = "Retry complete. Review the updated transcript in Recent Transcripts before inserting it."
+
+            await recordDiagnostic(
+                seed: CaptureDiagnosticSeed(
+                    id: record.id,
+                    startedAt: startedAt,
+                    recordingDurationSeconds: record.durationSeconds,
+                    fileFinalizationSeconds: 0,
+                    integrityInspectionSeconds: 0,
+                    localSpeechScanSeconds: speechScanSeconds,
+                    protectionMode: speechProtectionMode,
+                    microphoneRecoveryCount: 0,
+                    vadSpeechFrameCount: speechEvidence.vadSpeechFrameCount,
+                    vadLongestSpeechRunFrames:
+                        speechEvidence.vadLongestSpeechRunFrames
+                ),
+                insertionSeconds: 0,
+                transcription: TranscriptionDiagnosticMetadata(
+                    timing: result.transcription.timing,
+                    segmentValidationSeconds:
+                        result.segmentValidationSeconds,
+                    omittedUnsupportedSegmentCount:
+                        result.omittedUnsupportedSegmentCount,
+                    omittedUnsupportedWordCount:
+                        result.omittedUnsupportedWordCount,
+                    wordAlignmentComplete: result.wordAlignmentComplete,
+                    evaluatedSegmentCount: result.evaluatedSegmentCount,
+                    wordTimestampCount: result.wordTimestampCount,
+                    providerRetryOccurred: result.wasRetried,
+                    lexicalCoverageEndSeconds:
+                        result.providerLexicalCoverageEndSeconds,
+                    trailingSpeechLikeFrameCount:
+                        result.trailingSpeechLikeFrameCount,
+                    trailingSpeechLikeFraction:
+                        result.trailingSpeechLikeFraction
+                ),
+                outcome: .delivered
+            )
+        } catch {
+            diagnosticRetryMessage = "Retry failed: \(error.localizedDescription)"
         }
     }
 
@@ -4111,6 +4248,23 @@ private struct VoiceSettingsWindow: View {
                             Button("Copy diagnostic report") {
                                 model.copyDiagnostic(record)
                             }
+                            Button {
+                                model.retryDiagnostic(record)
+                            } label: {
+                                if model.diagnosticRetryInFlightID == record.id {
+                                    Label(
+                                        "Retrying transcription…",
+                                        systemImage: "arrow.clockwise"
+                                    )
+                                } else {
+                                    Label(
+                                        "Retry transcription",
+                                        systemImage: "arrow.clockwise"
+                                    )
+                                }
+                            }
+                            .disabled(!model.canRetryDiagnostic(record))
+                            .help(model.diagnosticRetryHelp(record))
                         } label: {
                             HStack {
                                 Text(record.createdAt.formatted(date: .abbreviated, time: .shortened))
@@ -4127,6 +4281,11 @@ private struct VoiceSettingsWindow: View {
                     Button("Reveal diagnostic file", action: model.revealDiagnosticsFile)
                     Button("Clear diagnostics", role: .destructive, action: model.clearDiagnostics)
                         .disabled(model.diagnosticRecords.isEmpty)
+                }
+                if let diagnosticRetryMessage = model.diagnosticRetryMessage {
+                    Text(diagnosticRetryMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Text("Stored locally with bounded retention. Diagnostics never include transcript text, audio, credentials, tokens, or private URLs.")
                     .font(.caption)
