@@ -90,9 +90,10 @@ Timer values must never change width as they count.
 ## Information hierarchy
 
 The compact state prioritizes the link state, activity/general-dictation
-identity, previous-capture actions, and microphone. Resting Standard reserves
-three stable trailing actions—Play, Insert, and Plan Today. An expanded upper
-surface adds context-aware Copy and Save between Insert and Plan Today. Memo
+identity, previous-capture actions, and microphone. Timer-free resting Standard
+reserves three stable trailing actions—Play, Insert, and Plan Today. A collapsed
+timer capsule keeps its title and authoritative clock cluster instead. An
+expanded upper surface adds context-aware Copy and Save between Insert and Plan Today. Memo
 actions remain visible but disabled when their transcript or audio prerequisite
 is unavailable, so their slots never reflow the title viewport. When an open D1 timer
 instrument exists, the activity title includes a quiet disclosure chevron.
@@ -397,8 +398,9 @@ least 58 points for the activity title.
   moves the widget without converting clicks into drags. Planner text fields
   make the nonactivating panel key only after the user clicks a field; the last
   eligible external editor remains the insertion destination.
-- Standard resting memo actions use one three-slot shelf—Play, Insert, and Plan
-  Today—while the title viewport and trailing microphone remain fixed. Once an
+- Timer-free Standard resting memo actions use one three-slot shelf—Play,
+  Insert, and Plan Today—while the title viewport and trailing microphone remain
+  fixed. Once an
   upper Focus or Plan Today surface has expanded and the live capsule reaches
   usable width, Copy and Save fade into two reserved slots before Plan Today,
   producing Play, Insert, Copy, Save, and Plan Today. There is no More or Back
