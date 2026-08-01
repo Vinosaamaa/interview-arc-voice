@@ -106,12 +106,9 @@ only when a persisted failure explicitly advertises audio recovery and no
 reference exists. Missing or unsafe references are discarded rather than
 rendered as dead controls.
 
-The normal transcription path performs one provider request while the encoded
-recording remains below the provider upload boundary. Only files approaching
-that boundary are divided into balanced overlapping windows; timestamp offsets
-are restored and exact repeated text at the overlap is deduplicated. Splitting
-ordinary recordings merely because they exceed a short acoustic context can
-create unnecessary requests and a fragile low-context tail result.
+The canonical upload-boundary and chunking policy is defined under
+[Audio model](#audio-model). Ordinary recordings are not split merely because
+they exceed a short acoustic context.
 
 Existing response metadata is checked without another validation call.
 Provider duration and the end of lexical transcript coverage are independent:
@@ -125,9 +122,16 @@ duration, known prompt leakage, or missing output triggers exactly one
 unprompted retry. If the retry is also suspicious, Voice does not claim
 success; it retains the original audio and offers Play, Save, and Retry.
 
+The local evidence pass that supports recording integrity and lexical-tail
+coverage is always active. Silence Protection `Off` bypasses whole-capture
+no-speech admission and segment/word filtering, but it cannot disable the P0
+guard against silently delivering a transcript while later recorded speech
+remains uncovered.
+
 Silence protection has three persistent modes:
 
-- **Off** skips local no-speech validation and displays a warning.
+- **Off** skips local no-speech admission and transcript filtering, while the
+  integrity-only local scan continues to protect against silent data loss.
 - **Basic** is the default. Its whole-recording gate requires both the
   deterministic acoustic-frame heuristic and a pinned local WebRTC VAD to
   report sustained voice activity.

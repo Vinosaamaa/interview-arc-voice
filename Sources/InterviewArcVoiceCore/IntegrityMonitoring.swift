@@ -415,7 +415,7 @@ public actor ReliableSpeechTranscriber {
         protectionMode: SpeechProtectionMode,
         integrityCheck: IntegrityCheck
     ) throws -> ReliableTranscription {
-        guard let speechEvidence else {
+        guard let speechEvidence, protectionMode != .off else {
             return ReliableTranscription(
                 transcription: transcription,
                 wasRetried: wasRetried,

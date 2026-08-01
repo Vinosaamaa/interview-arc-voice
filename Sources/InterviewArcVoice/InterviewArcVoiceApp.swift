@@ -163,6 +163,21 @@ final class VoiceBridgeModel: ObservableObject {
         let vadLongestSpeechRunFrames: Int?
     }
 
+    private struct TranscriptionDiagnosticMetadata {
+        var timing: TranscriptionTiming? = nil
+        var segmentValidationSeconds = 0.0
+        var omittedUnsupportedSegmentCount = 0
+        var omittedUnsupportedWordCount: Int?
+        var wordAlignmentComplete: Bool?
+        var evaluatedSegmentCount: Int?
+        var wordTimestampCount: Int?
+        var providerRetryOccurred: Bool?
+        var lexicalCoverageEndSeconds: Double?
+        var trailingSpeechLikeFrameCount: Int?
+        var trailingSpeechLikeFraction: Double?
+        var integrityReasons: [TranscriptionIntegrityReason]?
+    }
+
     @Published var phase: Phase = .setup
     @Published var context: VoiceContextResponse?
     @Published private(set) var timerInstrument: VoiceTimerInstrument?
@@ -1658,13 +1673,11 @@ final class VoiceBridgeModel: ObservableObject {
             }
             let retryStartedAt = Date()
             let speechScanStartedAt = Date()
-            let speechEvidence = speechProtectionMode == .off
-                ? nil
-                : try LocalSpeechEvidenceAnalyzer.inspect(retryURL)
-            let speechScanSeconds = speechProtectionMode == .off
-                ? 0
-                : Date().timeIntervalSince(speechScanStartedAt)
-            guard speechEvidence?.containsSpeech != false else {
+            let speechEvidence = try LocalSpeechEvidenceAnalyzer.inspect(retryURL)
+            let speechScanSeconds = Date()
+                .timeIntervalSince(speechScanStartedAt)
+            guard speechProtectionMode == .off
+                || speechEvidence.containsSpeech else {
                 canRetryLastTranscription = false
                 reportFailure(
                     kind: .recording,
@@ -1684,9 +1697,9 @@ final class VoiceBridgeModel: ObservableObject {
                 localSpeechScanSeconds: speechScanSeconds,
                 protectionMode: speechProtectionMode,
                 microphoneRecoveryCount: 0,
-                vadSpeechFrameCount: speechEvidence?.vadSpeechFrameCount,
+                vadSpeechFrameCount: speechEvidence.vadSpeechFrameCount,
                 vadLongestSpeechRunFrames:
-                    speechEvidence?.vadLongestSpeechRunFrames
+                    speechEvidence.vadLongestSpeechRunFrames
             )
             targetApplicationPID = currentInsertionTargetPID()
             canRetryLastTranscription = false
@@ -1912,19 +1925,8 @@ final class VoiceBridgeModel: ObservableObject {
 
     private func recordDiagnostic(
         seed: CaptureDiagnosticSeed,
-        timing: TranscriptionTiming?,
-        segmentValidationSeconds: Double,
         insertionSeconds: Double,
-        omittedUnsupportedSegmentCount: Int,
-        omittedUnsupportedWordCount: Int? = nil,
-        wordAlignmentComplete: Bool? = nil,
-        evaluatedSegmentCount: Int? = nil,
-        wordTimestampCount: Int? = nil,
-        transcriptionWasRetried: Bool? = nil,
-        providerLexicalCoverageEndSeconds: Double? = nil,
-        trailingSpeechLikeFrameCount: Int? = nil,
-        trailingSpeechLikeFraction: Double? = nil,
-        transcriptionIntegrityReasons: [TranscriptionIntegrityReason]? = nil,
+        transcription: TranscriptionDiagnosticMetadata = .init(),
         outcome: VoiceDiagnosticOutcome
     ) async {
         let record = VoiceDiagnosticRecord(
@@ -1935,27 +1937,33 @@ final class VoiceBridgeModel: ObservableObject {
             integrityInspectionSeconds: seed.integrityInspectionSeconds,
             localSpeechScanSeconds: seed.localSpeechScanSeconds,
             providerWaitSeconds:
-                (timing?.chunkPreparationSeconds ?? 0)
-                + (timing?.providerWaitSeconds ?? 0),
-            responseProcessingSeconds: timing?.responseProcessingSeconds ?? 0,
-            segmentValidationSeconds: segmentValidationSeconds,
+                (transcription.timing?.chunkPreparationSeconds ?? 0)
+                + (transcription.timing?.providerWaitSeconds ?? 0),
+            responseProcessingSeconds:
+                transcription.timing?.responseProcessingSeconds ?? 0,
+            segmentValidationSeconds:
+                transcription.segmentValidationSeconds,
             insertionSeconds: insertionSeconds,
             totalSeconds: Date().timeIntervalSince(seed.startedAt),
             protectionMode: seed.protectionMode,
-            omittedUnsupportedSegmentCount: omittedUnsupportedSegmentCount,
-            omittedUnsupportedWordCount: omittedUnsupportedWordCount,
-            wordAlignmentComplete: wordAlignmentComplete,
-            evaluatedSegmentCount: evaluatedSegmentCount,
-            wordTimestampCount: wordTimestampCount,
+            omittedUnsupportedSegmentCount:
+                transcription.omittedUnsupportedSegmentCount,
+            omittedUnsupportedWordCount:
+                transcription.omittedUnsupportedWordCount,
+            wordAlignmentComplete: transcription.wordAlignmentComplete,
+            evaluatedSegmentCount: transcription.evaluatedSegmentCount,
+            wordTimestampCount: transcription.wordTimestampCount,
             microphoneRecoveryCount: seed.microphoneRecoveryCount,
             vadSpeechFrameCount: seed.vadSpeechFrameCount,
             vadLongestSpeechRunFrames: seed.vadLongestSpeechRunFrames,
-            providerRetryOccurred: transcriptionWasRetried,
+            providerRetryOccurred: transcription.providerRetryOccurred,
             lexicalCoverageEndSeconds:
-                providerLexicalCoverageEndSeconds,
-            trailingSpeechLikeFrameCount: trailingSpeechLikeFrameCount,
-            trailingSpeechLikeFraction: trailingSpeechLikeFraction,
-            integrityReasons: transcriptionIntegrityReasons,
+                transcription.lexicalCoverageEndSeconds,
+            trailingSpeechLikeFrameCount:
+                transcription.trailingSpeechLikeFrameCount,
+            trailingSpeechLikeFraction:
+                transcription.trailingSpeechLikeFraction,
+            integrityReasons: transcription.integrityReasons,
             outcome: outcome
         )
         try? await diagnosticsStore?.append(record)
@@ -2514,19 +2522,19 @@ final class VoiceBridgeModel: ObservableObject {
             }
             await recordDiagnostic(
                 seed: diagnosticSeed,
-                timing: integrityFailure?.timing,
-                segmentValidationSeconds: 0,
                 insertionSeconds: currentInsertionDurationSeconds,
-                omittedUnsupportedSegmentCount: 0,
-                transcriptionWasRetried:
-                    integrityFailure?.providerRetryOccurred,
-                providerLexicalCoverageEndSeconds:
-                    integrityFailure?.lexicalCoverageEndSeconds,
-                trailingSpeechLikeFrameCount:
-                    integrityFailure?.trailingSpeechLikeFrameCount,
-                trailingSpeechLikeFraction:
-                    integrityFailure?.trailingSpeechLikeFraction,
-                transcriptionIntegrityReasons: integrityReasons,
+                transcription: TranscriptionDiagnosticMetadata(
+                    timing: integrityFailure?.timing,
+                    providerRetryOccurred:
+                        integrityFailure?.providerRetryOccurred,
+                    lexicalCoverageEndSeconds:
+                        integrityFailure?.lexicalCoverageEndSeconds,
+                    trailingSpeechLikeFrameCount:
+                        integrityFailure?.trailingSpeechLikeFrameCount,
+                    trailingSpeechLikeFraction:
+                        integrityFailure?.trailingSpeechLikeFraction,
+                    integrityReasons: integrityReasons
+                ),
                 outcome: .failed
             )
         }
@@ -2955,7 +2963,7 @@ final class VoiceBridgeModel: ObservableObject {
             )
             var speechEvidence: SpeechEvidenceResult?
             var localSpeechScanSeconds = 0.0
-            if recovery == .transcribe, speechProtectionMode != .off {
+            if recovery == .transcribe {
                 let localSpeechScanStartedAt = Date()
                 speechEvidence = try LocalSpeechEvidenceAnalyzer.inspect(recording.url)
                 localSpeechScanSeconds = Date()
@@ -2981,14 +2989,12 @@ final class VoiceBridgeModel: ObservableObject {
                     voiceBridgeLogger.info(
                         "Local speech evidence: speech=\(speechEvidence.containsSpeech, privacy: .public) duration=\(speechEvidence.analyzedDurationSeconds, privacy: .public)s frames=\(speechEvidence.speechLikeFrameCount, privacy: .public) run=\(speechEvidence.longestSpeechRunFrames, privacy: .public) vadFrames=\(speechEvidence.vadSpeechFrameCount, privacy: .public) vadRun=\(speechEvidence.vadLongestSpeechRunFrames, privacy: .public) floor=\(speechEvidence.noiseFloorDecibels, privacy: .public)dB peak=\(speechEvidence.peakFrameDecibels, privacy: .public)dB"
                     )
-                    guard speechEvidence.containsSpeech else {
+                    guard speechProtectionMode == .off
+                        || speechEvidence.containsSpeech else {
                         Task {
                             await recordDiagnostic(
                                 seed: diagnosticSeed,
-                                timing: nil,
-                                segmentValidationSeconds: 0,
                                 insertionSeconds: 0,
-                                omittedUnsupportedSegmentCount: 0,
                                 outcome: .noSpeech
                             )
                         }
@@ -3151,23 +3157,26 @@ final class VoiceBridgeModel: ObservableObject {
             if let diagnosticSeed {
                 await recordDiagnostic(
                     seed: diagnosticSeed,
-                    timing: result.transcription.timing,
-                    segmentValidationSeconds: result.segmentValidationSeconds,
                     insertionSeconds: currentInsertionDurationSeconds,
-                    omittedUnsupportedSegmentCount:
-                        result.omittedUnsupportedSegmentCount,
-                    omittedUnsupportedWordCount:
-                        result.omittedUnsupportedWordCount,
-                    wordAlignmentComplete: result.wordAlignmentComplete,
-                    evaluatedSegmentCount: result.evaluatedSegmentCount,
-                    wordTimestampCount: result.wordTimestampCount,
-                    transcriptionWasRetried: result.wasRetried,
-                    providerLexicalCoverageEndSeconds:
-                        result.providerLexicalCoverageEndSeconds,
-                    trailingSpeechLikeFrameCount:
-                        result.trailingSpeechLikeFrameCount,
-                    trailingSpeechLikeFraction:
-                        result.trailingSpeechLikeFraction,
+                    transcription: TranscriptionDiagnosticMetadata(
+                        timing: result.transcription.timing,
+                        segmentValidationSeconds:
+                            result.segmentValidationSeconds,
+                        omittedUnsupportedSegmentCount:
+                            result.omittedUnsupportedSegmentCount,
+                        omittedUnsupportedWordCount:
+                            result.omittedUnsupportedWordCount,
+                        wordAlignmentComplete: result.wordAlignmentComplete,
+                        evaluatedSegmentCount: result.evaluatedSegmentCount,
+                        wordTimestampCount: result.wordTimestampCount,
+                        providerRetryOccurred: result.wasRetried,
+                        lexicalCoverageEndSeconds:
+                            result.providerLexicalCoverageEndSeconds,
+                        trailingSpeechLikeFrameCount:
+                            result.trailingSpeechLikeFrameCount,
+                        trailingSpeechLikeFraction:
+                            result.trailingSpeechLikeFraction
+                    ),
                     outcome: inserted ? .delivered : .failed
                 )
             }
@@ -3245,24 +3254,27 @@ final class VoiceBridgeModel: ObservableObject {
             if let diagnosticSeed {
                 await recordDiagnostic(
                     seed: diagnosticSeed,
-                    timing: result.transcriptionTiming,
-                    segmentValidationSeconds: result.segmentValidationSeconds,
                     insertionSeconds: currentInsertionDurationSeconds,
-                    omittedUnsupportedSegmentCount:
-                        result.omittedUnsupportedSegmentCount,
-                    omittedUnsupportedWordCount:
-                        result.omittedUnsupportedWordCount,
-                    wordAlignmentComplete: result.wordAlignmentComplete,
-                    evaluatedSegmentCount: result.evaluatedSegmentCount,
-                    wordTimestampCount: result.wordTimestampCount,
-                    transcriptionWasRetried:
-                        result.transcriptionWasRetried,
-                    providerLexicalCoverageEndSeconds:
-                        result.providerLexicalCoverageEndSeconds,
-                    trailingSpeechLikeFrameCount:
-                        result.trailingSpeechLikeFrameCount,
-                    trailingSpeechLikeFraction:
-                        result.trailingSpeechLikeFraction,
+                    transcription: TranscriptionDiagnosticMetadata(
+                        timing: result.transcriptionTiming,
+                        segmentValidationSeconds:
+                            result.segmentValidationSeconds,
+                        omittedUnsupportedSegmentCount:
+                            result.omittedUnsupportedSegmentCount,
+                        omittedUnsupportedWordCount:
+                            result.omittedUnsupportedWordCount,
+                        wordAlignmentComplete: result.wordAlignmentComplete,
+                        evaluatedSegmentCount: result.evaluatedSegmentCount,
+                        wordTimestampCount: result.wordTimestampCount,
+                        providerRetryOccurred:
+                            result.transcriptionWasRetried,
+                        lexicalCoverageEndSeconds:
+                            result.providerLexicalCoverageEndSeconds,
+                        trailingSpeechLikeFrameCount:
+                            result.trailingSpeechLikeFrameCount,
+                        trailingSpeechLikeFraction:
+                            result.trailingSpeechLikeFraction
+                    ),
                     outcome: lastInsertionSucceeded ? .delivered : .failed
                 )
             }

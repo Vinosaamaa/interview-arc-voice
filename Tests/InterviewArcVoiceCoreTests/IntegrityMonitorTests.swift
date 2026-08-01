@@ -181,7 +181,7 @@ import Testing
     ])
 }
 
-@Test func transcriptEndingBeforeSustainedTailSpeechRetriesInsteadOfDeliveringPartialText() async throws {
+@Test func transcriptEndingBeforeTailSpeechRetriesEvenWhenProtectionIsOff() async throws {
     let partial = TranscriptionResult(
         text: "The first part was transcribed but the complete ending was lost.",
         words: timestampedWords(
@@ -239,7 +239,8 @@ import Testing
         temporaryDirectory: URL(fileURLWithPath: "/tmp"),
         audioDurationSeconds: 53,
         expectedChunkCount: 1,
-        speechEvidence: sustainedSpeechEvidence(durationSeconds: 53)
+        speechEvidence: sustainedSpeechEvidence(durationSeconds: 53),
+        protectionMode: .off
     )
 
     #expect(result.wasRetried)

@@ -156,6 +156,8 @@ discarded.
   compares the final lexical timestamp with local speech evidence. Sustained
   speech after that boundary triggers one prompt-free retry; a second partial
   result preserves the recording and fails visibly instead of inserting text.
+  This completeness check remains active when optional Silence Protection is
+  Off; that setting controls hallucination filtering, not silent-loss safety.
 - Settings → Silence protection offers `Off`, `Basic`, and
   `Enhanced — Experimental`. Basic rejects an entire recording with no
   sustained speech. Whole-capture admission requires both the existing

@@ -108,6 +108,10 @@ The repair:
 7. preserves the audio and raises a recoverable failure when the retry remains
    partial.
 
+The lexical-tail completeness check uses the always-on local integrity scan;
+the optional Silence Protection setting may disable hallucination filtering
+but cannot disable silent-loss detection.
+
 Diagnostics now record the lexical coverage end, trailing speech-like frames
 and fraction, whether transcription retried, and integrity reason codes on
 both success and recoverable failure. The recovery message explicitly states
@@ -122,6 +126,8 @@ when Groq returned incomplete text twice.
   evidence for diagnostics.
 - Existing complete-transcript and sparse-timestamp cases continue to fail
   open rather than rejecting trustworthy text.
+- The production-shaped tail test runs with Silence Protection Off, proving
+  the P0 completeness guard does not depend on that preference.
 - Reliability release requires the exact merged-main package and installed-app
   verification; merge and CI alone do not close issue #123.
 
