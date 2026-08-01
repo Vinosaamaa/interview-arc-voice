@@ -72,6 +72,7 @@ struct InterviewArcVoiceApp: App {
                 )
         }
         .menuBarExtraStyle(.window)
+        .windowResizability(.contentSize)
 
         Settings {
             VoiceSettingsWindow(model: model)
@@ -4312,6 +4313,7 @@ private struct VoiceBridgeMenu: View {
         }
         .padding(12)
         .frame(width: 260)
+        .fixedSize(horizontal: false, vertical: true)
         .task {
             await model.refreshTranscriptHistory()
         }

@@ -89,6 +89,12 @@ width while counting. Supporting copy must remain readable at compact sizes.
 Use four-point spacing increments whenever practical. Keep controls vertically
 stable as content changes.
 
+The menu-bar panel is content-sized vertically. Adding or removing recovery,
+resolver, retry, capture, or transcript sections must update the window's
+intrinsic height; a shorter state must never remain centered inside a taller
+stale material frame. macOS may constrain exceptionally tall content to the
+visible screen, but ordinary states always hug their current content.
+
 ## Material and depth
 
 1. Use a pale translucent surface with a restrained cool border.
