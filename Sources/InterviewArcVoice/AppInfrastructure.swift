@@ -1271,7 +1271,6 @@ struct FloatingRecorderView: View {
                 height: host.size.height,
                 alignment: .bottomTrailing
             )
-            .clipped()
         }
         .onChange(of: model.floatingSize) { _, _ in resizeWindow() }
         .onChange(of: model.widgetSizeMode) { _, mode in
