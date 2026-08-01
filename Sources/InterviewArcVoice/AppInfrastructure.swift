@@ -720,19 +720,6 @@ private struct PasteboardSnapshot {
 @MainActor
 private final class VoiceFloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
-
-    override func sendEvent(_ event: NSEvent) {
-        if event.type == .leftMouseDown || event.type == .rightMouseDown {
-            // A nonactivating panel must remain usable with a real pointer even
-            // while another app owns the menu bar. Making only this panel key
-            // lets SwiftUI controls and TextFields receive the click without
-            // activating Interview Arc Voice as the frontmost application.
-            if !isKeyWindow {
-                makeKey()
-            }
-        }
-        super.sendEvent(event)
-    }
 }
 
 @MainActor
@@ -773,7 +760,7 @@ final class FloatingPanelController {
         panel.isReleasedWhenClosed = false
         panel.isMovableByWindowBackground =
             FloatingWidgetWindowPolicy.usesNativeBackgroundDrag(for: model.widgetSizeMode)
-        panel.becomesKeyOnlyIfNeeded = false
+        panel.becomesKeyOnlyIfNeeded = true
         panel.acceptsMouseMovedEvents = true
         let hostingView = TransparentHostingView(
             rootView: FloatingRecorderView(model: model)
@@ -812,7 +799,7 @@ final class FloatingPanelController {
     }
 
     func endPlannerTextEntry() {
-        panel?.becomesKeyOnlyIfNeeded = false
+        panel?.becomesKeyOnlyIfNeeded = true
         if let previousFrontmostApplication,
            !previousFrontmostApplication.isTerminated {
             previousFrontmostApplication.activate(options: [.activateIgnoringOtherApps])
