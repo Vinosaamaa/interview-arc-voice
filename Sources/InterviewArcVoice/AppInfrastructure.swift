@@ -1362,10 +1362,6 @@ struct FloatingRecorderView: View {
             miniDragGesture,
             including: model.widgetSizeMode == .mini ? .all : .none
         )
-        .simultaneousGesture(
-            standardDragGesture,
-            including: model.widgetSizeMode == .standard ? .all : .none
-        )
     }
 
     private var showsSharedCapsuleSurface: Bool {
@@ -1630,6 +1626,7 @@ struct FloatingRecorderView: View {
                             minHeight: 24
                         )
                         .layoutPriority(1)
+                        .simultaneousGesture(standardDragGesture)
                         memoButton(
                             symbol: model.isPlayingLastAudio ? "pause.fill" : "play.fill",
                             label: model.isPlayingLastAudio ? "Pause last recording" : "Play last recording",
@@ -1675,6 +1672,7 @@ struct FloatingRecorderView: View {
                                     minHeight: 24
                                 )
                                 .layoutPriority(1)
+                                .simultaneousGesture(standardDragGesture)
                                 compactTimerCluster(at: timeline.date)
                                 Image(systemName: model.timerPanelExpanded ? "chevron.down" : "chevron.up")
                                     .font(.system(size: 8, weight: .bold))
@@ -1701,6 +1699,7 @@ struct FloatingRecorderView: View {
                         alignment: model.shouldCenterFloatingTitle ? .center : .leading
                     )
                     .contentShape(Rectangle())
+                    .simultaneousGesture(standardDragGesture)
             }
         }
     }
