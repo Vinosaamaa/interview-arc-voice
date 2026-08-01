@@ -210,3 +210,18 @@ import Foundation
         )
     )
 }
+
+@Test func voiceMenuShrinksToContentButCapsTallStatesToTheVisibleScreen() {
+    #expect(
+        VoiceMenuWindowLayoutPolicy.maximumHeight(visibleScreenHeight: 900)
+            == VoiceMenuWindowLayoutPolicy.preferredMaximumHeight
+    )
+    #expect(
+        VoiceMenuWindowLayoutPolicy.maximumHeight(visibleScreenHeight: 600)
+            == 552
+    )
+    #expect(
+        VoiceMenuWindowLayoutPolicy.maximumHeight(visibleScreenHeight: 320)
+            == VoiceMenuWindowLayoutPolicy.minimumMaximumHeight
+    )
+}

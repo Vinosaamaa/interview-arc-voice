@@ -72,6 +72,7 @@ struct InterviewArcVoiceApp: App {
                 )
         }
         .menuBarExtraStyle(.window)
+        .windowResizability(.contentSize)
 
         Settings {
             VoiceSettingsWindow(model: model)
@@ -4290,31 +4291,43 @@ private struct VoiceBridgeMenu: View {
     @State private var showsAllCaptures = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            statusHeader
-            modeCard
-            if model.linkToInterviewArc { planTodayControl }
-            recordingControl
-            if model.recorder.isRecording, model.recorder.signalHealth == .absent {
-                microphoneSignalWarning
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 10) {
+                statusHeader
+                modeCard
+                if model.linkToInterviewArc { planTodayControl }
+                recordingControl
+                if model.recorder.isRecording, model.recorder.signalHealth == .absent {
+                    microphoneSignalWarning
+                }
+                if model.isFailurePresented { failureCard }
+                if model.sessionFinishResolutionRequested {
+                    SessionFinishResolverCard(model: model)
+                }
+                if model.showsDeliverySteps { deliveryProgress }
+                if model.hasLastMemo || model.hasMenuTranscript { transcriptPreview }
+                if !model.pendingVoiceCaptures.isEmpty { recentCapturesCard }
+                if !model.legacyVoiceOrphans.isEmpty { legacyVoiceOrphansCard }
+                if model.pendingRetryCount > 0 { retryRow }
+                settings
+                providerFooter
             }
-            if model.isFailurePresented { failureCard }
-            if model.sessionFinishResolutionRequested {
-                SessionFinishResolverCard(model: model)
-            }
-            if model.showsDeliverySteps { deliveryProgress }
-            if model.hasLastMemo || model.hasMenuTranscript { transcriptPreview }
-            if !model.pendingVoiceCaptures.isEmpty { recentCapturesCard }
-            if !model.legacyVoiceOrphans.isEmpty { legacyVoiceOrphansCard }
-            if model.pendingRetryCount > 0 { retryRow }
-            settings
-            providerFooter
+            .padding(12)
+            .frame(width: 260)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(12)
         .frame(width: 260)
+        .frame(maxHeight: maximumHeight)
+        .fixedSize(horizontal: false, vertical: true)
         .task {
             await model.refreshTranscriptHistory()
         }
+    }
+
+    private var maximumHeight: CGFloat {
+        VoiceMenuWindowLayoutPolicy.maximumHeight(
+            visibleScreenHeight: NSScreen.main?.visibleFrame.height ?? 768
+        )
     }
 
     private var planTodayControl: some View {
