@@ -185,10 +185,14 @@ anchored native popover. AppKit's completed-close notification—not a guessed
 animation delay—releases playback and Record again, so they never resize the
 anchor during popover teardown.
 
-When the linked timer drawer is expanded and a previous capture exists, the
-recorder row replaces its duplicate timer cluster with Play, Insert,
-context-aware Copy, Save, and the timer-disclosure control. The expanded timer surface above
-remains authoritative. Voice stays
+The resting Standard recorder row reserves Play, Insert, and Plan Today in
+three stable trailing slots. When the linked timer drawer or Today planner is
+expanded, the live host width reveals context-aware Copy and Save between
+Insert and Plan Today, producing one five-action shelf without moving the
+title, Plan Today control, or trailing microphone. The title/disclosure region
+collapses the expanded Focus surface, whose clocks remain authoritative.
+Unavailable memo actions keep their fixed slot with a disabled treatment rather
+than reflowing the capsule. Voice stays
 an `LSUIElement` accessory app: it does not occupy the Dock or Command-Tab, and
 Settings explicitly raises its existing window.
 

@@ -229,7 +229,7 @@ public enum MiniWidgetPointerPolicy {
 }
 
 public enum FloatingWidgetCompactTimerLayoutPolicy {
-    public static let showsPreviousMemoActionsWhenExpanded = false
+    public static let showsPreviousMemoActionsWhenExpanded = true
     public static let minimumTitleWidth: CGFloat = 58
     public static let titleFillsAvailableHeight = true
     public static let activityClockWidth: CGFloat = 36
@@ -251,24 +251,51 @@ public enum FloatingWidgetMemoAction: Equatable, Hashable, Sendable {
     case planToday
 }
 
+public enum FloatingWidgetMemoActionPresentation: Equatable, Sendable {
+    case compact
+    case expanded
+}
+
+public enum FloatingWidgetMemoActionLayoutPolicy {
+    /// Five 22-point controls, the readable title floor, link state, trailing
+    /// microphone, and the shared six-point rhythm fit without compression at
+    /// this width. The live host width—not the destination model state—drives
+    /// the reveal so Copy and Save never flash inside a still-narrow capsule.
+    public static let expandedRevealWidth: CGFloat = 340
+
+    public static func presentation(
+        capsuleWidth: CGFloat
+    ) -> FloatingWidgetMemoActionPresentation {
+        capsuleWidth >= expandedRevealWidth ? .expanded : .compact
+    }
+}
+
 public enum FloatingWidgetMemoActionPolicy {
     public static func actions(
+        for presentation: FloatingWidgetMemoActionPresentation
+    ) -> [FloatingWidgetMemoAction] {
+        switch presentation {
+        case .compact:
+            return [.play, .insert, .planToday]
+        case .expanded:
+            return [.play, .insert, .copy, .save, .planToday]
+        }
+    }
+
+    public static func isEnabled(
+        _ action: FloatingWidgetMemoAction,
         hasTranscript: Bool,
         hasAudio: Bool,
         canPlanToday: Bool
-    ) -> [FloatingWidgetMemoAction] {
-        let hasMemo = hasTranscript || hasAudio
-        guard hasMemo else {
-            return canPlanToday ? [.planToday] : []
+    ) -> Bool {
+        switch action {
+        case .play, .save:
+            return hasAudio
+        case .insert, .copy:
+            return hasTranscript
+        case .planToday:
+            return canPlanToday
         }
-
-        var actions: [FloatingWidgetMemoAction] = []
-        if hasAudio { actions.append(.play) }
-        if hasTranscript { actions.append(.insert) }
-        if hasTranscript { actions.append(.copy) }
-        if hasAudio { actions.append(.save) }
-        if canPlanToday { actions.append(.planToday) }
-        return actions
     }
 }
 
