@@ -318,6 +318,11 @@ public enum RecentTranscriptCardLayoutPolicy {
 }
 
 public enum VoiceMenuWindowLayoutPolicy {
+    public enum Presentation: Equatable, Sendable {
+        case intrinsic
+        case scrolling(height: CGFloat)
+    }
+
     public static let preferredMaximumHeight: CGFloat = 720
     public static let minimumMaximumHeight: CGFloat = 360
     public static let visibleScreenMargin: CGFloat = 48
@@ -332,6 +337,16 @@ public enum VoiceMenuWindowLayoutPolicy {
                 visibleScreenHeight - visibleScreenMargin
             )
         )
+    }
+
+    public static func presentation(
+        measuredContentHeight: CGFloat,
+        maximumHeight: CGFloat
+    ) -> Presentation {
+        guard measuredContentHeight > maximumHeight else {
+            return .intrinsic
+        }
+        return .scrolling(height: maximumHeight)
     }
 }
 

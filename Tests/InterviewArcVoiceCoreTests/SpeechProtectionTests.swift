@@ -100,6 +100,53 @@ private let protectionSampleRate = 16_000.0
     #expect(protected.omittedUnsupportedSegmentCount == 0)
 }
 
+@Test func enhancedProtectionOmitsTerminalThankYouAcrossStopNoise() {
+    let stopNoise = (0..<Int(protectionSampleRate * 0.06)).map {
+        index -> Float in
+        let time = Double(index) / protectionSampleRate
+        return Float(0.03 * sin(2 * .pi * 220 * time))
+    }
+    let evidence = LocalSpeechEvidenceAnalyzer.analyze(
+        samples:
+            protectionSpeech(duration: 1)
+            + Array(repeating: Float.zero, count: Int(protectionSampleRate * 1.1))
+            + stopNoise
+            + Array(repeating: Float.zero, count: Int(protectionSampleRate * 0.84)),
+        sampleRate: protectionSampleRate
+    )
+    let transcription = TranscriptionResult(
+        text: "Real answer. Thank you.",
+        words: [
+            TranscriptWord(word: "Real", start: 0.1, end: 0.4),
+            TranscriptWord(word: "answer.", start: 0.45, end: 0.9),
+            TranscriptWord(word: "Thank", start: 2.05, end: 2.12),
+            TranscriptWord(word: "you.", start: 2.14, end: 3.25),
+        ],
+        segments: [
+            TranscriptSegment(
+                start: 0.1,
+                end: 3.25,
+                text: "Real answer. Thank you.",
+                averageLogProbability: -0.1,
+                noSpeechProbability: 0.01
+            ),
+        ],
+        durationSeconds: 3.25,
+        chunkCount: 1
+    )
+
+    let protected = SegmentLocalTranscriptValidator.apply(
+        transcription,
+        speechEvidence: evidence,
+        mode: .enhanced
+    )
+
+    #expect(protected.transcription.text == "Real answer.")
+    #expect(protected.transcription.words.map(\.word) == ["Real", "answer."])
+    #expect(protected.omittedUnsupportedWordCount == 2)
+    #expect(protected.wordAlignmentComplete)
+}
+
 @Test func enhancedProtectionOmitsSilentWordsInsideMixedProviderSegment() {
     let evidence = LocalSpeechEvidenceAnalyzer.analyze(
         samples:

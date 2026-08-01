@@ -339,6 +339,14 @@ retry, and conflict states; it reconstructs the exact v2 envelope from the
 protected local record for Insert Again or the single context-aware Copy
 action. The top refresh button refreshes focused activity only.
 
+The popover renders its full stack intrinsically on the first frame and measures
+that real content. It remains content-sized while it fits the visible screen;
+only an observed overflow switches the same stack into a fixed-height vertical
+scroller. A speculative maximum-height root scroller or `ViewThatFits` decision
+must not own the `MenuBarExtra` window's initial size because AppKit's first
+vertical proposal can otherwise create either permanent translucent margins or
+an empty window.
+
 The client must negotiate an explicit protocol version before mutating server
 state. Unknown versions fail closed with a user-visible update prompt.
 

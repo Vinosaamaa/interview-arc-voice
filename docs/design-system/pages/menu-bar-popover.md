@@ -3,6 +3,12 @@
 The 260-point menu-bar popover is Voice's detailed status and recovery surface.
 The floating capsule remains a simple recording and timer instrument.
 
+The ordinary popover is intrinsically sized. Its full rendered stack is
+measured after the first visible frame; if and only if that measurement exceeds
+the current screen allowance, the content moves into a bounded vertical
+scroller. The initial frame must always contain the real menu content—never an
+empty size-probing placeholder.
+
 ## Live state
 
 - The refresh icon means **Refresh focused activity** only.
@@ -41,13 +47,13 @@ The floating capsule remains a simple recording and timer instrument.
 
 ## Recent transcripts
 
-- The transcript card retains the five newest local transcript records for at
+- The transcript card retains the 20 newest local transcript records for at
   most 24 hours. Its protected JSON file is permission `0600`.
 - The newest transcript opens first. Bottom-right **Newer** and **Older**
   chevrons move through the bounded history without wrapping or changing the
   260-point popover width.
 - The footer shows the selected transcript's word count, recording duration,
-  and position such as `2 of 5`.
+  and position such as `2 of 20`.
 - Copy and Insert Again always use the selected record. A linked record keeps
   its exact Voice v2 envelope; general dictation stays plain text.
 - Successful general-dictation audio retention is not extended for history.

@@ -89,7 +89,11 @@ discarded.
 - The packaged app is a normal Applications app and participates in the Dock
   and app switcher. Every Settings entry point activates and raises the existing
   Settings window instead of leaving it hidden behind another app.
-- The menu panel is fixed at 260 points wide. The always-on-top recorder is a
+- The menu panel is fixed at 260 points wide. It opens at its intrinsic content
+  height and measures the rendered stack; only content taller than the current
+  screen allowance switches to a bounded vertical scroller. The first menu
+  frame never depends on `ViewThatFits` choosing a viable height inside the
+  `MenuBarExtra` host. The always-on-top recorder is a
   layered 250-by-40-point capsule that smoothly widens to 360 points for
   seekable playback, then returns to its compact state. It uses one hollow
   chain icon family: an intact teal chain for an active Interview Arc link, a
@@ -175,7 +179,11 @@ discarded.
   directly. When timestamps are incomplete elsewhere, one consecutive silent
   word run may still be removed if its normalized text maps to exactly one
   source range in the canonical provider transcript. Missing or ambiguous
-  candidate alignment preserves the text. This uses no second Groq request or
+  candidate alignment preserves the text. A terminal “thank you” is removed
+  only when complete word alignment identifies that exact ending and the
+  combined timestamped tail contains no sustained local speech; evaluating the
+  phrase as one tail prevents a brief Stop transient from authorizing two short
+  invented words. Genuinely spoken instances remain. This uses no second Groq request or
   audio decode and never cuts, rewrites, or replaces the original M4A.
 - Settings → Diagnostics records a bounded local timing breakdown for capture,
   validation, Groq, transcript corroboration, response handling, and insertion,

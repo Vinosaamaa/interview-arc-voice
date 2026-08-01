@@ -224,4 +224,23 @@ import Foundation
         VoiceMenuWindowLayoutPolicy.maximumHeight(visibleScreenHeight: 320)
             == VoiceMenuWindowLayoutPolicy.minimumMaximumHeight
     )
+
+    #expect(
+        VoiceMenuWindowLayoutPolicy.presentation(
+            measuredContentHeight: 0,
+            maximumHeight: 552
+        ) == .intrinsic
+    )
+    #expect(
+        VoiceMenuWindowLayoutPolicy.presentation(
+            measuredContentHeight: 520,
+            maximumHeight: 552
+        ) == .intrinsic
+    )
+    #expect(
+        VoiceMenuWindowLayoutPolicy.presentation(
+            measuredContentHeight: 680,
+            maximumHeight: 552
+        ) == .scrolling(height: 552)
+    )
 }

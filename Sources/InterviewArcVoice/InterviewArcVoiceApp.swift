@@ -4285,24 +4285,68 @@ private struct WidgetThemePreview: View {
     }
 }
 
+private struct VoiceMenuContentHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 private struct VoiceBridgeMenu: View {
     @ObservedObject var model: VoiceBridgeModel
     @Environment(\.dismiss) private var dismiss
     @State private var showsAllCaptures = false
+    @State private var measuredContentHeight: CGFloat = 0
 
+    @ViewBuilder
     var body: some View {
-        ViewThatFits(in: .vertical) {
-            menuContent
+        switch VoiceMenuWindowLayoutPolicy.presentation(
+            measuredContentHeight: measuredContentHeight,
+            maximumHeight: maximumHeight
+        ) {
+        case .intrinsic:
+            measuredMenuContent
+                .frame(width: 260)
+                .onPreferenceChange(
+                    VoiceMenuContentHeightPreferenceKey.self,
+                    perform: updateMeasuredContentHeight
+                )
+                .task {
+                    await model.refreshTranscriptHistory()
+                }
+        case .scrolling(let height):
             ScrollView(.vertical) {
-                menuContent
+                measuredMenuContent
             }
-            .frame(maxHeight: maximumHeight)
+            .frame(width: 260, height: height, alignment: .top)
+            .onPreferenceChange(
+                VoiceMenuContentHeightPreferenceKey.self,
+                perform: updateMeasuredContentHeight
+            )
+            .task {
+                await model.refreshTranscriptHistory()
+            }
         }
-        .frame(width: 260)
-        .frame(maxHeight: maximumHeight, alignment: .top)
-        .task {
-            await model.refreshTranscriptHistory()
+    }
+
+    private var measuredMenuContent: some View {
+        menuContent
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: VoiceMenuContentHeightPreferenceKey.self,
+                        value: geometry.size.height
+                    )
+                }
+            }
+    }
+
+    private func updateMeasuredContentHeight(_ height: CGFloat) {
+        guard height > 0, abs(height - measuredContentHeight) > 0.5 else {
+            return
         }
+        measuredContentHeight = height
     }
 
     private var menuContent: some View {

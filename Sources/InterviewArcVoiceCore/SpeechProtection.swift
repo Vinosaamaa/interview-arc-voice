@@ -62,6 +62,10 @@ public enum SegmentLocalTranscriptValidator {
     private static let providerLogProbabilityThreshold = -1.0
     private static let minimumWordEvidenceSeconds = 0.45
     private static let maximumUnsupportedWordGapSeconds = 0.30
+    private static let maximumTerminalSpeechFraction = 0.10
+    private static let terminalHallucinationPhrases = [
+        ["thank", "you"],
+    ]
 
     private struct TextToken {
         let normalized: String
@@ -128,7 +132,7 @@ public enum SegmentLocalTranscriptValidator {
             transcription.words,
             canonicalTokens: canonicalTokens
         )
-        let rejectedWordRuns: [RejectedWordRun]
+        var rejectedWordRuns: [RejectedWordRun]
         if wordAlignment.isComplete {
             rejectedWordRuns = transcription.words.indices.compactMap { index in
                 guard
@@ -157,6 +161,17 @@ public enum SegmentLocalTranscriptValidator {
                 rejectedSegmentIndices: rejectedSegmentIndices,
                 speechEvidence: speechEvidence
             )
+        }
+        if wordAlignment.isComplete,
+           let terminalRun = unsupportedTerminalPhraseRun(
+               transcription.words,
+               canonicalTokens: canonicalTokens,
+               wordAlignment: wordAlignment,
+               segments: segments,
+               rejectedSegmentIndices: rejectedSegmentIndices,
+               speechEvidence: speechEvidence
+           ) {
+            rejectedWordRuns.append(terminalRun)
         }
         let rejectedWordIndices = Set(rejectedWordRuns.flatMap(\.wordIndices))
 
@@ -368,6 +383,68 @@ public enum SegmentLocalTranscriptValidator {
                 tokenInterval: interval
             )
         }
+    }
+
+    private static func unsupportedTerminalPhraseRun(
+        _ words: [TranscriptWord],
+        canonicalTokens: [TextToken],
+        wordAlignment: WordTokenAlignment,
+        segments: [TranscriptSegment],
+        rejectedSegmentIndices: Set<Int>,
+        speechEvidence: SpeechEvidenceResult
+    ) -> RejectedWordRun? {
+        guard speechEvidence.analyzedDurationSeconds > 0 else { return nil }
+
+        let normalizedTokens = canonicalTokens.map(\.normalized)
+        guard let phrase = terminalHallucinationPhrases.first(where: {
+            normalizedTokens.suffix($0.count).elementsEqual($0)
+        }) else {
+            return nil
+        }
+        let tokenInterval = TokenInterval(
+            lowerBound: canonicalTokens.count - phrase.count,
+            upperBound: canonicalTokens.count
+        )
+        let wordIndices = words.indices.filter { index in
+            let interval = wordAlignment.intervals[index]
+            return interval.lowerBound < tokenInterval.upperBound
+                && interval.upperBound > tokenInterval.lowerBound
+        }
+        guard let firstIndex = wordIndices.first,
+              let lastIndex = wordIndices.last,
+              wordAlignment.intervals[firstIndex].lowerBound
+                == tokenInterval.lowerBound,
+              wordAlignment.intervals[lastIndex].upperBound
+                == tokenInterval.upperBound,
+              !wordIndices.contains(where: {
+                  overlapsRejectedSegment(
+                      words[$0],
+                      segments: segments,
+                      rejectedSegmentIndices: rejectedSegmentIndices
+                  )
+              }) else {
+            return nil
+        }
+
+        let firstWord = words[firstIndex]
+        let lastWord = words[lastIndex]
+        let audioEnd = speechEvidence.analyzedDurationSeconds
+        guard lastWord.end >= audioEnd - 0.75 else { return nil }
+        let evidenceStart = max(0, firstWord.start - segmentPaddingSeconds)
+        let local = speechEvidence.evidence(
+            from: evidenceStart,
+            to: audioEnd
+        )
+        guard audioEnd - evidenceStart >= minimumWordEvidenceSeconds,
+              local.frameCount > 0,
+              !local.hasSustainedSpeech,
+              local.speechLikeFraction <= maximumTerminalSpeechFraction else {
+            return nil
+        }
+        return RejectedWordRun(
+            wordIndices: Array(wordIndices),
+            tokenInterval: tokenInterval
+        )
     }
 
     private static func uniqueTokenInterval(
