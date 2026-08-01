@@ -249,6 +249,64 @@ import Testing
     #expect(callCount == 2)
 }
 
+@Test func malformedWordTimestampCannotFallBackToAFullLengthSegment() async throws {
+    let partial = malformedFullLengthSegmentPartial()
+    let completeText = "The provider returned timestamped text and preserved the spoken ending."
+    let complete = TranscriptionResult(
+        text: completeText,
+        words: timestampedWords(completeText, endingAt: 80.6),
+        segments: [
+            TranscriptSegment(start: 0, end: 80.6, text: completeText),
+        ],
+        durationSeconds: 80.88,
+        chunkCount: 1
+    )
+    let transcriber = CountingTranscriber(results: [partial, complete])
+    let reliable = ReliableSpeechTranscriber(base: transcriber)
+
+    let result = try await reliable.transcribe(
+        fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+        prompt: "Context vocabulary",
+        temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+        audioDurationSeconds: 80.88,
+        expectedChunkCount: 1,
+        speechEvidence: sustainedSpeechEvidence(durationSeconds: 80.88),
+        protectionMode: .enhanced
+    )
+
+    #expect(result.wasRetried)
+    #expect(result.transcription.text == completeText)
+    #expect(await transcriber.callCount == 2)
+}
+
+@Test func repeatedMalformedWordTimestampPartialFailsInsteadOfDelivering() async {
+    let partial = malformedFullLengthSegmentPartial()
+    let transcriber = CountingTranscriber(results: [partial, partial])
+    let reliable = ReliableSpeechTranscriber(base: transcriber)
+
+    do {
+        _ = try await reliable.transcribe(
+            fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+            prompt: "Context vocabulary",
+            temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+            audioDurationSeconds: 80.88,
+            expectedChunkCount: 1,
+            speechEvidence: sustainedSpeechEvidence(durationSeconds: 80.88),
+            protectionMode: .enhanced
+        )
+        Issue.record("Expected a recoverable missing-speech failure")
+    } catch let failure as TranscriptionIntegrityFailure {
+        #expect(failure.reasons.contains(.missingSpeechCoverage))
+        #expect(failure.providerRetryOccurred)
+        #expect(failure.lexicalCoverageEndSeconds == 72)
+        #expect(failure.trailingSpeechLikeFrameCount != nil)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+
+    #expect(await transcriber.callCount == 2)
+}
+
 @Test func twoPartialProviderResultsFailRecoverablyInsteadOfDeliveringEitherOne() async {
     let partial = TranscriptionResult(
         text: "Only the beginning is present.",
@@ -380,4 +438,23 @@ private func timestampedWords(
             end: Double(index + 1) * duration
         )
     }
+}
+
+private func malformedFullLengthSegmentPartial() -> TranscriptionResult {
+    let text = "The provider returned timestamped text but omitted the spoken ending."
+    var words = timestampedWords(text, endingAt: 72)
+    words[3] = TranscriptWord(
+        word: words[3].word,
+        start: words[3].start,
+        end: words[3].start
+    )
+    return TranscriptionResult(
+        text: text,
+        words: words,
+        segments: [
+            TranscriptSegment(start: 0, end: 80.88, text: text),
+        ],
+        durationSeconds: 80.88,
+        chunkCount: 1
+    )
 }

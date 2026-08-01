@@ -523,31 +523,32 @@ public actor ReliableSpeechTranscriber {
         let canonicalTokens = normalizedTokens(result.text)
         guard !canonicalTokens.isEmpty else { return nil }
 
-        let alignedWords = result.words.filter {
-            $0.end.isFinite && $0.start.isFinite && $0.end > $0.start
+        // Segment timestamps are acoustic windows, not lexical boundaries.
+        // A segment may reach the end of the audio even when its returned text
+        // omits later speech, so it must never substitute for word coverage.
+        // Sparse or ambiguous word alignment still fails open; duration and
+        // chunk-count checks continue to apply.
+        guard !result.words.isEmpty else { return nil }
+        var canonicalIndex = canonicalTokens.startIndex
+        var latestValidEnd: Double?
+        for word in result.words {
+            let tokens = normalizedTokens(word.word)
+            guard !tokens.isEmpty else { continue }
+            for token in tokens {
+                guard canonicalIndex < canonicalTokens.endIndex,
+                      canonicalTokens[canonicalIndex] == token else {
+                    return nil
+                }
+                canonicalTokens.formIndex(after: &canonicalIndex)
+            }
+            if word.end.isFinite,
+               word.start.isFinite,
+               word.end > word.start {
+                latestValidEnd = max(latestValidEnd ?? word.end, word.end)
+            }
         }
-        let wordTokens = alignedWords.flatMap { normalizedTokens($0.word) }
-        if !alignedWords.isEmpty, wordTokens == canonicalTokens {
-            return alignedWords.map(\.end).max()
-        }
-
-        let lexicalSegments = (result.segments ?? []).filter {
-            !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && $0.end.isFinite
-                && $0.start.isFinite
-                && $0.end > $0.start
-        }
-        let segmentTokens = lexicalSegments.flatMap {
-            normalizedTokens($0.text)
-        }
-        if !lexicalSegments.isEmpty, segmentTokens == canonicalTokens {
-            return lexicalSegments.map(\.end).max()
-        }
-
-        // Sparse or ambiguous provider alignment must fail open. Duration and
-        // chunk-count checks still apply, but timestamps that cannot be tied
-        // to the canonical text are not evidence of missing speech.
-        return nil
+        guard canonicalIndex == canonicalTokens.endIndex else { return nil }
+        return latestValidEnd
     }
 
     private func normalizedTokens(_ value: String) -> [String] {

@@ -152,8 +152,10 @@ discarded.
   for its duration. A timed but near-silent container is rejected before Groq
   so ambient noise cannot become a guessed one-word transcript.
 - A provider-reported duration is not proof that every spoken interval was
-  transcribed. Voice ties word or segment timestamps to the canonical text and
-  compares the final lexical timestamp with local speech evidence. Sustained
+  transcribed. Voice ties complete provider word alignment to the canonical
+  text and compares its final valid lexical timestamp with local speech
+  evidence. Segment timestamps are acoustic windows and never substitute for
+  lexical word coverage. Sustained
   speech after that boundary triggers one prompt-free retry; a second partial
   result preserves the recording and fails visibly instead of inserting text.
   This completeness check remains active when optional Silence Protection is

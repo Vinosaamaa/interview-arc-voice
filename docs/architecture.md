@@ -112,15 +112,19 @@ they exceed a short acoustic context.
 
 Existing response metadata is checked without another validation call.
 Provider duration and the end of lexical transcript coverage are independent:
-Voice uses the final valid word timestamp only when those words normalize to
-the complete canonical text, then falls back to nonempty segments only when
-they represent that same text. Empty or metadata-only trailing segments never
-extend lexical coverage. When local evidence contains sustained speech after
-that boundary, the result is incomplete even if the provider reports the full
-audio duration. A concrete failure, incomplete provider result, implausible
-duration, known prompt leakage, or missing output triggers exactly one
-unprompted retry. If the retry is also suspicious, Voice does not claim
-success; it retains the original audio and offers Play, Save, and Retry.
+Voice first verifies that all returned word tokens normalize to the complete
+canonical text, then derives lexical coverage from the final finite,
+positive-duration word timestamp. Malformed timing on one aligned word does
+not invalidate the other aligned lexical boundaries. Segment timestamps are
+acoustic decoding windows rather than word boundaries; they never extend or
+substitute for lexical coverage, even when a nonempty segment normalizes to the
+canonical text and reaches the audio duration. When local evidence contains
+sustained speech after the final trustworthy word boundary, the result is
+incomplete even if the provider reports the full audio duration. A concrete
+failure, incomplete provider result, implausible duration, known prompt
+leakage, or missing output triggers exactly one unprompted retry. If the retry
+is also suspicious, Voice does not claim success; it retains the original
+audio and offers Play, Save, and Retry.
 
 The local evidence pass that supports recording integrity and lexical-tail
 coverage is always active. Silence Protection `Off` bypasses whole-capture
