@@ -2043,7 +2043,12 @@ struct FloatingRecorderView: View {
 
     private var miniDragGesture: some Gesture {
         DragGesture(
-            minimumDistance: MiniWidgetPointerPolicy.dragThreshold,
+            // The mini widget lives in a nonactivating NSPanel. It must claim
+            // mouse-down immediately or AppKit treats a stationary click as
+            // activation-only and the recorder Button never fires. Movement
+            // is still classified with MiniWidgetPointerPolicy below, so a
+            // real drag keeps suppressMiniClick set through button delivery.
+            minimumDistance: 0,
             coordinateSpace: .global
         )
             .onChanged { _ in
