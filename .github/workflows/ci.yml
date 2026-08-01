@@ -5,22 +5,146 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   test-and-package:
+    if: github.event_name == 'pull_request'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Capture immutable Git identity
+        id: identity
+        run: |
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
       - name: Show Xcode toolchain
         run: xcodebuild -version && swift --version
       - name: Audit public-safe tracked content
         run: ./scripts/audit-public-safety.sh
+      - name: Test artifact promotion policy
+        run: Tests/ArtifactPromotionPolicyTests.sh
       - name: Test
         run: swift test
       - name: Validate signing policy
         run: Tests/SigningPolicyTests.sh
       - name: Package app
         run: ./scripts/package-app.sh
+      - name: Record artifact provenance
+        run: |
+          python3 scripts/artifact-provenance.py write \
+            --output dist/artifact-provenance.json \
+            --commit '${{ steps.identity.outputs.commit }}' \
+            --tree '${{ steps.identity.outputs.tree }}' \
+            --run-id '${{ github.run_id }}' \
+            --event pull_request
       - uses: actions/upload-artifact@v4
         with:
-          name: Interview-Arc-Voice
+          name: Interview-Arc-Voice-tree-${{ steps.identity.outputs.tree }}
           path: dist
+          retention-days: 14
+
+  promote-or-package-main:
+    if: github.event_name == 'push'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Capture merged-main Git identity
+        id: identity
+        run: |
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+      - name: Find successful tree-equivalent PR artifact
+        id: promotion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TREE: ${{ steps.identity.outputs.tree }}
+        run: |
+          name="Interview-Arc-Voice-tree-$TREE"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$name&per_page=100" \
+            > "$RUNNER_TEMP/artifacts.json"
+          if selection="$(python3 scripts/artifact-provenance.py select \
+            --input "$RUNNER_TEMP/artifacts.json" --tree "$TREE")"; then
+            artifact_id="${selection%%$'\t'*}"
+            run_id="${selection##*$'\t'}"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" \
+              > "$RUNNER_TEMP/source-run.json"
+            if python3 - "$RUNNER_TEMP/source-run.json" <<'PY'
+          import json
+          import sys
+          run = json.load(open(sys.argv[1], encoding="utf-8"))
+          raise SystemExit(0 if run.get("event") == "pull_request" and run.get("conclusion") == "success" else 1)
+          PY
+            then
+              source_commit="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["head_sha"])' "$RUNNER_TEMP/source-run.json")"
+              echo "available=true" >> "$GITHUB_OUTPUT"
+              echo "artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
+              echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+              echo "source_commit=$source_commit" >> "$GITHUB_OUTPUT"
+              echo "artifact_name=$name" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "available=false" >> "$GITHUB_OUTPUT"
+      - name: Download tree-equivalent PR artifact
+        if: steps.promotion.outputs.available == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.promotion.outputs.artifact_name }}
+          path: promoted
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.promotion.outputs.run_id }}
+      - name: Verify and promote exact PR artifact
+        if: steps.promotion.outputs.available == 'true'
+        run: |
+          python3 scripts/artifact-provenance.py verify \
+            --manifest promoted/artifact-provenance.json \
+            --expected-tree '${{ steps.identity.outputs.tree }}'
+          mv promoted dist
+          {
+            echo '### Voice artifact promotion'
+            echo '- Decision: promoted exact tested PR artifact'
+            echo '- Git tree: `${{ steps.identity.outputs.tree }}`'
+            echo '- Source commit: `${{ steps.promotion.outputs.source_commit }}`'
+            echo '- Source workflow run: `${{ steps.promotion.outputs.run_id }}`'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Show Xcode toolchain
+        if: steps.promotion.outputs.available != 'true'
+        run: xcodebuild -version && swift --version
+      - name: Audit public-safe tracked content
+        if: steps.promotion.outputs.available != 'true'
+        run: ./scripts/audit-public-safety.sh
+      - name: Test artifact promotion policy
+        if: steps.promotion.outputs.available != 'true'
+        run: Tests/ArtifactPromotionPolicyTests.sh
+      - name: Test
+        if: steps.promotion.outputs.available != 'true'
+        run: swift test
+      - name: Validate signing policy
+        if: steps.promotion.outputs.available != 'true'
+        run: Tests/SigningPolicyTests.sh
+      - name: Package merged main
+        if: steps.promotion.outputs.available != 'true'
+        run: ./scripts/package-app.sh
+      - name: Record rebuilt artifact provenance
+        if: steps.promotion.outputs.available != 'true'
+        run: |
+          python3 scripts/artifact-provenance.py write \
+            --output dist/artifact-provenance.json \
+            --commit '${{ steps.identity.outputs.commit }}' \
+            --tree '${{ steps.identity.outputs.tree }}' \
+            --run-id '${{ github.run_id }}' \
+            --event push
+          {
+            echo '### Voice artifact promotion'
+            echo '- Decision: rebuilt merged main (no successful tree-equivalent PR artifact)'
+            echo '- Git tree: `${{ steps.identity.outputs.tree }}`'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Interview-Arc-Voice-main-${{ steps.identity.outputs.tree }}
+          path: dist
+          retention-days: 14

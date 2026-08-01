@@ -260,8 +260,11 @@ swift run InterviewArcVoice
 ```
 
 The packaging script writes `dist/Interview Arc Voice.app` and applies an ad-hoc
-local signature. GitHub Actions runs the full Xcode-backed test and packaging
-job for every pull request. See `docs/architecture.md` and
+local signature. The complete pull-request workflow records the source commit
+and Git tree in its 14-day artifact. After merge, GitHub Actions promotes that
+exact successful artifact when merged `main` has the same Git tree; otherwise
+it rebuilds and tests merged `main`. See `docs/artifact-promotion.md`,
+`docs/architecture.md`, and
 `docs/protocol-v2.md` for the current intent-gated data flow and boundary
 decisions. `docs/protocol-v1.md` documents legacy accepted captures.
 

@@ -52,13 +52,10 @@ replace it with “allow all applications” or store the user's password.
   ready for independent verification.
 - A PR artifact must record immutable source commit and Git-tree provenance.
   Stage and test that exact artifact when the selected lifecycle lane allows.
-- After the artifact-promotion workflow in issue #129 is implemented and
-  verified, a merged-main Git tree identical to the tested PR artifact may
-  promote that exact artifact without recompiling. Any tree difference must
-  rebuild merged `main`.
-- Until that workflow exists, the current merged-main package remains the
-  authoritative install artifact. Never infer equivalence from PR number,
-  branch name, or merge strategy alone.
+- The release workflow promotes the successful PR artifact only when its
+  immutable Git tree equals merged `main`; any tree difference rebuilds merged
+  `main`. Never infer equivalence from PR number, branch name, or merge strategy
+  alone. Follow `docs/artifact-promotion.md`.
 - Record every hosted run, runtime, conclusion, artifact, and known metered
   usage in the implementation ledger. Do not retry infrastructure failures
   blindly.
