@@ -21,7 +21,9 @@ The uploaded artifact name includes the Git tree and is retained for 14 days.
 ## Merged main
 
 The `main` workflow computes its own Git tree and queries repository artifacts
-for the exact tree-derived name. It promotes an artifact only when all of these
+for the exact tree-derived name. Candidates are checked newest-first, but a
+failed or cancelled newer run cannot hide an older successful artifact for the
+same tree. It promotes an artifact only when all of these
 conditions hold:
 
 1. the artifact is not expired;
@@ -29,7 +31,10 @@ conditions hold:
 3. the downloaded provenance schema is supported; and
 4. the embedded source tree exactly equals merged `main`.
 
-The PR number, branch, source commit, and merge strategy are never sufficient
+Both the PR and fallback build invoke one canonical composite action for the
+public-safety audit, policy regression, Swift tests, signing check, and package
+build, preventing the two release paths from drifting. The PR number, branch,
+source commit, and merge strategy are never sufficient
 evidence. If no artifact passes every check, the workflow runs the complete
 test and packaging path on merged `main`.
 

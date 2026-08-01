@@ -20,18 +20,8 @@ jobs:
         run: |
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
-      - name: Show Xcode toolchain
-        run: xcodebuild -version && swift --version
-      - name: Audit public-safe tracked content
-        run: ./scripts/audit-public-safety.sh
-      - name: Test artifact promotion policy
-        run: Tests/ArtifactPromotionPolicyTests.sh
-      - name: Test
-        run: swift test
-      - name: Validate signing policy
-        run: Tests/SigningPolicyTests.sh
-      - name: Package app
-        run: ./scripts/package-app.sh
+      - name: Validate and package
+        uses: ./.github/actions/package-voice
       - name: Record artifact provenance
         run: |
           python3 scripts/artifact-provenance.py write \
@@ -65,27 +55,29 @@ jobs:
           name="Interview-Arc-Voice-tree-$TREE"
           gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$name&per_page=100" \
             > "$RUNNER_TEMP/artifacts.json"
-          if selection="$(python3 scripts/artifact-provenance.py select \
+          if candidates="$(python3 scripts/artifact-provenance.py candidates \
             --input "$RUNNER_TEMP/artifacts.json" --tree "$TREE")"; then
-            artifact_id="${selection%%$'\t'*}"
-            run_id="${selection##*$'\t'}"
-            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" \
-              > "$RUNNER_TEMP/source-run.json"
-            if python3 - "$RUNNER_TEMP/source-run.json" <<'PY'
+            while IFS=$'\t' read -r artifact_id run_id; do
+              if ! gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" \
+                > "$RUNNER_TEMP/source-run.json"; then
+                continue
+              fi
+              if python3 - "$RUNNER_TEMP/source-run.json" <<'PY'
           import json
           import sys
           run = json.load(open(sys.argv[1], encoding="utf-8"))
           raise SystemExit(0 if run.get("event") == "pull_request" and run.get("conclusion") == "success" else 1)
           PY
-            then
-              source_commit="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["head_sha"])' "$RUNNER_TEMP/source-run.json")"
-              echo "available=true" >> "$GITHUB_OUTPUT"
-              echo "artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
-              echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-              echo "source_commit=$source_commit" >> "$GITHUB_OUTPUT"
-              echo "artifact_name=$name" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+              then
+                source_commit="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["head_sha"])' "$RUNNER_TEMP/source-run.json")"
+                echo "available=true" >> "$GITHUB_OUTPUT"
+                echo "artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
+                echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+                echo "source_commit=$source_commit" >> "$GITHUB_OUTPUT"
+                echo "artifact_name=$name" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            done <<< "$candidates"
           fi
           echo "available=false" >> "$GITHUB_OUTPUT"
       - name: Download tree-equivalent PR artifact
@@ -111,24 +103,9 @@ jobs:
             echo '- Source commit: `${{ steps.promotion.outputs.source_commit }}`'
             echo '- Source workflow run: `${{ steps.promotion.outputs.run_id }}`'
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Show Xcode toolchain
+      - name: Validate and package merged main
         if: steps.promotion.outputs.available != 'true'
-        run: xcodebuild -version && swift --version
-      - name: Audit public-safe tracked content
-        if: steps.promotion.outputs.available != 'true'
-        run: ./scripts/audit-public-safety.sh
-      - name: Test artifact promotion policy
-        if: steps.promotion.outputs.available != 'true'
-        run: Tests/ArtifactPromotionPolicyTests.sh
-      - name: Test
-        if: steps.promotion.outputs.available != 'true'
-        run: swift test
-      - name: Validate signing policy
-        if: steps.promotion.outputs.available != 'true'
-        run: Tests/SigningPolicyTests.sh
-      - name: Package merged main
-        if: steps.promotion.outputs.available != 'true'
-        run: ./scripts/package-app.sh
+        uses: ./.github/actions/package-voice
       - name: Record rebuilt artifact provenance
         if: steps.promotion.outputs.available != 'true'
         run: |

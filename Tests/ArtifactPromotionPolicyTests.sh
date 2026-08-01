@@ -23,25 +23,20 @@ if python3 "$ROOT/scripts/artifact-provenance.py" verify \
   exit 1
 fi
 
-selection="$(python3 "$ROOT/scripts/artifact-provenance.py" select \
+candidates="$(python3 "$ROOT/scripts/artifact-provenance.py" candidates \
   --input "$ROOT/Tests/Fixtures/action-artifacts.json" \
   --tree tree-match)"
-test "$selection" = $'303\t3003'
+test "$candidates" = $'404\t4004\n303\t3003'
 
-if python3 "$ROOT/scripts/artifact-provenance.py" select \
+if python3 "$ROOT/scripts/artifact-provenance.py" candidates \
   --input "$ROOT/Tests/Fixtures/action-artifacts.json" \
   --tree tree-missing >/dev/null 2>&1; then
   echo "missing artifact was incorrectly selected" >&2
   exit 1
 fi
 
-grep -q 'pull_request:' "$ROOT/.github/workflows/ci.yml"
-grep -q 'push:' "$ROOT/.github/workflows/ci.yml"
-grep -q 'artifact-provenance.py verify' "$ROOT/.github/workflows/ci.yml"
-grep -q 'retention-days: 14' "$ROOT/.github/workflows/ci.yml"
-grep -q 'Interview-Arc-Voice-tree-' "$ROOT/.github/workflows/ci.yml"
-grep -q "steps.promotion.outputs.available != 'true'" "$ROOT/.github/workflows/ci.yml"
-grep -q 'Package merged main' "$ROOT/.github/workflows/ci.yml"
-grep -q 'Interview-Arc-Voice-main-' "$ROOT/.github/workflows/ci.yml"
+ruby "$ROOT/scripts/validate-artifact-workflow.rb" \
+  "$ROOT/.github/workflows/ci.yml" \
+  "$ROOT/.github/actions/package-voice/action.yml"
 
 echo "Artifact promotion policy tests passed."

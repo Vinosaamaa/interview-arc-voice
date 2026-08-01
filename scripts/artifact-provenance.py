@@ -53,7 +53,7 @@ def verify_manifest(args: argparse.Namespace) -> int:
     return 0
 
 
-def select_artifact(args: argparse.Namespace) -> int:
+def list_candidates(args: argparse.Namespace) -> int:
     try:
         payload = load_object(args.input)
     except (OSError, ValueError, json.JSONDecodeError) as error:
@@ -78,8 +78,8 @@ def select_artifact(args: argparse.Namespace) -> int:
             candidates.append((candidate["id"], workflow_run["id"]))
     if not candidates:
         return 1
-    artifact_id, run_id = max(candidates)
-    print(f"{artifact_id}\t{run_id}")
+    for artifact_id, run_id in sorted(candidates, reverse=True):
+        print(f"{artifact_id}\t{run_id}")
     return 0
 
 
@@ -100,10 +100,10 @@ def parser() -> argparse.ArgumentParser:
     verify.add_argument("--expected-tree", required=True)
     verify.set_defaults(handler=verify_manifest)
 
-    select = commands.add_parser("select")
-    select.add_argument("--input", required=True)
-    select.add_argument("--tree", required=True)
-    select.set_defaults(handler=select_artifact)
+    candidates = commands.add_parser("candidates")
+    candidates.add_argument("--input", required=True)
+    candidates.add_argument("--tree", required=True)
+    candidates.set_defaults(handler=list_candidates)
     return root
 
 
