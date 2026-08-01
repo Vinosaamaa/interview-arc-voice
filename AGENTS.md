@@ -37,6 +37,49 @@ readiness in the normal GUI context. Never treat the ad-hoc CI signature or a
 credential probe inside a restricted agent shell as installed-app identity
 evidence.
 
+The local signing identity is a one-time bootstrap. A failed
+`security find-identity` or Keychain probe inside a sandboxed agent process is
+not evidence that the identity is missing and must never trigger certificate
+recreation or ACL mutation. Run signing-identity checks in the normal user
+context. Before changing Keychain access control, capture the exact requesting
+process and dialog; keep `/usr/bin/codesign` narrowly authorized and never
+replace it with “allow all applications” or store the user's password.
+
+## Hosted CI efficiency
+
+- Do not use full hosted package builds as an intermediate edit/test loop.
+  Batch source changes and request the complete PR workflow once the change is
+  ready for independent verification.
+- A PR artifact must record immutable source commit and Git-tree provenance.
+  Stage and test that exact artifact when the selected lifecycle lane allows.
+- After the artifact-promotion workflow in issue #129 is implemented and
+  verified, a merged-main Git tree identical to the tested PR artifact may
+  promote that exact artifact without recompiling. Any tree difference must
+  rebuild merged `main`.
+- Until that workflow exists, the current merged-main package remains the
+  authoritative install artifact. Never infer equivalence from PR number,
+  branch name, or merge strategy alone.
+- Record every hosted run, runtime, conclusion, artifact, and known metered
+  usage in the implementation ledger. Do not retry infrastructure failures
+  blindly.
+
+## Public-safe repository content
+
+- Do not add personal usernames, absolute home paths, employer addresses,
+  private task/thread identifiers, tokens, recordings, transcripts, database
+  files, signing material, or unsanitized local logs to source, tests,
+  fixtures, documentation, screenshots, or postmortems.
+- Build portable paths with `FileManager`/the current user's home directory,
+  use `~` or placeholders in documentation, and use UserDefaults or Settings
+  for packaged-app runtime configuration.
+- A gitignored `.env.local` may hold non-secret development-only machine
+  paths. Packaged GUI behavior must not rely on shell environment inheritance.
+  Credentials belong only in macOS Keychain or GitHub Secrets, never `.env`.
+- Before making the repository public, audit the current tree, Git history,
+  GitHub issues and PRs, comments, attachments, and workflow logs. Report every
+  unavoidable historical personal reference; do not rewrite history or change
+  repository visibility without explicit user approval.
+
 ## Scope
 
 This repository owns the native macOS recording client only. The sibling

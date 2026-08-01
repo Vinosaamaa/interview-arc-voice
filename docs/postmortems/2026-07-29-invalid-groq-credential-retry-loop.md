@@ -141,7 +141,7 @@ visible Settings surface.
   opened the foreground `Save Voice Memo` panel, and **Settings** opened the
   native settings window.
 - The exact artifact was installed at
-  `/Users/wenkxu/Applications/Interview Arc Voice.app`; its executable hash
+  `~/Applications/Interview Arc Voice.app`; its executable hash
   matched the staged artifact. The same three recovery actions passed again
   from the installed app.
 - The synthetic failure flags and recovery reference used for verification

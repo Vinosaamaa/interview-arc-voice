@@ -180,7 +180,7 @@ your Interview Arc personal connection token.
 4. Paste the Interview Arc token and Groq key. Keep these defaults unless the
    local installation moved:
    - API: `https://limitless-mcp.vinosama.workers.dev`
-   - Interview Arc repository: `/Users/wenkxu/Projects/Interview Prep/interview-arc`
+   - Interview Arc repository: `~/Projects/Interview Prep/interview-arc`
    - Codex executable: `/Applications/ChatGPT.app/Contents/Resources/codex`
 5. Save. macOS stores both secrets in Keychain.
 6. Allow Accessibility when prompted so Voice can activate the captured app and

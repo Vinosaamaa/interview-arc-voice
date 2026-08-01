@@ -655,7 +655,10 @@ final class VoiceBridgeModel: ObservableObject {
     init() {
         let defaults = UserDefaults.standard
         apiBaseURL = defaults.string(forKey: "voice.apiBaseURL") ?? "https://limitless-mcp.vinosama.workers.dev"
-        workspacePath = defaults.string(forKey: "voice.workspacePath") ?? "/Users/wenkxu/Projects/Interview Prep/interview-arc"
+        workspacePath = defaults.string(forKey: "voice.workspacePath")
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Projects/Interview Prep/interview-arc")
+                .path
         codexPath = defaults.string(forKey: "voice.codexPath") ?? "/Applications/ChatGPT.app/Contents/Resources/codex"
         linkToInterviewArc = defaults.object(forKey: "voice.linkToInterviewArc") as? Bool ?? true
         widgetTheme = VoiceWidgetTheme.load(from: defaults)
