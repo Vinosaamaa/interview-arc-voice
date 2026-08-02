@@ -1,7 +1,7 @@
 # Postmortem: Partial transcript delivered while speech remained in the recording
 
 **Date**: 2026-08-01  
-**Status**: Reopened — alternate recovery repair in implementation<br>
+**Status**: Resolved — alternate recovery installed and verified<br>
 **Severity**: P0 silent data loss  
 **Issue**: [interview-arc-voice#123](https://github.com/Vinosaamaa/interview-arc-voice/issues/123)  
 **Pull requests**: [interview-arc-voice#136](https://github.com/Vinosaamaa/interview-arc-voice/pull/136), [interview-arc-voice#147](https://github.com/Vinosaamaa/interview-arc-voice/pull/147)
@@ -9,9 +9,9 @@
 > **Recurrence update:** The exact #136/#140 installed artifact delivered a
 > second incomplete 80.89-second transcript on 2026-08-01. The follow-up root
 > cause was a malformed provider word timestamp combined with an unsafe
-> nonempty-segment fallback. The chronology, failed control, and corrective
-> action below have been updated; the incident is not considered closed until
-> the replacement merged-main artifact completes installed verification.
+> nonempty-segment fallback. Pull request #147 added alternate overlapping
+> recovery and safe uncertain-result preservation; its exact merged-main
+> artifact completed installed verification on 2026-08-02.
 
 ## Executive summary
 
@@ -115,6 +115,11 @@ evidence and are not committed to Git.
   overlap recovered materially different text. The 328-second recording
   assembled 581 words versus 556 from whole-file prompt-free retry; neither
   alternate output was treated as ground truth.
+- 2026-08-02 — Pull request #147 passed the canonical macOS workflow and all
+  configured quality gates. Main promoted the exact tested tree-addressed
+  artifact instead of rebuilding it.
+- 2026-08-02 00:13 — The promoted artifact passed package, signature, hash,
+  single-process, and installed-widget verification. Issue #123 was resolved.
 
 ## Root cause
 
@@ -321,9 +326,36 @@ now fail visibly and preserve the recording instead of being delivered.
 
 This verification proved artifact provenance and the empty-segment fixture,
 but it did not cover the later malformed-word/nonempty-segment response shape.
-It is therefore not final verification for issue #123. The recurrence repair
-requires a new canonical workflow, exact merged-main artifact installation,
-and a fresh long-dictation acceptance check before closure.
+It is therefore not final verification for issue #123.
+
+## Final alternate-recovery verification
+
+- Two retained long recordings reproduced the failure across three whole-file
+  Groq submissions each. The provider timestamp JSON changed between runs, but
+  each recording's canonical whole-file text repeated the same omission.
+- Immediate approximately 30-second pieces with 1.5-second overlap produced
+  materially different candidates, establishing a recovery topology that did
+  not repeat the failed whole-file request shape.
+- Pull request #147's final canonical workflow run `30736692244` passed in
+  2 minutes 37 seconds, including all 191 tests and the package build. All
+  configured quality, security, dependency, duplication, and coverage gates
+  passed.
+- The final PR artifact recorded Git tree
+  `22f88872ecbfeafd9e06e18ce2b8f3363dacf01a`.
+- Main workflow run `30737035142` verified the same tree and promoted that
+  exact artifact from PR run `30736692244`; it did not rebuild the app.
+- The promoted package passed its 21-vocabulary-pack self-check and strict
+  code-signature validation. Its staged and installed executable SHA-256
+  values matched exactly:
+  `32731b05cb86e571408d3b4ee7010eb730bc54965d686a235798844f1af763da`.
+- Exactly one process remained active from the installed Applications copy,
+  and the floating widget was responsive with the expected general-dictation,
+  memo-action, planner, and recording controls.
+
+The packaged app does not currently bundle a local transcription model. The
+fallback boundary is intentionally optional; if provider recovery remains
+uncertain, the app preserves the best eligible text and original audio locally
+instead of inventing confidence or silently discarding the user's recording.
 
 ## Lessons
 
