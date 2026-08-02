@@ -12,6 +12,8 @@ private enum VerificationError: Error {
 }
 
 private enum RuntimeStage: String {
+    case recordingStore = "recording-store"
+    case modelManager = "model-manager"
     case audioDuration = "audio-duration"
     case transcription
 }
@@ -60,14 +62,20 @@ private enum InterviewArcVoiceVerifier {
     private static func run(
         options: Options
     ) async throws -> LocalWhisperVerificationReport {
-        let values = try options.audioURL.resourceValues(forKeys: [
-            .isRegularFileKey,
-            .isReadableKey,
-            .fileSizeKey,
-        ])
-        guard values.isRegularFile == true,
-              values.isReadable == true,
-              (values.fileSize ?? 0) > 0 else {
+        var isDirectory: ObjCBool = false
+        let fileManager = FileManager.default
+        let exists = fileManager.fileExists(
+            atPath: options.audioURL.path,
+            isDirectory: &isDirectory
+        )
+        let fileSize = (
+            try? fileManager.attributesOfItem(atPath: options.audioURL.path)[.size]
+                as? NSNumber
+        )?.int64Value ?? 0
+        guard exists,
+              !isDirectory.boolValue,
+              fileManager.isReadableFile(atPath: options.audioURL.path),
+              fileSize > 0 else {
             throw VerificationError.unreadableAudio
         }
 
@@ -82,10 +90,26 @@ private enum InterviewArcVoiceVerifier {
             prompt = ""
         }
 
-        let recordingStore = try RecordingStore()
-        let manager = try LocalWhisperModelManager(
-            rootDirectory: recordingStore.localModelsDirectory
-        )
+        let recordingStore: RecordingStore
+        do {
+            recordingStore = try RecordingStore()
+        } catch {
+            throw VerificationError.runtime(
+                stage: .recordingStore,
+                code: localWhisperVerificationFailureCode(for: error)
+            )
+        }
+        let manager: LocalWhisperModelManager
+        do {
+            manager = try LocalWhisperModelManager(
+                rootDirectory: recordingStore.localModelsDirectory
+            )
+        } catch {
+            throw VerificationError.runtime(
+                stage: .modelManager,
+                code: localWhisperVerificationFailureCode(for: error)
+            )
+        }
         let snapshot = await manager.snapshot()
         guard snapshot.state == .available else {
             throw VerificationError.unavailableModel
