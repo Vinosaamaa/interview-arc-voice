@@ -28,7 +28,11 @@ done
 # artifact replaces the installed app, scripts/sign-app-for-install.sh applies
 # the persistent certificate-backed identity from the user's Keychain.
 signing_requirement='=designated => identifier "app.interviewarc.voice"'
-codesign --force --deep --sign - --requirements "$signing_requirement" "$app_dir"
+# Sign nested code from the inside out. Asking codesign to discover and mutate
+# nested executables through --deep can leave an invalid seal when the app
+# carries more than its primary executable.
+codesign --force --sign - "$contents_dir/MacOS/InterviewArcVoiceVerifier"
+codesign --force --sign - --requirements "$signing_requirement" "$app_dir"
 codesign --verify --deep --strict "$app_dir"
 
 actual_requirement="$(codesign -d -r- "$app_dir" 2>&1)"
