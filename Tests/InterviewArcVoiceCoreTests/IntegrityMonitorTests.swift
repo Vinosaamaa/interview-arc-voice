@@ -447,7 +447,8 @@ import Testing
             temporaryDirectory: URL(fileURLWithPath: "/tmp"),
             audioDurationSeconds: 53,
             expectedChunkCount: 1,
-            speechEvidence: sustainedSpeechEvidence(durationSeconds: 53)
+            speechEvidence: sustainedSpeechEvidence(durationSeconds: 53),
+            protectionMode: .enhanced
         )
         Issue.record("Expected a recoverable suspicious-transcript failure")
     } catch let failure as TranscriptionIntegrityFailure {
@@ -463,6 +464,7 @@ import Testing
 
     let callCount = await transcriber.callCount
     #expect(callCount == 2)
+    #expect(await transcriber.coverageRecoveryCallCount == 1)
 }
 
 @Test func promptLeakageIsTreatedAsSuspicious() {

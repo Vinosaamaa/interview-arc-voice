@@ -3521,7 +3521,7 @@ final class VoiceBridgeModel: ObservableObject {
             editorText: capture.editorText,
             showDeliveryStep: true
         )
-        await finishForegroundInsertion()
+        finishForegroundInsertion()
     }
 
     private func updateRetryCount() async {
