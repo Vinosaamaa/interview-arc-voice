@@ -65,6 +65,11 @@ import Testing
     ])
 }
 
+@Test func recoveryConcurrencyIsBoundedWithoutMultiplyingNearLimitBodies() {
+    #expect(AudioChunkingPolicy.coverageRecovery.maximumConcurrentRequests == 4)
+    #expect(AudioChunkingPolicy.providerLimit.maximumConcurrentRequests == 1)
+}
+
 @Test func overlappingDurationChunksMergeWithoutDuplicatingBoundaryWords() {
     let first = AudioChunk(
         url: URL(fileURLWithPath: "/tmp/first.m4a"),

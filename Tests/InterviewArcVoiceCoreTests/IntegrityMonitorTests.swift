@@ -467,6 +467,38 @@ import Testing
     #expect(await transcriber.coverageRecoveryCallCount == 1)
 }
 
+@Test func combinedCoverageAndDurationFailureStillPreservesReviewableText() async {
+    let partial = TranscriptionResult(
+        text: "The usable beginning remains available for manual review.",
+        words: timestampedWords(
+            "The usable beginning remains available for manual review.",
+            endingAt: 14
+        ),
+        durationSeconds: 14,
+        chunkCount: 1
+    )
+    let transcriber = CountingTranscriber(results: [partial, partial])
+    let reliable = ReliableSpeechTranscriber(base: transcriber)
+
+    do {
+        _ = try await reliable.transcribe(
+            fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+            prompt: "Context vocabulary",
+            temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+            audioDurationSeconds: 53,
+            speechEvidence: sustainedSpeechEvidence(durationSeconds: 53),
+            protectionMode: .enhanced
+        )
+        Issue.record("Expected an uncertain recovery candidate")
+    } catch let failure as TranscriptionIntegrityFailure {
+        #expect(failure.reasons.contains(.missingSpeechCoverage))
+        #expect(failure.reasons.contains(.providerDurationMismatch))
+        #expect(failure.recoveryCandidate?.text == partial.text)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
 @Test func promptLeakageIsTreatedAsSuspicious() {
     let result = TranscriptionIntegrityEvaluator.evaluate(
         TranscriptionIntegrityEvidence(

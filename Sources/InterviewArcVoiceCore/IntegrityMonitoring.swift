@@ -698,10 +698,9 @@ public actor ReliableSpeechTranscriber {
                 !transcription.text
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                     .isEmpty
-                    && !check.result.reasons.isEmpty
-                    && check.result.reasons.allSatisfy {
-                        $0 == .missingSpeechCoverage
-                    }
+                    && check.result.reasons.contains(.missingSpeechCoverage)
+                    && !check.result.reasons.contains(.promptLeakage)
+                    && !check.result.reasons.contains(.emptyTranscript)
             }
             .map(\.0)
             .max { lhs, rhs in

@@ -171,7 +171,10 @@ public actor GroqTranscriber: SpeechTranscribing {
         var responses = try await withThrowingTaskGroup(
             of: (AudioChunk, GroqTranscription).self
         ) { group in
-            let maximumConcurrentRequests = min(4, chunks.count)
+            let maximumConcurrentRequests = min(
+                chunkingPolicy.maximumConcurrentRequests,
+                chunks.count
+            )
             for chunk in chunks.prefix(maximumConcurrentRequests) {
                 group.addTask {
                     let response = try await Self.transcribeChunk(
@@ -295,6 +298,13 @@ struct AudioChunkWindow: Equatable, Sendable {
 public enum AudioChunkingPolicy: Sendable {
     case providerLimit
     case coverageRecovery
+
+    var maximumConcurrentRequests: Int {
+        switch self {
+        case .providerLimit: 1
+        case .coverageRecovery: 4
+        }
+    }
 }
 
 enum AudioChunkPlan {

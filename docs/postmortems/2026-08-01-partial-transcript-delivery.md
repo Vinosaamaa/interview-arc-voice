@@ -246,10 +246,22 @@ complete-file request and changes only the experimental coverage path:
 7. uncertain recovery text is not inserted, registered as a Voice v2 intent,
    uploaded to D1/R2, or presented as an ordinary success.
 
-The best-candidate rule is deliberately narrow: only candidates whose sole
-integrity concern is missing speech coverage are eligible. Empty output,
-missing pieces, duration mismatch, implausibly short output, prompt leakage,
-and known hallucination boilerplate remain hard failures.
+The best-candidate rule remains safety-scoped: a candidate must be nonempty,
+must include the missing-speech-coverage signal, and must not contain prompt
+leakage or known hallucination boilerplate. Other incompleteness diagnostics
+may remain on the visibly uncertain preview because preserving partial user
+text is safer than silently discarding it; none of those candidates is inserted
+or delivered automatically.
+
+Implementation ownership is split deliberately: alternate provider windows
+and request concurrency live in
+`Sources/InterviewArcVoiceCore/GroqTranscriber.swift`; integrity decisions,
+fallback orchestration, and candidate selection live in
+`Sources/InterviewArcVoiceCore/IntegrityMonitoring.swift`; local retention and
+trusted replacement live in `Sources/InterviewArcVoiceCore/TranscriptRecovery.swift`
+and `Sources/InterviewArcVoice/InterviewArcVoiceApp.swift`. Regression coverage
+is in `AudioChunkerTests.swift`, `IntegrityMonitorTests.swift`, and
+`TranscriptRecoveryPolicyTests.swift`.
 
 ## Regression prevention
 
