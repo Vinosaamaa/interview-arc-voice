@@ -88,6 +88,8 @@ import Testing
         trailingSpeechLikeFrameCount: 0,
         trailingSpeechLikeFraction: 0,
         integrityReasons: [.missingSpeechCoverage],
+        localInferenceSeconds: 1.25,
+        localPromptTokenCount: 17,
         outcome: .failed
     )
 
@@ -103,6 +105,8 @@ import Testing
     #expect(record.report.contains("Trailing speech-like frames: 0"))
     #expect(record.report.contains("Trailing speech-like fraction: 0.000"))
     #expect(record.report.contains("Transcription integrity reasons: missingSpeechCoverage"))
+    #expect(record.report.contains("Local vocabulary conditioning: true"))
+    #expect(record.report.contains("Local vocabulary prompt tokens: 17"))
 }
 
 @Test func diagnosticRetryMatchesRetainedGeneralAudioWithoutEnablingLinkedDuplication() {

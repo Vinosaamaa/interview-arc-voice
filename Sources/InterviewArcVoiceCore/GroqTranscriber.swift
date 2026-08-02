@@ -75,6 +75,7 @@ public struct TranscriptionResult: Codable, Equatable, Sendable {
     public let engine: String?
     public let model: String?
     public let localInferenceSeconds: Double?
+    public let localPromptTokenCount: Int?
 
     public init(
         text: String,
@@ -85,7 +86,8 @@ public struct TranscriptionResult: Codable, Equatable, Sendable {
         timing: TranscriptionTiming? = nil,
         engine: String? = nil,
         model: String? = nil,
-        localInferenceSeconds: Double? = nil
+        localInferenceSeconds: Double? = nil,
+        localPromptTokenCount: Int? = nil
     ) {
         self.text = text
         self.words = words
@@ -96,6 +98,7 @@ public struct TranscriptionResult: Codable, Equatable, Sendable {
         self.engine = engine
         self.model = model
         self.localInferenceSeconds = localInferenceSeconds
+        self.localPromptTokenCount = localPromptTokenCount
     }
 }
 

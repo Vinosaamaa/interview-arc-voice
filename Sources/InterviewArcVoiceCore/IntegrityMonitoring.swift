@@ -253,6 +253,7 @@ public struct ReliableTranscription: Equatable, Sendable {
     public let engine: String?
     public let model: String?
     public let localInferenceSeconds: Double?
+    public let localPromptTokenCount: Int?
 
     public init(
         transcription: TranscriptionResult,
@@ -268,7 +269,8 @@ public struct ReliableTranscription: Equatable, Sendable {
         trailingSpeechLikeFraction: Double? = nil,
         engine: String? = nil,
         model: String? = nil,
-        localInferenceSeconds: Double? = nil
+        localInferenceSeconds: Double? = nil,
+        localPromptTokenCount: Int? = nil
     ) {
         self.transcription = transcription
         self.wasRetried = wasRetried
@@ -285,6 +287,7 @@ public struct ReliableTranscription: Equatable, Sendable {
         self.engine = engine
         self.model = model
         self.localInferenceSeconds = localInferenceSeconds
+        self.localPromptTokenCount = localPromptTokenCount
     }
 }
 
@@ -300,6 +303,7 @@ public struct TranscriptionIntegrityFailure: LocalizedError, Sendable {
     public let localFallbackEngine: String?
     public let localFallbackModel: String?
     public let localInferenceSeconds: Double?
+    public let localPromptTokenCount: Int?
     public let localValidationReasons: [TranscriptionIntegrityReason]?
 
     public init(
@@ -314,6 +318,7 @@ public struct TranscriptionIntegrityFailure: LocalizedError, Sendable {
         localFallbackEngine: String? = nil,
         localFallbackModel: String? = nil,
         localInferenceSeconds: Double? = nil,
+        localPromptTokenCount: Int? = nil,
         localValidationReasons: [TranscriptionIntegrityReason]? = nil
     ) {
         self.reasons = reasons
@@ -327,6 +332,7 @@ public struct TranscriptionIntegrityFailure: LocalizedError, Sendable {
         self.localFallbackEngine = localFallbackEngine
         self.localFallbackModel = localFallbackModel
         self.localInferenceSeconds = localInferenceSeconds
+        self.localPromptTokenCount = localPromptTokenCount
         self.localValidationReasons = localValidationReasons
     }
 
@@ -393,7 +399,8 @@ public actor ReliableSpeechTranscriber {
                     audioDurationSeconds: audioDurationSeconds,
                     expectedChunkCount: expectedChunkCount,
                     speechEvidence: speechEvidence,
-                    protectionMode: protectionMode
+                    protectionMode: protectionMode,
+                    prompt: prompt
                 )
             }
             return try protectedResult(
@@ -466,7 +473,8 @@ public actor ReliableSpeechTranscriber {
                 audioDurationSeconds: audioDurationSeconds,
                 expectedChunkCount: expectedChunkCount,
                 speechEvidence: speechEvidence,
-                protectionMode: protectionMode
+                protectionMode: protectionMode,
+                prompt: prompt
             )
         }
         return try protectedResult(
@@ -490,11 +498,13 @@ public actor ReliableSpeechTranscriber {
         audioDurationSeconds: Double,
         expectedChunkCount: Int,
         speechEvidence: SpeechEvidenceResult?,
-        protectionMode: SpeechProtectionMode
+        protectionMode: SpeechProtectionMode,
+        prompt: String
     ) async throws -> ReliableTranscription {
         var checkedCandidates = initialCandidates
         var localFallbackAttempted = false
         var localInferenceSeconds: Double?
+        var localPromptTokenCount: Int?
         var localValidationReasons: [TranscriptionIntegrityReason]?
         if retryCheck.result.reasons.contains(.missingSpeechCoverage),
            let localFallback {
@@ -502,7 +512,7 @@ public actor ReliableSpeechTranscriber {
             do {
                 let rawLocal = try await localFallback.transcribe(
                     fileURL: fileURL,
-                    prompt: "",
+                    prompt: prompt,
                     temporaryDirectory: temporaryDirectory
                 )
                 let local = normalizedLocalFallback(
@@ -512,13 +522,14 @@ public actor ReliableSpeechTranscriber {
                 )
                 let localCheck = check(
                     local,
-                    prompt: "",
+                    prompt: prompt,
                     audioDurationSeconds: audioDurationSeconds,
                     expectedChunkCount: expectedChunkCount,
                     speechEvidence: speechEvidence,
                     protectionMode: protectionMode
                 )
                 localInferenceSeconds = local.localInferenceSeconds
+                localPromptTokenCount = local.localPromptTokenCount
                 localValidationReasons = localCheck.result.reasons
                 guard localCheck.result.isSuspicious else {
                     return try protectedResult(
@@ -543,6 +554,7 @@ public actor ReliableSpeechTranscriber {
             localFallbackEngine: localFallback?.diagnosticEngine,
             localFallbackModel: localFallback?.diagnosticModel,
             localInferenceSeconds: localInferenceSeconds,
+            localPromptTokenCount: localPromptTokenCount,
             localValidationReasons: localValidationReasons
         )
     }
@@ -561,7 +573,8 @@ public actor ReliableSpeechTranscriber {
             timing: result.timing,
             engine: result.engine,
             model: result.model,
-            localInferenceSeconds: result.localInferenceSeconds
+            localInferenceSeconds: result.localInferenceSeconds,
+            localPromptTokenCount: result.localPromptTokenCount
         )
     }
 
@@ -586,7 +599,8 @@ public actor ReliableSpeechTranscriber {
                         .speechLikeFraction,
                 engine: transcription.engine,
                 model: transcription.model,
-                localInferenceSeconds: transcription.localInferenceSeconds
+                localInferenceSeconds: transcription.localInferenceSeconds,
+                localPromptTokenCount: transcription.localPromptTokenCount
             )
         }
         let validationStartedAt = Date()
@@ -633,7 +647,9 @@ public actor ReliableSpeechTranscriber {
             engine: protected.transcription.engine,
             model: protected.transcription.model,
             localInferenceSeconds:
-                protected.transcription.localInferenceSeconds
+                protected.transcription.localInferenceSeconds,
+            localPromptTokenCount:
+                protected.transcription.localPromptTokenCount
         )
     }
 
@@ -773,6 +789,7 @@ public actor ReliableSpeechTranscriber {
         localFallbackEngine: String? = nil,
         localFallbackModel: String? = nil,
         localInferenceSeconds: Double? = nil,
+        localPromptTokenCount: Int? = nil,
         localValidationReasons: [TranscriptionIntegrityReason]? = nil
     ) -> TranscriptionIntegrityFailure {
         TranscriptionIntegrityFailure(
@@ -790,6 +807,7 @@ public actor ReliableSpeechTranscriber {
             localFallbackEngine: localFallbackEngine,
             localFallbackModel: localFallbackModel,
             localInferenceSeconds: localInferenceSeconds,
+            localPromptTokenCount: localPromptTokenCount,
             localValidationReasons: localValidationReasons
         )
     }

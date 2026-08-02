@@ -180,6 +180,7 @@ final class VoiceBridgeModel: ObservableObject {
         var engine: String?
         var model: String?
         var localInferenceSeconds: Double?
+        var localPromptTokenCount: Int?
         var localFallbackAttempted: Bool?
         var localValidationReasons: [TranscriptionIntegrityReason]?
     }
@@ -2407,6 +2408,7 @@ final class VoiceBridgeModel: ObservableObject {
                     engine: result.engine,
                     model: result.model,
                     localInferenceSeconds: result.localInferenceSeconds,
+                    localPromptTokenCount: result.localPromptTokenCount,
                     localFallbackAttempted: result.engine == "whisperkit"
                 ),
                 outcome: .delivered
@@ -2460,6 +2462,7 @@ final class VoiceBridgeModel: ObservableObject {
             transcriptionEngine: transcription.engine,
             transcriptionModel: transcription.model,
             localInferenceSeconds: transcription.localInferenceSeconds,
+            localPromptTokenCount: transcription.localPromptTokenCount,
             localFallbackAttempted: transcription.localFallbackAttempted,
             localValidationReasons: transcription.localValidationReasons,
             outcome: outcome
@@ -3064,6 +3067,8 @@ final class VoiceBridgeModel: ObservableObject {
                         : "whisper-large-v3",
                     localInferenceSeconds:
                         integrityFailure?.localInferenceSeconds,
+                    localPromptTokenCount:
+                        integrityFailure?.localPromptTokenCount,
                     localFallbackAttempted:
                         integrityFailure?.localFallbackAttempted,
                     localValidationReasons:
@@ -3729,6 +3734,8 @@ final class VoiceBridgeModel: ObservableObject {
                         model: result.model,
                         localInferenceSeconds:
                             result.localInferenceSeconds,
+                        localPromptTokenCount:
+                            result.localPromptTokenCount,
                         localFallbackAttempted:
                             result.engine == "whisperkit"
                     ),
@@ -3832,6 +3839,8 @@ final class VoiceBridgeModel: ObservableObject {
                         model: result.transcriptionModel,
                         localInferenceSeconds:
                             result.localInferenceSeconds,
+                        localPromptTokenCount:
+                            result.localPromptTokenCount,
                         localFallbackAttempted:
                             result.transcriptionEngine == "whisperkit"
                     ),

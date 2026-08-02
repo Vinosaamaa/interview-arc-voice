@@ -201,10 +201,14 @@ overlap-deduplicated and timestamp evidence is offset. An explicitly installed
 assembled candidate remains uncertain. The model lives in private app-owned
 storage with a permission-0600 SHA-256 manifest; Settings owns installation,
 integrity status, and deletion. It is never downloaded automatically and never
-runs on the healthy Groq path. Without a trustworthy result, Voice stores the
-best usable text and original M4A as a coverage-uncertain Recent Transcript and
-does not insert it or create a linked D1 turn. Recovery derivatives are
-disposable.
+runs on the healthy Groq path. Local decoding receives the same resolved
+activity or General Dictation vocabulary context as the primary request. Voice
+normalizes whitespace, tokenizes with the installed WhisperKit tokenizer, and
+passes at most 180 trailing prompt tokens as decoder conditioning. The prompt
+text is never persisted in diagnostics. Without a trustworthy result, Voice
+stores the best usable text and original M4A as a coverage-uncertain Recent
+Transcript and does not insert it or create a linked D1 turn. Recovery
+derivatives are disposable.
 
 The user may explicitly confirm **Use this transcript** for that visible
 coverage-uncertain candidate. General Dictation inserts exactly the reviewed
@@ -217,8 +221,8 @@ Every completed attempt appends one bounded, permission-0600 diagnostic record
 containing only numeric stage timings, the selected protection mode, omission
 counts, exact-alignment status, timestamp coverage counts, lexical coverage
 end, trailing speech evidence, retry status, integrity reason codes,
-microphone recovery count, WebRTC VAD speech-frame count/longest run, and
-outcome. The
+microphone recovery count, WebRTC VAD speech-frame count/longest run, local
+conditioning token count, and outcome. The
 Settings diagnostics surface can copy, reveal, and clear that file. It never
 records transcript text, audio, credentials, tokens, private URLs, or activity
 descriptions. Validation time is recorded separately from decoding,

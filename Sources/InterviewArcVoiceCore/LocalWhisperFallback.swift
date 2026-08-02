@@ -51,6 +51,30 @@ public enum LocalWhisperModelError: LocalizedError, Sendable, Equatable {
     }
 }
 
+/// Produces deterministic, bounded decoder-conditioning tokens without ever
+/// persisting or logging the vocabulary prompt itself.
+public enum LocalWhisperPromptPolicy {
+    public static let maximumTokenCount = 180
+
+    public static func normalizedPrompt(_ prompt: String) -> String {
+        let collapsed = prompt
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !collapsed.isEmpty else { return "" }
+        return " " + collapsed
+    }
+
+    public static func boundedTokens(
+        for prompt: String,
+        encode: (String) -> [Int]
+    ) -> [Int] {
+        let normalized = normalizedPrompt(prompt)
+        guard !normalized.isEmpty else { return [] }
+        return Array(encode(normalized).suffix(maximumTokenCount))
+    }
+}
+
 private struct LocalWhisperModelManifest: Codable, Equatable, Sendable {
     struct FileEntry: Codable, Equatable, Sendable {
         let relativePath: String
@@ -201,7 +225,10 @@ public actor LocalWhisperModelManager {
         }
     }
 
-    public func transcribe(fileURL: URL) async throws -> ArcTranscriptionResult {
+    public func transcribe(
+        fileURL: URL,
+        prompt: String = ""
+    ) async throws -> ArcTranscriptionResult {
         try Task.checkCancellation()
         let manifest = try verifiedModelManifest()
         let modelFolder = try safeModelFolder(for: manifest)
@@ -223,6 +250,12 @@ public actor LocalWhisperModelManager {
             engine = whisper
         }
         try Task.checkCancellation()
+        let promptTokens = whisper.tokenizer.map {
+            LocalWhisperPromptPolicy.boundedTokens(
+                for: prompt,
+                encode: $0.encode(text:)
+            )
+        } ?? []
         let startedAt = Date()
         let localResults = try await whisper.transcribe(
             audioPath: fileURL.path,
@@ -233,6 +266,7 @@ public actor LocalWhisperModelManager {
                 temperature: 0,
                 usePrefillPrompt: true,
                 wordTimestamps: true,
+                promptTokens: promptTokens.isEmpty ? nil : promptTokens,
                 chunkingStrategy: .vad
             )
         )
@@ -277,7 +311,8 @@ public actor LocalWhisperModelManager {
             ),
             engine: "whisperkit",
             model: manifest.model,
-            localInferenceSeconds: inferenceSeconds
+            localInferenceSeconds: inferenceSeconds,
+            localPromptTokenCount: promptTokens.count
         )
     }
 
@@ -397,6 +432,6 @@ public actor ManagedLocalWhisperTranscriber: SpeechTranscribing {
         prompt: String,
         temporaryDirectory: URL
     ) async throws -> ArcTranscriptionResult {
-        try await manager.transcribe(fileURL: fileURL)
+        try await manager.transcribe(fileURL: fileURL, prompt: prompt)
     }
 }
