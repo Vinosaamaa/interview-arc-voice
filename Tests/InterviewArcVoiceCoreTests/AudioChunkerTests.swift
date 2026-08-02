@@ -52,6 +52,24 @@ import Testing
     })
 }
 
+@Test func coverageRecoveryUsesImmediateThirtySecondOverlappingWindows() {
+    let windows = AudioChunkPlan.coverageRecoveryWindows(
+        durationSeconds: 95
+    )
+
+    #expect(windows == [
+        AudioChunkWindow(startSeconds: 0, durationSeconds: 30),
+        AudioChunkWindow(startSeconds: 28.5, durationSeconds: 30),
+        AudioChunkWindow(startSeconds: 57, durationSeconds: 30),
+        AudioChunkWindow(startSeconds: 85.5, durationSeconds: 9.5),
+    ])
+}
+
+@Test func recoveryConcurrencyIsBoundedWithoutMultiplyingNearLimitBodies() {
+    #expect(AudioChunkingPolicy.coverageRecovery.maximumConcurrentRequests == 4)
+    #expect(AudioChunkingPolicy.providerLimit.maximumConcurrentRequests == 1)
+}
+
 @Test func overlappingDurationChunksMergeWithoutDuplicatingBoundaryWords() {
     let first = AudioChunk(
         url: URL(fileURLWithPath: "/tmp/first.m4a"),

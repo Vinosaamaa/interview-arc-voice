@@ -51,8 +51,10 @@
    incomplete elsewhere, a consecutive unsupported word run can still map to
    an exact canonical source range only when that normalized run occurs once.
    Missing or ambiguous candidate alignment, genuine local speech, or provider
-   disagreement preserves the returned text. Validation does not segment,
-   re-encode, re-upload, retranscribe, or alter the canonical M4A.
+   disagreement preserves the returned text. Text filtering itself does not
+   segment, re-encode, re-upload, retranscribe, or alter the canonical M4A.
+   Enhanced coverage recovery is a separate integrity path that may create
+   disposable overlapping derivatives while preserving the canonical M4A.
 7. Insert the plain transcript plus a Markdown comment envelope containing its
    activity and turn IDs into the captured editor. Voice activates the captured
    application, snapshots the macOS pasteboard, posts a real Command-V through
@@ -121,26 +123,28 @@ substitute for lexical coverage, even when a nonempty segment normalizes to the
 canonical text and reaches the audio duration. When local evidence contains
 sustained speech after the final trustworthy word boundary, the result is
 incomplete even if the provider reports the full audio duration. A concrete
-failure, incomplete provider result, implausible duration, known prompt
-leakage, or missing output triggers exactly one unprompted retry. If the retry
-is also suspicious, Voice does not claim success; it retains the original
-audio and offers Play, Save, and Retry.
+failure, implausible duration, known prompt leakage, or missing output triggers
+exactly one unprompted whole-file retry. In Enhanced mode, missing provider
+speech coverage instead triggers the bounded overlapping-chunk recovery path.
+If recovery is also suspicious, Voice does not claim success; it retains the
+best nonempty candidate and original audio for review and retry.
 
-The local evidence pass that supports recording integrity and lexical-tail
-coverage is always active. Silence Protection `Off` bypasses whole-capture
-no-speech admission and segment/word filtering, but it cannot disable the P0
-guard against silently delivering a transcript while later recorded speech
-remains uncovered.
+The local evidence pass that supports recording integrity is always active.
+The provider timestamp and local-speech comparison used to veto incomplete
+coverage is experimental and runs only in Enhanced mode.
 
 Silence protection has three persistent modes:
 
-- **Off** skips local no-speech admission and transcript filtering, while the
-  integrity-only local scan continues to protect against silent data loss.
+- **Off** skips local no-speech admission, transcript filtering, and the
+  experimental provider-timestamp speech-coverage veto. Structural provider
+  failures such as empty output, missing pieces, and duration mismatch still
+  fail safely.
 - **Basic** is the default. Its whole-recording gate requires both the
   deterministic acoustic-frame heuristic and a pinned local WebRTC VAD to
   report sustained voice activity.
 - **Enhanced — Experimental** adds the segment-local corroboration described
-  above without another decode, provider request, or AI layer.
+  above. Healthy results add no request; a missing-coverage signal may spend
+  the one recovery allowance on an alternate chunked provider strategy.
 
 The independent VAD resamples decoded mono samples to 16 kHz and evaluates
 20 ms frames in very-aggressive mode. A capture must contain at least 12
@@ -167,6 +171,17 @@ capitalization. Filtered text is removed before cursor insertion and before a
 pending linked capture can be created, so it cannot reach D1, accepted private
 R2 metadata, or Delivery Coach. The original M4A remains the sole playback and
 upload object.
+
+Enhanced completeness recovery is separate from Enhanced text removal. The
+normal request remains one complete-file request. A missing-coverage signal
+uses one prompt-free provider recovery made from approximately 30-second,
+1.5-second-overlap derivatives with a concurrency ceiling of four; it does not
+wait 30 seconds. Every expected piece must return before top-level text is
+overlap-deduplicated and timestamp evidence is offset. An available local
+engine may be tried through the fallback interface if that assembled candidate
+remains uncertain. Without a trustworthy result, Voice stores the best usable
+text and original M4A as a coverage-uncertain Recent Transcript and does not
+insert it or create a linked D1 turn. Recovery derivatives are disposable.
 
 Every completed attempt appends one bounded, permission-0600 diagnostic record
 containing only numeric stage timings, the selected protection mode, omission
@@ -353,12 +368,15 @@ state. Unknown versions fail closed with a user-visible update prompt.
 ## Audio model
 
 One stop action produces one canonical clip. Provider-safe recordings are sent
-as one transcription upload; Whisper owns its internal acoustic windows. A clip
-is divided into balanced overlapping transcription chunks only when its encoded
-file size approaches the provider upload limit. Those derivatives are deleted
-after the transcript is assembled. The original recording is uploaded as one R2
-object and remains a single seekable player in Past. At the current 48-kbps
-capture rate, a 30-minute answer is far below the 100-MB private upload boundary.
+as one transcription upload on the healthy path; Whisper owns its internal
+acoustic windows. A clip is divided into balanced overlapping transcription
+chunks when its encoded file size approaches the provider upload limit, or
+into approximately 30-second overlapping derivatives for one Enhanced
+speech-coverage recovery attempt. Those derivatives are deleted after the
+transcript is assembled. The original recording is uploaded as one R2 object
+only after a trusted linked result and remains a single seekable player in
+Past. At the current 48-kbps capture rate, a 30-minute answer is far below the
+100-MB private upload boundary.
 
 ## Delivery analysis
 

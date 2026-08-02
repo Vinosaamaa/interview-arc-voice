@@ -92,6 +92,23 @@ public struct TranscriptionResult: Codable, Equatable, Sendable {
 
 public protocol SpeechTranscribing: Sendable {
     func transcribe(fileURL: URL, prompt: String, temporaryDirectory: URL) async throws -> TranscriptionResult
+    func transcribeCoverageRecovery(
+        fileURL: URL,
+        temporaryDirectory: URL
+    ) async throws -> TranscriptionResult
+}
+
+public extension SpeechTranscribing {
+    func transcribeCoverageRecovery(
+        fileURL: URL,
+        temporaryDirectory: URL
+    ) async throws -> TranscriptionResult {
+        try await transcribe(
+            fileURL: fileURL,
+            prompt: "",
+            temporaryDirectory: temporaryDirectory
+        )
+    }
 }
 
 public actor GroqTranscriber: SpeechTranscribing {
@@ -108,8 +125,38 @@ public actor GroqTranscriber: SpeechTranscribing {
     }
 
     public func transcribe(fileURL: URL, prompt: String, temporaryDirectory: URL) async throws -> TranscriptionResult {
+        try await transcribe(
+            fileURL: fileURL,
+            prompt: prompt,
+            temporaryDirectory: temporaryDirectory,
+            chunkingPolicy: .providerLimit
+        )
+    }
+
+    public func transcribeCoverageRecovery(
+        fileURL: URL,
+        temporaryDirectory: URL
+    ) async throws -> TranscriptionResult {
+        try await transcribe(
+            fileURL: fileURL,
+            prompt: "",
+            temporaryDirectory: temporaryDirectory,
+            chunkingPolicy: .coverageRecovery
+        )
+    }
+
+    private func transcribe(
+        fileURL: URL,
+        prompt: String,
+        temporaryDirectory: URL,
+        chunkingPolicy: AudioChunkingPolicy
+    ) async throws -> TranscriptionResult {
         let chunkPreparationStartedAt = Date()
-        let chunks = try await chunker.chunks(for: fileURL, temporaryDirectory: temporaryDirectory)
+        let chunks = try await chunker.chunks(
+            for: fileURL,
+            temporaryDirectory: temporaryDirectory,
+            policy: chunkingPolicy
+        )
         let chunkPreparationSeconds = Date().timeIntervalSince(chunkPreparationStartedAt)
         defer {
             for chunk in chunks where chunk.isTemporary {
@@ -121,8 +168,14 @@ public actor GroqTranscriber: SpeechTranscribing {
         let model = self.model
         let session = self.session
         let providerStartedAt = Date()
-        let responses = try await withThrowingTaskGroup(of: (AudioChunk, GroqTranscription).self) { group in
-            for chunk in chunks {
+        var responses = try await withThrowingTaskGroup(
+            of: (AudioChunk, GroqTranscription).self
+        ) { group in
+            let maximumConcurrentRequests = min(
+                chunkingPolicy.maximumConcurrentRequests,
+                chunks.count
+            )
+            for chunk in chunks.prefix(maximumConcurrentRequests) {
                 group.addTask {
                     let response = try await Self.transcribeChunk(
                         chunk,
@@ -134,10 +187,29 @@ public actor GroqTranscriber: SpeechTranscribing {
                     return (chunk, response)
                 }
             }
+
+            var nextChunkIndex = maximumConcurrentRequests
             var result: [(AudioChunk, GroqTranscription)] = []
-            for try await response in group { result.append(response) }
-            return result.sorted { $0.0.offsetSeconds < $1.0.offsetSeconds }
+            while let response = try await group.next() {
+                result.append(response)
+                if nextChunkIndex < chunks.count {
+                    let chunk = chunks[nextChunkIndex]
+                    nextChunkIndex += 1
+                    group.addTask {
+                        let response = try await Self.transcribeChunk(
+                            chunk,
+                            prompt: prompt,
+                            apiKey: apiKey,
+                            model: model,
+                            session: session
+                        )
+                        return (chunk, response)
+                    }
+                }
+            }
+            return result
         }
+        responses.sort { $0.0.offsetSeconds < $1.0.offsetSeconds }
         let providerWaitSeconds = Date().timeIntervalSince(providerStartedAt)
 
         let responseProcessingStartedAt = Date()
@@ -223,6 +295,18 @@ struct AudioChunkWindow: Equatable, Sendable {
     }
 }
 
+public enum AudioChunkingPolicy: Sendable {
+    case providerLimit
+    case coverageRecovery
+
+    var maximumConcurrentRequests: Int {
+        switch self {
+        case .providerLimit: 1
+        case .coverageRecovery: 4
+        }
+    }
+}
+
 enum AudioChunkPlan {
     private static let directUploadBytes = 23 * 1024 * 1024
     private static let targetUploadBytes = 20 * 1024 * 1024
@@ -271,19 +355,51 @@ enum AudioChunkPlan {
             )
         }
     }
+
+    static func coverageRecoveryWindows(
+        durationSeconds: Double
+    ) -> [AudioChunkWindow] {
+        guard durationSeconds > 0 else { return [] }
+        let targetSeconds = 30.0
+        let strideSeconds = targetSeconds - overlapSeconds
+        var windows: [AudioChunkWindow] = []
+        var start = 0.0
+        while start < durationSeconds {
+            let duration = min(targetSeconds, durationSeconds - start)
+            windows.append(AudioChunkWindow(
+                startSeconds: start,
+                durationSeconds: duration
+            ))
+            guard start + duration < durationSeconds else { break }
+            start += strideSeconds
+        }
+        return windows
+    }
 }
 
 public actor AudioChunker {
     public init() {}
 
-    public func chunks(for source: URL, temporaryDirectory: URL) async throws -> [AudioChunk] {
+    public func chunks(
+        for source: URL,
+        temporaryDirectory: URL,
+        policy: AudioChunkingPolicy = .providerLimit
+    ) async throws -> [AudioChunk] {
         let resource = try source.resourceValues(forKeys: [.fileSizeKey])
         let asset = AVURLAsset(url: source)
         let duration = try await asset.load(.duration).seconds
-        let windows = AudioChunkPlan.windows(
-            durationSeconds: duration,
-            fileSizeBytes: resource.fileSize ?? 0
-        )
+        let windows: [AudioChunkWindow]
+        switch policy {
+        case .providerLimit:
+            windows = AudioChunkPlan.windows(
+                durationSeconds: duration,
+                fileSizeBytes: resource.fileSize ?? 0
+            )
+        case .coverageRecovery:
+            windows = AudioChunkPlan.coverageRecoveryWindows(
+                durationSeconds: duration
+            )
+        }
         guard windows.count > 1 else {
             return [AudioChunk(url: source, offsetSeconds: 0, durationSeconds: duration, isTemporary: false)]
         }

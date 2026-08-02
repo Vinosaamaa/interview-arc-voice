@@ -150,8 +150,11 @@ discarded.
   [`design-system/AGENTS.md`](design-system/AGENTS.md), then read the current
   global master and the applicable page contract.
 - Cheap local audio checks run for every capture. Normal audio uses exactly one
-  speech-to-text request. Only a provider failure or concrete integrity signal
-  triggers one unprompted retry.
+  speech-to-text request. A provider transport/response failure may trigger one
+  prompt-free whole-file retry. In Enhanced mode, a concrete local/provider
+  speech-coverage conflict instead spends that retry allowance on immediate,
+  bounded parallel, overlapping approximately 30-second derivatives. It never
+  waits 30 seconds and never changes the canonical M4A.
 - The finalized AAC payload must contain a plausible amount of encoded audio
   for its duration. A timed but near-silent container is rejected before Groq
   so ambient noise cannot become a guessed one-word transcript.
@@ -160,10 +163,11 @@ discarded.
   text and compares its final valid lexical timestamp with local speech
   evidence. Segment timestamps are acoustic windows and never substitute for
   lexical word coverage. Sustained
-  speech after that boundary triggers one prompt-free retry; a second partial
-  result preserves the recording and fails visibly instead of inserting text.
-  This completeness check remains active when optional Silence Protection is
-  Off; that setting controls hallucination filtering, not silent-loss safety.
+  speech after that boundary is an Enhanced-only experimental signal. It
+  triggers one prompt-free overlapping-window recovery; an uncertain recovery
+  preserves the best usable text and original recording visibly instead of
+  inserting text. Off and Basic do not reject usable provider text solely from
+  provider timestamp gaps.
 - Settings → Silence protection offers `Off`, `Basic`, and
   `Enhanced — Experimental`. Basic rejects an entire recording with no
   sustained speech. Whole-capture admission requires both the existing
@@ -187,6 +191,8 @@ discarded.
   Stop transient from authorizing two short invented words while preserving a
   quiet, high-confidence closing. This uses no second Groq request or
   audio decode and never cuts, rewrites, or replaces the original M4A.
+  If Enhanced coverage recovery remains uncertain, Voice labels the retained
+  Recent Transcript for review and does not insert it or upload it to D1/R2.
 - Settings → Diagnostics records a bounded local timing breakdown for capture,
   validation, Groq, transcript corroboration, response handling, and insertion,
   plus privacy-safe WebRTC VAD frame/run counts, segment/word coverage, and

@@ -143,6 +143,10 @@ above and below short content.
 - Keep primary explanations to one or two lines.
 - Expose diagnostics progressively.
 - Show only actions that can resolve the current state.
+- A best-available transcript retained after incomplete coverage keeps the
+  existing Recent Transcripts card geometry, adds a compact warning label
+  above its preview, and remains reviewable through Copy, Play, Save, Delete,
+  Insert, and Retry. It is never presented as ordinary delivered text.
 
 ### Settings
 

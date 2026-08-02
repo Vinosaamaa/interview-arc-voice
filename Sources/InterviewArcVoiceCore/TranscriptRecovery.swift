@@ -97,6 +97,15 @@ public struct LocalTranscriptAudioReference:
     }
 }
 
+public enum LocalTranscriptRecoveryStatus:
+    String,
+    Codable,
+    Equatable,
+    Sendable
+{
+    case coverageUncertain
+}
+
 public struct LocalTranscriptRecord: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public let createdAt: Date
@@ -105,6 +114,7 @@ public struct LocalTranscriptRecord: Codable, Equatable, Identifiable, Sendable 
     public let durationSeconds: Double
     public let activityTitle: String?
     public let captureID: String?
+    public let recoveryStatus: LocalTranscriptRecoveryStatus?
     public var audioReference: LocalTranscriptAudioReference?
 
     public init(
@@ -115,6 +125,7 @@ public struct LocalTranscriptRecord: Codable, Equatable, Identifiable, Sendable 
         durationSeconds: Double,
         activityTitle: String? = nil,
         captureID: String? = nil,
+        recoveryStatus: LocalTranscriptRecoveryStatus? = nil,
         audioReference: LocalTranscriptAudioReference? = nil
     ) {
         self.id = id
@@ -124,6 +135,7 @@ public struct LocalTranscriptRecord: Codable, Equatable, Identifiable, Sendable 
         self.durationSeconds = durationSeconds
         self.activityTitle = activityTitle
         self.captureID = captureID
+        self.recoveryStatus = recoveryStatus
         self.audioReference = audioReference
     }
 
@@ -229,6 +241,7 @@ public actor LocalTranscriptHistoryStore {
         id: UUID,
         transcript: String,
         editorText: String,
+        captureID: String? = nil,
         now: Date = Date()
     ) throws -> LocalTranscriptRecord? {
         var current = try readRecords()
@@ -243,7 +256,8 @@ public actor LocalTranscriptHistoryStore {
             editorText: editorText,
             durationSeconds: previous.durationSeconds,
             activityTitle: previous.activityTitle,
-            captureID: previous.captureID,
+            captureID: captureID ?? previous.captureID,
+            recoveryStatus: nil,
             audioReference: previous.audioReference
         )
         current[index] = replacement

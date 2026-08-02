@@ -1,10 +1,10 @@
 # Postmortem: Partial transcript delivered while speech remained in the recording
 
 **Date**: 2026-08-01  
-**Status**: Reopened — recurrence repair in verification<br>
+**Status**: Reopened — alternate recovery repair in implementation<br>
 **Severity**: P0 silent data loss  
 **Issue**: [interview-arc-voice#123](https://github.com/Vinosaamaa/interview-arc-voice/issues/123)  
-**Pull request**: [interview-arc-voice#136](https://github.com/Vinosaamaa/interview-arc-voice/pull/136)
+**Pull requests**: [interview-arc-voice#136](https://github.com/Vinosaamaa/interview-arc-voice/pull/136), [interview-arc-voice#147](https://github.com/Vinosaamaa/interview-arc-voice/pull/147)
 
 > **Recurrence update:** The exact #136/#140 installed artifact delivered a
 > second incomplete 80.89-second transcript on 2026-08-01. The follow-up root
@@ -45,6 +45,11 @@ cover the full recording, bypassing the retry and recoverable-failure path.
   but stretched its final lexical timestamp to 13.84 seconds. Enhanced mode
   omitted zero segments and zero words, so the incomplete provider result was
   delivered unchanged.
+- A later 328-second recording was rejected safely but could not be recovered:
+  four visible attempts consumed eight whole-file provider calls and every
+  prompt-free retry reproduced `missingSpeechCoverage`. The user retained the
+  audio but received no usable text from the application.
+- A separate 241-second preserved recording reproduced the same failure class.
 
 No transcript or recording content was exposed outside the intended local and
 provider boundaries.
@@ -99,6 +104,17 @@ evidence and are not committed to Git.
   Groq omitted an internal spoken passage while a later word timestamp still
   reached the recording tail. Independent local transcription recovered the
   omitted passage; app diagnostics confirmed zero local-filter omissions.
+- 2026-08-01 — Two preserved long recordings were replayed three times each.
+  For both, the two prompt-free whole-file requests returned exactly identical
+  canonical text while their word/segment timestamp JSON differed.
+- 2026-08-01 — The current internal-gap detector rejected all six replayed
+  responses. Several local-evidence fractions were close to its 10% threshold,
+  while independent local and chunked transcriptions disagreed about whether
+  the same intervals contained omitted words.
+- 2026-08-01 — Immediate approximately 30-second pieces with 1.5-second
+  overlap recovered materially different text. The 328-second recording
+  assembled 581 words versus 556 from whole-file prompt-free retry; neither
+  alternate output was treated as ground truth.
 
 ## Root cause
 
@@ -148,6 +164,15 @@ ending.
 - The failure boundary discarded both provider timing and integrity context,
   making an executed retry look like a dead control and a zero-millisecond
   provider call.
+- The internal-gap threshold treated weak local evidence as an absolute veto
+  even though Groq word timestamps varied between byte-distinct responses with
+  identical canonical text.
+- `missingSpeechCoverage` remained active in Off and Basic even though it was
+  an experimental cross-signal heuristic rather than a structural provider
+  failure.
+- Recovery repeated the same whole-file strategy. For both preserved long
+  recordings, prompt-free retry text was deterministic, so repeated manual
+  Retry actions could not escape the failure topology.
 
 ## Initial resolution (superseded)
 
@@ -200,22 +225,63 @@ suspicious even when a later returned word reaches the end of the audio. The
 same one-retry/recoverable-failure rule then applies; no additional provider
 call is introduced for healthy responses.
 
+## Alternate recovery repair
+
+The approved recurrence repair keeps the healthy path unchanged at one
+complete-file request and changes only the experimental coverage path:
+
+1. internal provider-word-gap and tail-speech coverage decisions run only in
+   Enhanced — Experimental;
+2. Off and Basic preserve usable provider text and do not spend another call
+   on timestamp-gap suspicion;
+3. an Enhanced missing-coverage result spends the one provider-recovery
+   allowance on immediate approximately 30-second pieces with 1.5-second
+   overlap, submitted with a concurrency ceiling of four;
+4. every expected piece must return before canonical top-level text is
+   overlap-deduplicated and timestamp evidence is offset;
+5. an optional local fallback interface can supply a final candidate without
+   making local transcription a required packaged dependency;
+6. if every candidate remains uncertain, the best nonempty candidate and
+   original M4A are retained as a visibly labeled Recent Transcript; and
+7. uncertain recovery text is not inserted, registered as a Voice v2 intent,
+   uploaded to D1/R2, or presented as an ordinary success.
+
+The best-candidate rule remains safety-scoped: a candidate must be nonempty,
+must include the missing-speech-coverage signal, and must not contain prompt
+leakage or known hallucination boilerplate. Other incompleteness diagnostics
+may remain on the visibly uncertain preview because preserving partial user
+text is safer than silently discarding it; none of those candidates is inserted
+or delivered automatically.
+
+Implementation ownership is split deliberately: alternate provider windows
+and request concurrency live in
+`Sources/InterviewArcVoiceCore/GroqTranscriber.swift`; integrity decisions,
+fallback orchestration, and candidate selection live in
+`Sources/InterviewArcVoiceCore/IntegrityMonitoring.swift`; local retention and
+trusted replacement live in `Sources/InterviewArcVoiceCore/TranscriptRecovery.swift`
+and `Sources/InterviewArcVoice/InterviewArcVoiceApp.swift`. Regression coverage
+is in `AudioChunkerTests.swift`, `IntegrityMonitorTests.swift`, and
+`TranscriptRecoveryPolicyTests.swift`.
+
 ## Regression prevention
 
 - Production-shaped test: full-duration response with complete partial-word
   alignment plus an empty trailing segment.
 - Recurrence-shaped test: one malformed aligned word timestamp plus a
   full-duration nonempty segment must not suppress the lexical-tail retry.
-- Internal-gap test: sustained local speech between provider word timestamps
-  must trigger the existing single provider retry even when the final word
-  timestamp reaches the recording tail.
-- Failure test: two partial results must throw `missingSpeechCoverage` after
-  exactly two provider calls while retaining their combined timing and tail
-  evidence for diagnostics.
+- Enhanced internal-gap test: sustained local speech between provider word
+  timestamps must trigger the alternate overlapping-window recovery even when
+  the final word timestamp reaches the recording tail.
+- Basic-mode test: the same timestamp topology remains one provider call and
+  does not reject usable text.
+- Failure test: two coverage-uncertain candidates preserve the best usable text
+  and original audio locally while retaining timing and integrity evidence.
+- Recovery-window test: approximately 30-second windows overlap by 1.5 seconds
+  and assemble without duplicating the boundary words.
 - Existing complete-transcript and sparse-timestamp cases continue to fail
   open rather than rejecting trustworthy text.
-- The production-shaped tail test runs with Silence Protection Off, proving
-  the P0 completeness guard does not depend on that preference.
+- Off and Basic continue to enforce structural failures but do not run the
+  experimental timestamp-gap veto.
 - Reliability release requires the exact merged-main package and installed-app
   verification; merge and CI alone do not close issue #123.
 
