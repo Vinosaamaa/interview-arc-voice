@@ -35,7 +35,8 @@ enum RecoveryPendingCaptureFactory {
                 timing: original.timing,
                 engine: original.engine,
                 model: original.model,
-                localInferenceSeconds: original.localInferenceSeconds
+                localInferenceSeconds: original.localInferenceSeconds,
+                localPromptTokenCount: original.localPromptTokenCount
             )
         return PendingVoiceCapture(
             id: context.captureID,
@@ -100,6 +101,7 @@ public struct VoicePipelineResult: Equatable, Sendable {
     public let transcriptionEngine: String?
     public let transcriptionModel: String?
     public let localInferenceSeconds: Double?
+    public let localPromptTokenCount: Int?
 
     public var hasQueuedRetry: Bool {
         !capturePersisted || !audioUploaded || !deliveryCoachQueued
@@ -230,7 +232,8 @@ public actor VoicePipeline {
             transcriptionTiming: transcription.timing,
             transcriptionEngine: reliable.engine,
             transcriptionModel: reliable.model,
-            localInferenceSeconds: reliable.localInferenceSeconds
+            localInferenceSeconds: reliable.localInferenceSeconds,
+            localPromptTokenCount: reliable.localPromptTokenCount
         )
     }
 

@@ -399,7 +399,8 @@ import Testing
         chunkCount: 1,
         engine: "whisperkit",
         model: "base.en",
-        localInferenceSeconds: 1.25
+        localInferenceSeconds: 1.25,
+        localPromptTokenCount: 17
     )
     let provider = CountingTranscriber(results: [partial, partial])
     let local = CountingTranscriber(results: [localResult])
@@ -423,11 +424,13 @@ import Testing
     #expect(result.engine == "whisperkit")
     #expect(result.model == "base.en")
     #expect(result.localInferenceSeconds == 1.25)
+    #expect(result.localPromptTokenCount == 17)
     #expect(result.transcription.durationSeconds == 80.88)
     #expect(result.transcription.chunkCount == 3)
     #expect(await provider.callCount == 2)
     #expect(await provider.coverageRecoveryCallCount == 1)
     #expect(await local.callCount == 1)
+    #expect(await local.prompts == ["Context vocabulary"])
 }
 
 @Test func initialProviderFailureStillUsesLocalCoverageRecovery() async throws {

@@ -2,6 +2,32 @@ import Foundation
 import Testing
 @testable import InterviewArcVoiceCore
 
+@Test func localWhisperPromptPolicyNormalizesAndBoundsVocabularyTokens() {
+    let encoded = LocalWhisperPromptPolicy.boundedTokens(
+        for: "  Context: Course\nSchedule.   Vocabulary: LeetCode.  "
+    ) { value in
+        #expect(value == " Context: Course Schedule. Vocabulary: LeetCode.")
+        return Array(0..<240)
+    }
+
+    #expect(encoded.count == LocalWhisperPromptPolicy.maximumTokenCount)
+    #expect(encoded.first == 60)
+    #expect(encoded.last == 239)
+}
+
+@Test func localWhisperPromptPolicyOmitsEmptyConditioning() {
+    var encoderCalled = false
+    let encoded = LocalWhisperPromptPolicy.boundedTokens(
+        for: " \n\t "
+    ) { _ in
+        encoderCalled = true
+        return [1]
+    }
+
+    #expect(encoded.isEmpty)
+    #expect(!encoderCalled)
+}
+
 @Test func localWhisperModelLifecycleSurvivesRelaunchAndDetectsCorruption() async throws {
     let root = FileManager.default.temporaryDirectory.appending(
         path: "InterviewArcVoice-LocalWhisper-\(UUID().uuidString)",

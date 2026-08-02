@@ -262,7 +262,8 @@ public enum SegmentLocalTranscriptValidator {
                 timing: transcription.timing,
                 engine: transcription.engine,
                 model: transcription.model,
-                localInferenceSeconds: transcription.localInferenceSeconds
+                localInferenceSeconds: transcription.localInferenceSeconds,
+                localPromptTokenCount: transcription.localPromptTokenCount
             ),
             omittedUnsupportedSegmentCount: rejectedSegmentIndices.count,
             omittedUnsupportedWordCount: rejectedWordIndices.count,

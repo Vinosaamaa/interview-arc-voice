@@ -367,8 +367,14 @@ closes the remaining packaged-app gap without changing the healthy path:
 - Local output passes the same integrity and silence-protection policy. A still
   uncertain result preserves the original M4A and best candidate rather than
   inventing success.
-- Diagnostics record engine, model, inference duration, local attempt, and
-  privacy-safe result codes without transcript or audio content.
+- Local decoding receives the same resolved vocabulary context as the primary
+  request, normalized and bounded to 180 actual tokenizer tokens. The adapter
+  previously accepted a prompt argument but dropped it, while the integrity
+  fallback explicitly supplied an empty prompt; regression tests now cover
+  both boundaries.
+- Diagnostics record engine, model, inference duration, local attempt,
+  conditioning presence/token count, and privacy-safe result codes without
+  prompt, transcript, or audio content.
 - Cancellation is checked before model loading and after inference; a missing
   or corrupt model leaves the existing recovery candidate actionable.
 

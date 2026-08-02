@@ -35,6 +35,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
     public let transcriptionEngine: String?
     public let transcriptionModel: String?
     public let localInferenceSeconds: Double?
+    public let localPromptTokenCount: Int?
     public let localFallbackAttempted: Bool?
     public let localValidationReasons: [TranscriptionIntegrityReason]?
     public let outcome: VoiceDiagnosticOutcome
@@ -68,6 +69,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         transcriptionEngine: String? = nil,
         transcriptionModel: String? = nil,
         localInferenceSeconds: Double? = nil,
+        localPromptTokenCount: Int? = nil,
         localFallbackAttempted: Bool? = nil,
         localValidationReasons: [TranscriptionIntegrityReason]? = nil,
         outcome: VoiceDiagnosticOutcome
@@ -100,6 +102,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         self.transcriptionEngine = transcriptionEngine
         self.transcriptionModel = transcriptionModel
         self.localInferenceSeconds = localInferenceSeconds
+        self.localPromptTokenCount = localPromptTokenCount
         self.localFallbackAttempted = localFallbackAttempted
         self.localValidationReasons = localValidationReasons
         self.outcome = outcome
@@ -134,6 +137,8 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
             "Transcription engine: \(transcriptionEngine ?? "Unavailable")",
             "Transcription model: \(transcriptionModel ?? "Unavailable")",
             "Local inference: \(milliseconds(localInferenceSeconds ?? 0))",
+            "Local vocabulary conditioning: \(localPromptTokenCount.map { String($0 > 0) } ?? "Unavailable")",
+            "Local vocabulary prompt tokens: \(localPromptTokenCount.map(String.init) ?? "Unavailable")",
             "Local fallback attempted: \(localFallbackAttempted.map { String($0) } ?? "Unavailable")",
             "Local validation reasons: \(localValidationReasons?.map(\.rawValue).joined(separator: ", ") ?? "None")",
             "Outcome: \(outcome.rawValue)",
