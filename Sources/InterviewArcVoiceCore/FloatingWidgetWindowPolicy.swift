@@ -39,7 +39,7 @@ public enum FloatingWidgetRecoveryPolicy {
         for action: VoiceFailureAction
     ) -> FloatingWidgetRecoveryActionTiming {
         switch action {
-        case .playRecording, .recordAgain:
+        case .playRecording, .recordAgain, .useRecoveryTranscript:
             return .afterPopoverDismissal
         default:
             return .immediate

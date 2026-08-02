@@ -16,6 +16,7 @@ public enum VoiceFailureAction: String, Codable, Equatable, Hashable, Sendable {
     case retryTranscription
     case playRecording
     case saveRecording
+    case useRecoveryTranscript
     case insertAgain
     case enableAccessibility
     case openSettings

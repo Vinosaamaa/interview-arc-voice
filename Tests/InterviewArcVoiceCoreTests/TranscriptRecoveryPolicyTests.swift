@@ -50,6 +50,37 @@ import Testing
     )
 }
 
+@Test func uncertainTranscriptPromotionRequiresRetainedAudioAndNoActivePromotion() {
+    #expect(
+        RecoveryTranscriptPromotionPolicy.canUse(
+            recoveryStatus: .coverageUncertain,
+            hasRetainedAudio: true,
+            promotionInFlight: false
+        )
+    )
+    #expect(
+        !RecoveryTranscriptPromotionPolicy.canUse(
+            recoveryStatus: .coverageUncertain,
+            hasRetainedAudio: false,
+            promotionInFlight: false
+        )
+    )
+    #expect(
+        !RecoveryTranscriptPromotionPolicy.canUse(
+            recoveryStatus: .coverageUncertain,
+            hasRetainedAudio: true,
+            promotionInFlight: true
+        )
+    )
+    #expect(
+        !RecoveryTranscriptPromotionPolicy.canUse(
+            recoveryStatus: nil,
+            hasRetainedAudio: true,
+            promotionInFlight: false
+        )
+    )
+}
+
 @Test func menuInsertionUsesTheRememberedExternalEditor() {
     let policy = ManualInsertionTargetPolicy()
 

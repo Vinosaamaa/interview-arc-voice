@@ -200,6 +200,10 @@ import Testing
         FloatingWidgetRecoveryPolicy.timing(for: .recordAgain)
             == .afterPopoverDismissal
     )
+    #expect(
+        FloatingWidgetRecoveryPolicy.timing(for: .useRecoveryTranscript)
+            == .afterPopoverDismissal
+    )
     #expect(FloatingWidgetRecoveryPolicy.dismissalSettleMilliseconds >= 240)
     #expect(
         FloatingWidgetRecoveryPolicy.timing(for: .saveRecording)
