@@ -67,7 +67,9 @@
    Specialist permission may arrive before registration through a short-lived,
    identity-only deferred decision.
 9. After an `activity_related` decision, upload the original recording to
-   private R2 and link it to the resulting user transcript turn.
+   private R2 and link it to the resulting user transcript turn. Voice keeps
+   the local source until the server acknowledges the D1 clip row as
+   `available`; that state is written only after the R2 put succeeds.
 10. Start delivery analysis in a background Codex task.
 11. Persist per-answer delivery evidence in D1. On activity completion, the
    specialist includes a combined delivery review in the dated attempt bundle.
@@ -81,6 +83,23 @@ reconciliation, so an idle healthy client produces no recurring intent reads.
 This safety path recovers a decision whose best-effort live invalidation was
 missed without re-registering known captures. Permanent identity conflicts are
 quarantined.
+
+The menu-bar recovery surface lists every linked capture belonging to the
+currently open workbench, not merely the newest transcript-history records.
+Untouched `pending` captures do not silently block Finish: the server
+terminalizes them as `discarded_unclassified`. `uncertain` captures require an
+explicit Attach or Discard. A local 24-hour expiry first asks the server to
+validate the exact owner/capture/activity/turn identity and record
+`expired_unclassified`; local metadata and audio are removed only after that
+acknowledgement. Closing a workbench removes settled local metadata but never
+deletes unresolved evidence.
+
+For an accepted capture, missing or unreadable local audio is reported as
+`audio_lost` with a privacy-safe reason. The report cannot overwrite a clip
+already acknowledged as `available`. Finish remains blocked until the user
+acknowledges the loss; afterward the transcript may remain durable while the
+published record says **Recording unavailable** and offers neither playback
+nor invented Delivery Coach evidence.
 
 General Dictation does not use activity matching. It sends a bounded,
 terms-only prompt made from the highest-priority bundled base vocabulary. This
@@ -177,11 +196,22 @@ normal request remains one complete-file request. A missing-coverage signal
 uses one prompt-free provider recovery made from approximately 30-second,
 1.5-second-overlap derivatives with a concurrency ceiling of four; it does not
 wait 30 seconds. Every expected piece must return before top-level text is
-overlap-deduplicated and timestamp evidence is offset. An available local
-engine may be tried through the fallback interface if that assembled candidate
-remains uncertain. Without a trustworthy result, Voice stores the best usable
-text and original M4A as a coverage-uncertain Recent Transcript and does not
-insert it or create a linked D1 turn. Recovery derivatives are disposable.
+overlap-deduplicated and timestamp evidence is offset. An explicitly installed
+`base.en` WhisperKit engine may be tried through the fallback interface if that
+assembled candidate remains uncertain. The model lives in private app-owned
+storage with a permission-0600 SHA-256 manifest; Settings owns installation,
+integrity status, and deletion. It is never downloaded automatically and never
+runs on the healthy Groq path. Without a trustworthy result, Voice stores the
+best usable text and original M4A as a coverage-uncertain Recent Transcript and
+does not insert it or create a linked D1 turn. Recovery derivatives are
+disposable.
+
+The user may explicitly confirm **Use this transcript** for that visible
+coverage-uncertain candidate. General Dictation inserts exactly the reviewed
+text locally. A linked candidate atomically creates and persists one stable
+capture/turn/clip envelope from the activity context frozen at recording start,
+then follows the ordinary specialist decision and D1/R2 flow. Confirmation is
+idempotent and does not itself classify the capture as related.
 
 Every completed attempt appends one bounded, permission-0600 diagnostic record
 containing only numeric stage timings, the selected protection mode, omission

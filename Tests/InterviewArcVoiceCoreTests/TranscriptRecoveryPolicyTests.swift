@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Testing
 @testable import InterviewArcVoiceCore
 
@@ -181,6 +182,261 @@ import Testing
     #expect(records[0].editorText == "Trusted complete retry with envelope")
     #expect(records[0].captureID == "capture-trusted")
     #expect(records[0].recoveryStatus == nil)
+}
+
+@Test func linkedRecoveryKeepsStableVoiceIdentitiesAcrossRelaunchAndPromotion() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try LocalTranscriptHistoryStore(directory: root)
+    let context = LinkedTranscriptRecoveryContext(
+        captureID: "capture-stable",
+        turnID: "voice-stable",
+        clipID: "clip-stable",
+        checksum: String(repeating: "a", count: 64),
+        activity: FocusedVoiceActivity(
+            activityId: "activity-stable",
+            questionId: "question-stable",
+            specialty: .coding,
+            interviewArcSpecialty: "leetcode",
+            title: "Stable recovery",
+            prompt: nil,
+            topics: [],
+            tags: [],
+            companies: [],
+            projects: [],
+            vocabularyPackIds: [],
+            speechTerms: []
+        ),
+        transcription: TranscriptionResult(
+            text: "Recovered answer",
+            words: [],
+            durationSeconds: 4,
+            chunkCount: 1
+        ),
+        occurredAt: Date(timeIntervalSince1970: 500)
+    )
+    let recordID = UUID()
+    try await store.append(LocalTranscriptRecord(
+        id: recordID,
+        createdAt: Date(timeIntervalSince1970: 501),
+        transcript: "Recovered answer",
+        editorText: "Recovered answer",
+        durationSeconds: 4,
+        recoveryStatus: .coverageUncertain,
+        linkedRecoveryContext: context
+    ))
+
+    let reloaded = try await store.records()
+    #expect(reloaded.first?.linkedRecoveryContext == context)
+    _ = try await store.replaceTranscript(
+        id: recordID,
+        transcript: "Recovered answer",
+        editorText: "Recovered answer with stable envelope",
+        captureID: context.captureID
+    )
+    let promoted = try await store.records()
+    #expect(promoted.first?.captureID == "capture-stable")
+    #expect(promoted.first?.recoveryStatus == nil)
+    #expect(promoted.first?.linkedRecoveryContext == context)
+}
+
+@Test func explicitDiscardRemovesProtectedLinkedRecoveryEvidence() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try LocalTranscriptHistoryStore(directory: root)
+    let context = LinkedTranscriptRecoveryContext(
+        captureID: "capture-discard",
+        turnID: "voice-discard",
+        clipID: "clip-discard",
+        checksum: String(repeating: "b", count: 64),
+        activity: FocusedVoiceActivity(
+            activityId: "activity-discard",
+            questionId: nil,
+            specialty: .coding,
+            interviewArcSpecialty: "leetcode",
+            title: "Discard recovery",
+            prompt: nil,
+            topics: [],
+            tags: [],
+            companies: [],
+            projects: [],
+            vocabularyPackIds: [],
+            speechTerms: []
+        ),
+        transcription: TranscriptionResult(
+            text: "Discard me",
+            words: [],
+            durationSeconds: 2,
+            chunkCount: 1
+        ),
+        occurredAt: Date(timeIntervalSince1970: 600)
+    )
+    let recordID = UUID()
+    try await store.append(LocalTranscriptRecord(
+        id: recordID,
+        createdAt: Date(timeIntervalSince1970: 601),
+        transcript: "Discard me",
+        editorText: "Discard me",
+        durationSeconds: 2,
+        recoveryStatus: .coverageUncertain,
+        linkedRecoveryContext: context
+    ))
+
+    #expect(try await store.records().count == 1)
+    try await store.discardRecovery(id: recordID)
+    #expect(try await store.records().isEmpty)
+}
+
+@Test func editedRecoveryPromotionRebuildsChecksumAndTranscriptMetadata() {
+    let context = LinkedTranscriptRecoveryContext(
+        captureID: "capture-edited",
+        turnID: "voice-edited",
+        clipID: "clip-edited",
+        checksum: String(repeating: "c", count: 64),
+        activity: FocusedVoiceActivity(
+            activityId: "activity-edited",
+            questionId: nil,
+            specialty: .coding,
+            interviewArcSpecialty: "leetcode",
+            title: "Edited recovery",
+            prompt: nil,
+            topics: [],
+            tags: [],
+            companies: [],
+            projects: [],
+            vocabularyPackIds: [],
+            speechTerms: []
+        ),
+        transcription: TranscriptionResult(
+            text: "Original partial text",
+            words: [TranscriptWord(word: "Original", start: 0, end: 1)],
+            durationSeconds: 3,
+            chunkCount: 1
+        ),
+        occurredAt: Date(timeIntervalSince1970: 700)
+    )
+    let record = LocalTranscriptRecord(
+        createdAt: Date(timeIntervalSince1970: 701),
+        transcript: "Reviewed replacement text",
+        editorText: "Reviewed replacement text",
+        durationSeconds: 3,
+        recoveryStatus: .coverageUncertain,
+        linkedRecoveryContext: context
+    )
+    let pending = RecoveryPendingCaptureFactory.make(
+        record: record,
+        context: context,
+        audioURL: URL(fileURLWithPath: "/tmp/recovery.m4a")
+    )
+    let expectedChecksum = SHA256.hash(
+        data: Data(record.transcript.utf8)
+    ).map { String(format: "%02x", $0) }.joined()
+
+    #expect(pending.checksum == expectedChecksum)
+    #expect(pending.transcript == record.transcript)
+    #expect(pending.transcription.text == record.transcript)
+    #expect(pending.transcription.words.isEmpty)
+}
+
+@Test func promotedLinkedRecoveryAudioCannotBePrunedOrClearedWhilePending() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let source = FileManager.default.temporaryDirectory
+        .appending(path: "\(UUID().uuidString).m4a")
+    defer {
+        try? FileManager.default.removeItem(at: root)
+        try? FileManager.default.removeItem(at: source)
+    }
+    try Data([1, 2, 3, 4]).write(to: source)
+    let store = try LocalTranscriptHistoryStore(
+        directory: root,
+        retentionDuration: 10,
+        retentionLimit: 1,
+        diskBudgetBytes: 1
+    )
+    let createdAt = Date(timeIntervalSince1970: 100)
+    let protected = try await store.append(
+        LocalTranscriptRecord(
+            createdAt: createdAt,
+            transcript: "Protected linked recovery",
+            editorText: "Protected linked recovery",
+            durationSeconds: 4,
+            captureID: "capture-protected",
+            lifecycleProtected: true
+        ),
+        recordingURL: source,
+        now: createdAt
+    )
+    let protectedAudio = await store.audioURL(for: protected)
+
+    try await store.append(LocalTranscriptRecord(
+        createdAt: createdAt.addingTimeInterval(20),
+        transcript: "Newest ordinary transcript",
+        editorText: "Newest ordinary transcript",
+        durationSeconds: 1
+    ), now: createdAt.addingTimeInterval(20))
+
+    let retained = try await store.records(
+        now: createdAt.addingTimeInterval(30)
+    )
+    #expect(retained.count == 1)
+    #expect(retained.first?.captureID == "capture-protected")
+    #expect(retained.first?.isLifecycleProtected == true)
+    #expect(protectedAudio != nil)
+    #expect(FileManager.default.fileExists(atPath: protectedAudio?.path ?? ""))
+
+    try await store.delete(id: protected.id)
+    try await store.clear()
+    let afterClear = try await store.records(
+        now: createdAt.addingTimeInterval(30)
+    )
+    #expect(afterClear.count == 1)
+    #expect(FileManager.default.fileExists(atPath: protectedAudio?.path ?? ""))
+}
+
+@Test func retryingAnUncertainRecordReusesItsArchivedAudio() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let source = FileManager.default.temporaryDirectory
+        .appending(path: "\(UUID().uuidString).m4a")
+    defer {
+        try? FileManager.default.removeItem(at: root)
+        try? FileManager.default.removeItem(at: source)
+    }
+    try Data([4, 3, 2, 1]).write(to: source)
+    let store = try LocalTranscriptHistoryStore(directory: root)
+    let record = LocalTranscriptRecord(
+        transcript: "Uncertain answer",
+        editorText: "Uncertain answer",
+        durationSeconds: 5,
+        recoveryStatus: .coverageUncertain
+    )
+    let first = try await store.append(record, recordingURL: source)
+    let archivedURL = await store.audioURL(for: first)
+    #expect(archivedURL != nil)
+
+    let replacement = LocalTranscriptRecord(
+        id: first.id,
+        createdAt: first.createdAt,
+        transcript: "Uncertain answer after retry",
+        editorText: "Uncertain answer after retry",
+        durationSeconds: 5,
+        recoveryStatus: .coverageUncertain,
+        linkedRecoveryContext: first.linkedRecoveryContext
+    )
+    let retried = try await store.append(
+        replacement,
+        recordingURL: archivedURL
+    )
+
+    #expect(await store.audioURL(for: retried) == archivedURL)
+    #expect(FileManager.default.fileExists(atPath: archivedURL?.path ?? ""))
+    #expect(
+        (try Data(contentsOf: archivedURL ?? URL(fileURLWithPath: "/missing")))
+            == Data([4, 3, 2, 1])
+    )
 }
 
 @Test func recoverableRecordingReferenceSurvivesRelaunchAndRejectsUnsafePaths() async throws {

@@ -72,6 +72,9 @@ public struct TranscriptionResult: Codable, Equatable, Sendable {
     public let durationSeconds: Double
     public let chunkCount: Int
     public let timing: TranscriptionTiming?
+    public let engine: String?
+    public let model: String?
+    public let localInferenceSeconds: Double?
 
     public init(
         text: String,
@@ -79,7 +82,10 @@ public struct TranscriptionResult: Codable, Equatable, Sendable {
         segments: [TranscriptSegment]? = nil,
         durationSeconds: Double,
         chunkCount: Int,
-        timing: TranscriptionTiming? = nil
+        timing: TranscriptionTiming? = nil,
+        engine: String? = nil,
+        model: String? = nil,
+        localInferenceSeconds: Double? = nil
     ) {
         self.text = text
         self.words = words
@@ -87,10 +93,17 @@ public struct TranscriptionResult: Codable, Equatable, Sendable {
         self.durationSeconds = durationSeconds
         self.chunkCount = chunkCount
         self.timing = timing
+        self.engine = engine
+        self.model = model
+        self.localInferenceSeconds = localInferenceSeconds
     }
 }
 
+public typealias ArcTranscriptionResult = TranscriptionResult
+
 public protocol SpeechTranscribing: Sendable {
+    var diagnosticEngine: String { get }
+    var diagnosticModel: String? { get }
     func transcribe(fileURL: URL, prompt: String, temporaryDirectory: URL) async throws -> TranscriptionResult
     func transcribeCoverageRecovery(
         fileURL: URL,
@@ -99,6 +112,9 @@ public protocol SpeechTranscribing: Sendable {
 }
 
 public extension SpeechTranscribing {
+    var diagnosticEngine: String { "unknown" }
+    var diagnosticModel: String? { nil }
+
     func transcribeCoverageRecovery(
         fileURL: URL,
         temporaryDirectory: URL
@@ -112,6 +128,8 @@ public extension SpeechTranscribing {
 }
 
 public actor GroqTranscriber: SpeechTranscribing {
+    public nonisolated let diagnosticEngine = "groq"
+    public nonisolated let diagnosticModel: String?
     private let apiKey: String
     private let model: String
     private let session: URLSession
@@ -121,6 +139,7 @@ public actor GroqTranscriber: SpeechTranscribing {
     public init(apiKey: String, model: String = "whisper-large-v3", session: URLSession = .shared) {
         self.apiKey = apiKey
         self.model = model
+        diagnosticModel = model
         self.session = session
     }
 
@@ -228,7 +247,9 @@ public actor GroqTranscriber: SpeechTranscribing {
                 chunkPreparationSeconds: chunkPreparationSeconds,
                 providerWaitSeconds: providerWaitSeconds,
                 responseProcessingSeconds: responseProcessingSeconds
-            )
+            ),
+            engine: "groq",
+            model: model
         )
     }
 

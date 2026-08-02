@@ -319,6 +319,51 @@ public actor InterviewArcAPIClient {
         )
     }
 
+    public func expireIntent(_ capture: PendingVoiceCapture) async throws -> VoiceCaptureIntentResponse {
+        struct Body: Encodable {
+            let protocolVersion: Int
+            let activityId: String
+            let turnId: String
+        }
+        return try await send(
+            path: "voice/intents/\(capture.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? capture.id)/expire",
+            method: "POST",
+            body: encoder.encode(Body(
+                protocolVersion: Self.protocolVersion,
+                activityId: capture.activity.activityId,
+                turnId: capture.turnID
+            ))
+        )
+    }
+
+    public func reportAudioLoss(
+        captureID: String,
+        clipID: String,
+        reason: String
+    ) async throws -> VoiceAudioLossResponse {
+        struct Body: Encodable {
+            let clipId: String
+            let reason: String
+        }
+        return try await send(
+            path: "voice/captures/\(captureID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? captureID)/audio-loss",
+            method: "POST",
+            body: encoder.encode(Body(clipId: clipID, reason: reason))
+        )
+    }
+
+    public func acknowledgeAudioLoss(
+        captureID: String,
+        clipID: String
+    ) async throws -> VoiceAudioLossResponse {
+        struct Body: Encodable { let clipId: String }
+        return try await send(
+            path: "voice/captures/\(captureID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? captureID)/audio-loss/acknowledge",
+            method: "POST",
+            body: encoder.encode(Body(clipId: clipID))
+        )
+    }
+
     public func deleteCapture(captureID: String) async throws {
         struct Response: Decodable { let status: String }
         let _: Response = try await send(

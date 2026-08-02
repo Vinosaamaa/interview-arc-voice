@@ -6,6 +6,8 @@ public enum LocalVoiceCaptureState: String, Codable, Equatable, Sendable {
     case needsDecision = "needs_decision"
     case excludedGracePeriod = "excluded_grace_period"
     case acceptedDelivering = "accepted_delivering"
+    case audioLostNeedsAcknowledgement = "audio_lost_needs_acknowledgement"
+    case audioLostAcknowledged = "audio_lost_acknowledged"
     case quarantinedConflict = "quarantined_conflict"
     case complete
 }
@@ -15,6 +17,7 @@ public struct PendingVoiceCapture: Codable, Equatable, Identifiable, Sendable {
     public let turnID: String
     public let clipID: String
     public let checksum: String
+    public let workbenchID: String?
     public let activity: FocusedVoiceActivity
     public let transcript: String
     public let audioURL: URL
@@ -34,6 +37,7 @@ public struct PendingVoiceCapture: Codable, Equatable, Identifiable, Sendable {
         turnID: String,
         clipID: String,
         checksum: String,
+        workbenchID: String? = nil,
         activity: FocusedVoiceActivity,
         transcript: String,
         audioURL: URL,
@@ -52,6 +56,7 @@ public struct PendingVoiceCapture: Codable, Equatable, Identifiable, Sendable {
         self.turnID = turnID
         self.clipID = clipID
         self.checksum = checksum
+        self.workbenchID = workbenchID ?? activity.workbenchId
         self.activity = activity
         self.transcript = transcript
         self.audioURL = audioURL

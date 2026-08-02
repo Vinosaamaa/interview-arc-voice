@@ -453,6 +453,18 @@ public enum VoicePlanningCurrentStatus: Equatable, Sendable {
     }
 }
 
+public enum VoicePlanningTimerControlPolicy {
+    public static func isEnabled(
+        subjectID: String,
+        status: VoicePlanningCurrentStatus,
+        runningSubjectID: String?,
+        mutationInFlight: Bool
+    ) -> Bool {
+        guard status != .completed, !mutationInFlight else { return false }
+        return runningSubjectID == nil || runningSubjectID == subjectID
+    }
+}
+
 public struct VoicePlanningSelectionPayload: Encodable, Equatable, Sendable {
     public let kind: String
     public var specialty: VoicePlanningSpecialty?

@@ -395,8 +395,11 @@ import Testing
     let localResult = TranscriptionResult(
         text: completeText,
         words: [],
-        durationSeconds: 80.88,
-        chunkCount: 1
+        durationSeconds: 12,
+        chunkCount: 1,
+        engine: "whisperkit",
+        model: "base.en",
+        localInferenceSeconds: 1.25
     )
     let provider = CountingTranscriber(results: [partial, partial])
     let local = CountingTranscriber(results: [localResult])
@@ -410,14 +413,59 @@ import Testing
         prompt: "Context vocabulary",
         temporaryDirectory: URL(fileURLWithPath: "/tmp"),
         audioDurationSeconds: 80.88,
+        expectedChunkCount: 3,
         speechEvidence: sustainedSpeechEvidence(durationSeconds: 80.88),
         protectionMode: .enhanced
     )
 
     #expect(result.transcription.text == completeText)
     #expect(result.wasRetried)
+    #expect(result.engine == "whisperkit")
+    #expect(result.model == "base.en")
+    #expect(result.localInferenceSeconds == 1.25)
+    #expect(result.transcription.durationSeconds == 80.88)
+    #expect(result.transcription.chunkCount == 3)
     #expect(await provider.callCount == 2)
     #expect(await provider.coverageRecoveryCallCount == 1)
+    #expect(await local.callCount == 1)
+}
+
+@Test func initialProviderFailureStillUsesLocalCoverageRecovery() async throws {
+    let partial = malformedFullLengthSegmentPartial()
+    let completeText = "Local recovery remains available after the initial provider request fails."
+    let provider = CountingTranscriber(
+        results: [partial],
+        failuresBeforeResults: 1
+    )
+    let local = CountingTranscriber(
+        results: [TranscriptionResult(
+            text: completeText,
+            words: [],
+            durationSeconds: 5,
+            chunkCount: 1,
+            engine: "whisperkit",
+            model: "base.en"
+        )]
+    )
+    let reliable = ReliableSpeechTranscriber(
+        base: provider,
+        localFallback: local
+    )
+
+    let result = try await reliable.transcribe(
+        fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+        prompt: "Context vocabulary",
+        temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+        audioDurationSeconds: 80.88,
+        expectedChunkCount: 2,
+        speechEvidence: sustainedSpeechEvidence(durationSeconds: 80.88),
+        protectionMode: .enhanced
+    )
+
+    #expect(result.transcription.text == completeText)
+    #expect(result.transcription.durationSeconds == 80.88)
+    #expect(result.transcription.chunkCount == 2)
+    #expect(await provider.callCount == 2)
     #expect(await local.callCount == 1)
 }
 
@@ -465,6 +513,40 @@ import Testing
     let callCount = await transcriber.callCount
     #expect(callCount == 2)
     #expect(await transcriber.coverageRecoveryCallCount == 1)
+}
+
+@Test func uncertainLocalFallbackRemainsPreservedAndDiagnosable() async {
+    let partial = malformedFullLengthSegmentPartial()
+    let provider = CountingTranscriber(results: [partial, partial])
+    let local = CountingTranscriber(
+        results: [partial],
+        engine: "whisperkit",
+        model: "base.en"
+    )
+    let reliable = ReliableSpeechTranscriber(
+        base: provider,
+        localFallback: local
+    )
+
+    do {
+        _ = try await reliable.transcribe(
+            fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+            prompt: "Context vocabulary",
+            temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+            audioDurationSeconds: 80.88,
+            speechEvidence: sustainedSpeechEvidence(durationSeconds: 80.88),
+            protectionMode: .enhanced
+        )
+        Issue.record("Expected local fallback to remain uncertain")
+    } catch let failure as TranscriptionIntegrityFailure {
+        #expect(failure.localFallbackAttempted)
+        #expect(failure.localFallbackEngine == "whisperkit")
+        #expect(failure.localFallbackModel == "base.en")
+        #expect(failure.localValidationReasons?.contains(.missingSpeechCoverage) == true)
+        #expect(failure.recoveryCandidate != nil)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
 }
 
 @Test func combinedCoverageAndDurationFailureStillPreservesReviewableText() async {
@@ -531,12 +613,23 @@ import Testing
 }
 
 private actor CountingTranscriber: SpeechTranscribing {
+    nonisolated let diagnosticEngine: String
+    nonisolated let diagnosticModel: String?
     private var results: [TranscriptionResult]
+    private var failuresBeforeResults: Int
     private(set) var prompts: [String] = []
     private(set) var coverageRecoveryCallCount = 0
 
-    init(results: [TranscriptionResult]) {
+    init(
+        results: [TranscriptionResult],
+        engine: String = "fixture",
+        model: String? = nil,
+        failuresBeforeResults: Int = 0
+    ) {
         self.results = results
+        self.failuresBeforeResults = max(0, failuresBeforeResults)
+        diagnosticEngine = engine
+        diagnosticModel = model
     }
 
     var callCount: Int { prompts.count }
@@ -547,6 +640,10 @@ private actor CountingTranscriber: SpeechTranscribing {
         temporaryDirectory: URL
     ) async throws -> TranscriptionResult {
         prompts.append(prompt)
+        if failuresBeforeResults > 0 {
+            failuresBeforeResults -= 1
+            throw VoiceBridgeError.invalidResponse(503, "fixture failure")
+        }
         guard !results.isEmpty else { throw VoiceBridgeError.emptyTranscript }
         return results.removeFirst()
     }

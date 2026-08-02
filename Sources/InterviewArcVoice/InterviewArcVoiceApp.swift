@@ -177,6 +177,11 @@ final class VoiceBridgeModel: ObservableObject {
         var trailingSpeechLikeFrameCount: Int?
         var trailingSpeechLikeFraction: Double?
         var integrityReasons: [TranscriptionIntegrityReason]?
+        var engine: String?
+        var model: String?
+        var localInferenceSeconds: Double?
+        var localFallbackAttempted: Bool?
+        var localValidationReasons: [TranscriptionIntegrityReason]?
     }
 
     @Published var phase: Phase = .setup
@@ -211,6 +216,7 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var lastTranscript = ""
     @Published private(set) var transcriptHistory: [LocalTranscriptRecord] = []
     @Published private(set) var selectedTranscriptIndex = 0
+    @Published private(set) var recoveryPromotionInFlightID: UUID?
     @Published var connectionTokenDraft = ""
     @Published var groqKeyDraft = ""
     @Published var settingsExpanded = false
@@ -230,7 +236,25 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var diagnosticRecords: [VoiceDiagnosticRecord] = []
     @Published private(set) var diagnosticRetryInFlightID: UUID?
     @Published private(set) var diagnosticRetryMessage: String?
+    @Published private(set) var localWhisperModel = LocalWhisperModelSnapshot(
+        state: .notInstalled,
+        model: LocalWhisperModelManager.defaultModel
+    )
+    @Published private(set) var localWhisperModelOperationInFlight = false
+    @Published private(set) var localWhisperModelMessage: String?
     @Published private(set) var dynamicRecordingInterfaceActive = false
+
+    var workbenchVoiceCaptures: [PendingVoiceCapture] {
+        let workbenchID = timerInstrument?.workbenchId
+        let currentActivityIDs = Set(timerInstrument?.activities.map(\.id) ?? [])
+        return pendingVoiceCaptures.filter { capture in
+            VoiceCaptureLifecyclePolicy().belongsToCurrentWorkbench(
+                capture,
+                workbenchID: workbenchID,
+                currentActivityIDs: currentActivityIDs
+            )
+        }
+    }
     @Published var shortcut: HotKeyShortcut
     @Published var shortcutCapturing = false
     @Published var linkShortcut: HotKeyShortcut
@@ -279,6 +303,8 @@ final class VoiceBridgeModel: ObservableObject {
     private var diagnosticsStore: VoiceDiagnosticsStore?
     private var transcriptHistoryStore: LocalTranscriptHistoryStore?
     private var recoverableRecordingStore: LocalRecoverableRecordingStore?
+    private var localWhisperModelManager: LocalWhisperModelManager?
+    private var localWhisperTranscriber: ManagedLocalWhisperTranscriber?
     private var pipeline: VoicePipeline?
     private var captureDestination: CaptureDestination?
     private var captureStartedInCodex = false
@@ -417,6 +443,11 @@ final class VoiceBridgeModel: ObservableObject {
         selectedTranscriptIndex == 0
             && hasLastAudio
             && selectedTranscript?.transcript == lastTranscript
+    }
+    var selectedTranscriptCanUseRecovery: Bool {
+        selectedTranscript?.recoveryStatus == .coverageUncertain
+            && selectedTranscriptOwnsAudio
+            && recoveryPromotionInFlightID == nil
     }
     var lastMemoDetails: String {
         let words = lastTranscript.split(whereSeparator: \.isWhitespace).count
@@ -617,6 +648,21 @@ final class VoiceBridgeModel: ObservableObject {
         )
     }
 
+    func canTogglePlanningActivityTimer(
+        id: String,
+        status: VoicePlanningCurrentStatus
+    ) -> Bool {
+        let runningID = timerInstrument?.activities.first(where: {
+            $0.timer?.isRunning == true
+        })?.id
+        return VoicePlanningTimerControlPolicy.isEnabled(
+            subjectID: id,
+            status: status,
+            runningSubjectID: runningID,
+            mutationInFlight: timerMutationInFlight
+        )
+    }
+
     func compactActivityTime(at now: Date) -> String? {
         guard let timer = timerInstrument?.activity?.timer else { return nil }
         return compactClock(elapsedSeconds(for: timer, now: now))
@@ -757,6 +803,14 @@ final class VoiceBridgeModel: ObservableObject {
             recoverableRecordingStore = try? LocalRecoverableRecordingStore(
                 directory: recordingStore.recoveryDirectory
             )
+            if let manager = try? LocalWhisperModelManager(
+                rootDirectory: recordingStore.localModelsDirectory
+            ) {
+                localWhisperModelManager = manager
+                localWhisperTranscriber = ManagedLocalWhisperTranscriber(
+                    manager: manager
+                )
+            }
         }
         groqCredentialRejected = defaults.bool(
             forKey: "voice.groqCredentialRejected"
@@ -1243,6 +1297,23 @@ final class VoiceBridgeModel: ObservableObject {
         }
     }
 
+    func togglePlanningActivityTimer(id: String, status: VoicePlanningCurrentStatus) {
+        guard !timerMutationInFlight, status != .completed else { return }
+        let action = status == .running ? "pause" : "start"
+        Task {
+            let succeeded = await runTimerMutation {
+                try await self.timerAPIClient().mutateTimer(
+                    subjectID: id,
+                    kind: "activity",
+                    action: action
+                )
+            }
+            if succeeded {
+                await refreshPlanning(clearMessage: false)
+            }
+        }
+    }
+
     func confirmFinishActivity() {
         guard
             let activityID = finishingActivityID,
@@ -1363,6 +1434,121 @@ final class VoiceBridgeModel: ObservableObject {
                 )
             }
         }
+    }
+
+    func useSelectedRecoveryTranscriptFromMenu(
+        dismissMenu: @escaping @MainActor () -> Void
+    ) {
+        guard let selectedTranscript,
+              selectedTranscript.recoveryStatus == .coverageUncertain,
+              selectedTranscript.audioReference != nil,
+              let transcriptHistoryStore,
+              recoveryPromotionInFlightID == nil else {
+            return
+        }
+        let targetPID = manualInsertionTargetPID(surface: .menuBar)
+        let menuWindow = NSApp.keyWindow
+        recoveryPromotionInFlightID = selectedTranscript.id
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { recoveryPromotionInFlightID = nil }
+            guard let audioURL = await transcriptHistoryStore.audioURL(
+                for: selectedTranscript
+            ) else {
+                reportFailure(
+                    VoiceBridgeError.recordingUnavailable,
+                    stage: .transcription,
+                    hasRecoverableAudio: false
+                )
+                return
+            }
+
+            do {
+                let editorText: String
+                let captureID: String?
+                if let linkedContext = selectedTranscript.linkedRecoveryContext {
+                    guard recoveryActivityIsEligible(
+                        linkedContext.activity.activityId
+                    ) else {
+                        throw VoiceBridgeError.invalidResponse(
+                            409,
+                            "The original Interview Arc activity is no longer active. Keep this transcript local or start a new recording for the current activity."
+                        )
+                    }
+                    if pipeline == nil { pipeline = try makeLinkedPipeline() }
+                    guard let pipeline else {
+                        throw VoiceBridgeError.recordingUnavailable
+                    }
+                    let envelope = try await pipeline.promoteRecoveryTranscript(
+                        record: selectedTranscript,
+                        audioURL: audioURL
+                    )
+                    editorText = envelope.editorText
+                    captureID = envelope.captureID
+                } else {
+                    editorText = selectedTranscript.transcript
+                    captureID = nil
+                }
+                guard try await transcriptHistoryStore.replaceTranscript(
+                    id: selectedTranscript.id,
+                    transcript: selectedTranscript.transcript,
+                    editorText: editorText,
+                    captureID: captureID
+                ) != nil else {
+                    throw VoiceBridgeError.recordingUnavailable
+                }
+                if lastCoverageRecoveryRecordID == selectedTranscript.id {
+                    lastCoverageRecoveryRecordID = nil
+                }
+                await refreshTranscriptHistory()
+                selectedTranscriptIndex = transcriptHistory.firstIndex {
+                    $0.id == selectedTranscript.id
+                } ?? 0
+                await updateRetryCount()
+
+                dismissMenu()
+                await waitForMenuDismissal(menuWindow)
+                targetApplicationPID = targetPID
+                let inserted = await insertTranscript(
+                    selectedTranscript.transcript,
+                    editorText: editorText,
+                    showDeliveryStep: captureID != nil
+                )
+                if inserted {
+                    clearFailureAfterSuccess()
+                    phase = .delivered
+                    contextMessage = captureID == nil
+                        ? "Recovered transcript inserted."
+                        : "Recovered capture inserted and awaiting specialist decision."
+                } else {
+                    reportFailure(
+                        VoiceBridgeError.codexUnavailable(
+                            "Focus an editable text field, then insert the recovered transcript again."
+                        ),
+                        stage: .insertion,
+                        hasRecoverableAudio: true
+                    )
+                }
+            } catch {
+                reportFailure(
+                    error,
+                    stage: .transcription,
+                    hasRecoverableAudio: true
+                )
+            }
+        }
+    }
+
+    private func recoveryActivityIsEligible(_ activityID: String) -> Bool {
+        if context?.focusedActivity?.activityId == activityID {
+            return true
+        }
+        guard let timer = timerInstrument?.activities.first(where: {
+            $0.id == activityID
+        })?.timer else {
+            return false
+        }
+        return !timer.completed
     }
 
     func copyPendingCapture(_ capture: PendingVoiceCapture) {
@@ -1649,13 +1835,18 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func deleteSelectedTranscript() {
-        guard let id = selectedTranscript?.id else { return }
+        guard let selectedTranscript else { return }
+        let id = selectedTranscript.id
         if lastCoverageRecoveryRecordID == id {
             lastCoverageRecoveryRecordID = nil
         }
         Task { [weak self] in
             guard let self else { return }
-            try? await transcriptHistoryStore?.delete(id: id)
+            if selectedTranscript.recoveryStatus == .coverageUncertain {
+                try? await transcriptHistoryStore?.discardRecovery(id: id)
+            } else {
+                try? await transcriptHistoryStore?.delete(id: id)
+            }
             await refreshTranscriptHistory()
         }
     }
@@ -1814,6 +2005,55 @@ final class VoiceBridgeModel: ObservableObject {
         mode.save()
     }
 
+    func refreshLocalWhisperModel() async {
+        guard let localWhisperModelManager else { return }
+        localWhisperModel = await localWhisperModelManager.snapshot()
+    }
+
+    func installLocalWhisperModel() {
+        guard !localWhisperModelOperationInFlight,
+              let localWhisperModelManager else { return }
+        localWhisperModelOperationInFlight = true
+        localWhisperModelMessage = "Installing the private local recovery model…"
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let snapshot = try await localWhisperModelManager.install()
+                self.localWhisperModel = snapshot
+                let size = snapshot.sizeBytes.map {
+                    ByteCountFormatter.string(
+                        fromByteCount: $0,
+                        countStyle: .file
+                    )
+                } ?? "an unknown size"
+                self.localWhisperModelMessage = "Local recovery is ready (\(size))."
+            } catch is CancellationError {
+                self.localWhisperModelMessage = "Local model installation was cancelled."
+            } catch {
+                self.localWhisperModel = await localWhisperModelManager.snapshot()
+                self.localWhisperModelMessage = "Installation failed: \(error.localizedDescription)"
+            }
+            self.localWhisperModelOperationInFlight = false
+        }
+    }
+
+    func deleteLocalWhisperModel() {
+        guard !localWhisperModelOperationInFlight,
+              let localWhisperModelManager else { return }
+        localWhisperModelOperationInFlight = true
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await localWhisperModelManager.deleteModel()
+                self.localWhisperModelMessage = "Local recovery model removed."
+            } catch {
+                self.localWhisperModelMessage = "Removal failed: \(error.localizedDescription)"
+            }
+            self.localWhisperModel = await localWhisperModelManager.snapshot()
+            self.localWhisperModelOperationInFlight = false
+        }
+    }
+
     func refreshDiagnostics() async {
         diagnosticRecords = (try? await diagnosticsStore?.records()) ?? []
     }
@@ -1888,6 +2128,7 @@ final class VoiceBridgeModel: ObservableObject {
         activityTitle: String?,
         captureID: String? = nil,
         recoveryStatus: LocalTranscriptRecoveryStatus? = nil,
+        linkedRecoveryContext: LinkedTranscriptRecoveryContext? = nil,
         recordingURL: URL? = nil,
         recordID: UUID = UUID()
     ) async -> UUID? {
@@ -1899,7 +2140,8 @@ final class VoiceBridgeModel: ObservableObject {
             durationSeconds: durationSeconds,
             activityTitle: activityTitle,
             captureID: captureID,
-            recoveryStatus: recoveryStatus
+            recoveryStatus: recoveryStatus,
+            linkedRecoveryContext: linkedRecoveryContext
         )
         let archived = try? await transcriptHistoryStore.append(
             record,
@@ -1913,7 +2155,7 @@ final class VoiceBridgeModel: ObservableObject {
     private func preserveCoverageRecoveryCandidate(
         from error: Error,
         recording: RecordedCapture,
-        activityTitle: String?
+        activity: FocusedVoiceActivity?
     ) async {
         guard let failure = error as? TranscriptionIntegrityFailure,
               failure.reasons.contains(.missingSpeechCoverage),
@@ -1925,12 +2167,33 @@ final class VoiceBridgeModel: ObservableObject {
         )
         guard !transcript.isEmpty else { return }
         let recordID = lastCoverageRecoveryRecordID ?? UUID()
+        let existingLinkedContext = transcriptHistory.first(where: {
+            $0.id == recordID
+        })?.linkedRecoveryContext
+        let checksum = SHA256.hash(data: Data(transcript.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let linkedContext = activity.map { activity in
+            LinkedTranscriptRecoveryContext(
+                captureID: existingLinkedContext?.captureID
+                    ?? "capture-\(UUID().uuidString.lowercased())",
+                turnID: existingLinkedContext?.turnID
+                    ?? "voice-\(UUID().uuidString.lowercased())",
+                clipID: existingLinkedContext?.clipID
+                    ?? "clip-\(UUID().uuidString.lowercased())",
+                checksum: checksum,
+                activity: existingLinkedContext?.activity ?? activity,
+                transcription: candidate,
+                occurredAt: existingLinkedContext?.occurredAt ?? Date()
+            )
+        }
         lastCoverageRecoveryRecordID = await rememberTranscriptHistory(
             transcript: transcript,
             editorText: transcript,
             durationSeconds: recording.duration,
-            activityTitle: activityTitle,
+            activityTitle: activity?.title,
             recoveryStatus: .coverageUncertain,
+            linkedRecoveryContext: linkedContext,
             recordingURL: recording.url,
             recordID: recordID
         )
@@ -2033,6 +2296,7 @@ final class VoiceBridgeModel: ObservableObject {
             )
             let pipeline = GeneralDictationPipeline(
                 transcriber: GroqTranscriber(apiKey: groqKeyDraft),
+                localFallback: localWhisperTranscriber,
                 temporaryDirectory: recordingStore.temporaryDirectory,
                 vocabularyPrompt: generalDictationPrompt
             )
@@ -2098,7 +2362,11 @@ final class VoiceBridgeModel: ObservableObject {
                     trailingSpeechLikeFrameCount:
                         result.trailingSpeechLikeFrameCount,
                     trailingSpeechLikeFraction:
-                        result.trailingSpeechLikeFraction
+                        result.trailingSpeechLikeFraction,
+                    engine: result.engine,
+                    model: result.model,
+                    localInferenceSeconds: result.localInferenceSeconds,
+                    localFallbackAttempted: result.engine == "whisperkit"
                 ),
                 outcome: .delivered
             )
@@ -2148,6 +2416,11 @@ final class VoiceBridgeModel: ObservableObject {
             trailingSpeechLikeFraction:
                 transcription.trailingSpeechLikeFraction,
             integrityReasons: transcription.integrityReasons,
+            transcriptionEngine: transcription.engine,
+            transcriptionModel: transcription.model,
+            localInferenceSeconds: transcription.localInferenceSeconds,
+            localFallbackAttempted: transcription.localFallbackAttempted,
+            localValidationReasons: transcription.localValidationReasons,
             outcome: outcome
         )
         try? await diagnosticsStore?.append(record)
@@ -2717,7 +2990,19 @@ final class VoiceBridgeModel: ObservableObject {
                         integrityFailure?.trailingSpeechLikeFrameCount,
                     trailingSpeechLikeFraction:
                         integrityFailure?.trailingSpeechLikeFraction,
-                    integrityReasons: integrityReasons
+                    integrityReasons: integrityReasons,
+                    engine: integrityFailure?.localFallbackAttempted == true
+                        ? integrityFailure?.localFallbackEngine
+                        : "groq",
+                    model: integrityFailure?.localFallbackAttempted == true
+                        ? integrityFailure?.localFallbackModel
+                        : "whisper-large-v3",
+                    localInferenceSeconds:
+                        integrityFailure?.localInferenceSeconds,
+                    localFallbackAttempted:
+                        integrityFailure?.localFallbackAttempted,
+                    localValidationReasons:
+                        integrityFailure?.localValidationReasons
                 ),
                 outcome: .failed
             )
@@ -3302,6 +3587,7 @@ final class VoiceBridgeModel: ObservableObject {
         do {
             let generalPipeline = GeneralDictationPipeline(
                 transcriber: GroqTranscriber(apiKey: groqKeyDraft),
+                localFallback: localWhisperTranscriber,
                 temporaryDirectory: recordingStore.temporaryDirectory,
                 vocabularyPrompt: generalDictationPrompt
             )
@@ -3373,7 +3659,13 @@ final class VoiceBridgeModel: ObservableObject {
                         trailingSpeechLikeFrameCount:
                             result.trailingSpeechLikeFrameCount,
                         trailingSpeechLikeFraction:
-                            result.trailingSpeechLikeFraction
+                            result.trailingSpeechLikeFraction,
+                        engine: result.engine,
+                        model: result.model,
+                        localInferenceSeconds:
+                            result.localInferenceSeconds,
+                        localFallbackAttempted:
+                            result.engine == "whisperkit"
                     ),
                     outcome: inserted ? .delivered : .failed
                 )
@@ -3382,7 +3674,7 @@ final class VoiceBridgeModel: ObservableObject {
             await preserveCoverageRecoveryCandidate(
                 from: error,
                 recording: recording,
-                activityTitle: nil
+                activity: nil
             )
             await reportTranscriptionFailure(
                 error,
@@ -3470,7 +3762,13 @@ final class VoiceBridgeModel: ObservableObject {
                         trailingSpeechLikeFrameCount:
                             result.trailingSpeechLikeFrameCount,
                         trailingSpeechLikeFraction:
-                            result.trailingSpeechLikeFraction
+                            result.trailingSpeechLikeFraction,
+                        engine: result.transcriptionEngine,
+                        model: result.transcriptionModel,
+                        localInferenceSeconds:
+                            result.localInferenceSeconds,
+                        localFallbackAttempted:
+                            result.transcriptionEngine == "whisperkit"
                     ),
                     outcome: lastInsertionSucceeded ? .delivered : .failed
                 )
@@ -3479,7 +3777,7 @@ final class VoiceBridgeModel: ObservableObject {
             await preserveCoverageRecoveryCandidate(
                 from: error,
                 recording: recording,
-                activityTitle: activity.title
+                activity: activity
             )
             guard generation == captureGeneration else { return }
             await reportTranscriptionFailure(
@@ -3529,6 +3827,11 @@ final class VoiceBridgeModel: ObservableObject {
         let queue = VoiceRetryQueue(directory: recordingStore.queueDirectory)
         let legacyCount = (try? await queue.items().count) ?? 0
         if pipeline == nil { pipeline = try? makeLinkedPipeline() }
+        if contextLastVerifiedAt != nil {
+            await pipeline?.removeSettledCaptures(
+                outsideWorkbenchID: timerInstrument?.workbenchId
+            )
+        }
         pendingVoiceCaptures = await pipeline?.pendingCaptures() ?? []
         legacyVoiceOrphans = await pipeline?.legacyVoiceOrphans() ?? []
         let transientCaptureCount = pendingVoiceCaptures.filter {
@@ -3585,6 +3888,18 @@ final class VoiceBridgeModel: ObservableObject {
                 await refreshTranscriptHistory()
             } catch {
                 reportFailure(error, stage: .interviewArc, hasRecoverableAudio: true)
+            }
+        }
+    }
+
+    func acknowledgePendingAudioLoss(_ capture: PendingVoiceCapture) {
+        Task {
+            do {
+                if pipeline == nil { pipeline = try makeLinkedPipeline() }
+                try await pipeline?.acknowledgeAudioLoss(captureID: capture.id)
+                await updateRetryCount()
+            } catch {
+                reportFailure(error, stage: .interviewArc, hasRecoverableAudio: false)
             }
         }
     }
@@ -3674,6 +3989,7 @@ final class VoiceBridgeModel: ObservableObject {
         return VoicePipeline(
             api: InterviewArcAPIClient(baseURL: baseURL, token: token),
             transcriber: GroqTranscriber(apiKey: groqKeyDraft),
+            localFallback: localWhisperTranscriber,
             codex: CodexBridge(executableURL: URL(fileURLWithPath: codexPath)),
             vocabularyResolver: VocabularyResolver(catalog: try .bundled()),
             retryQueue: VoiceRetryQueue(directory: recordingStore.queueDirectory),
@@ -4130,6 +4446,46 @@ private struct VoiceSettingsWindow: View {
                             ? AnyShapeStyle(.orange)
                             : AnyShapeStyle(.secondary)
                     )
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Local recovery")
+                                .font(.headline)
+                            Text(localWhisperStatusText)
+                                .font(.caption)
+                                .foregroundStyle(
+                                    model.localWhisperModel.state == .corrupt
+                                        ? AnyShapeStyle(.orange)
+                                        : AnyShapeStyle(.secondary)
+                                )
+                        }
+                        Spacer()
+                        if model.localWhisperModelOperationInFlight {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else if model.localWhisperModel.state == .notInstalled {
+                            Button(
+                                "Install",
+                                action: model.installLocalWhisperModel
+                            )
+                        } else {
+                            Button(
+                                "Delete",
+                                role: .destructive,
+                                action: model.deleteLocalWhisperModel
+                            )
+                        }
+                    }
+                    if let message = model.localWhisperModelMessage {
+                        Text(message)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Optional \(LocalWhisperModelManager.defaultModel) model. It runs only after both Groq coverage attempts remain incomplete, stays in private app-owned storage, and never delays a healthy transcription. Offline use requires a completed installation.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
                 Picker(
                     "Background audio",
                     selection: Binding(
@@ -4405,6 +4761,7 @@ private struct VoiceSettingsWindow: View {
         .frame(width: 620)
         .task {
             await model.refreshDiagnostics()
+            await model.refreshLocalWhisperModel()
         }
     }
 
@@ -4417,6 +4774,29 @@ private struct VoiceSettingsWindow: View {
         case .enhanced:
             "Also omits a returned segment only when local audio and Groq both identify its interval as non-speech."
         }
+    }
+
+    private var localWhisperStatusText: String {
+        switch model.localWhisperModel.state {
+        case .notInstalled:
+            "Not installed · Groq recovery remains available"
+        case .installing:
+            "Installing \(model.localWhisperModel.model)…"
+        case .available:
+            "Ready · \(model.localWhisperModel.model) · \(localWhisperSizeText)"
+        case .corrupt:
+            "Integrity check failed · delete and reinstall"
+        }
+    }
+
+    private var localWhisperSizeText: String {
+        guard let bytes = model.localWhisperModel.sizeBytes else {
+            return "size unavailable"
+        }
+        return ByteCountFormatter.string(
+            fromByteCount: bytes,
+            countStyle: .file
+        )
     }
 
     private func diagnosticDuration(_ seconds: Double) -> String {
@@ -4556,8 +4936,8 @@ private struct VoiceMenuContentHeightPreferenceKey: PreferenceKey {
 private struct VoiceBridgeMenu: View {
     @ObservedObject var model: VoiceBridgeModel
     @Environment(\.dismiss) private var dismiss
-    @State private var showsAllCaptures = false
     @State private var measuredContentHeight: CGFloat = 0
+    @State private var confirmingRecoveryPromotion = false
 
     @ViewBuilder
     var body: some View {
@@ -4624,7 +5004,7 @@ private struct VoiceBridgeMenu: View {
             }
             if model.showsDeliverySteps { deliveryProgress }
             if model.hasLastMemo || model.hasMenuTranscript { transcriptPreview }
-            if !model.pendingVoiceCaptures.isEmpty { recentCapturesCard }
+            if !model.workbenchVoiceCaptures.isEmpty { recentCapturesCard }
             if !model.legacyVoiceOrphans.isEmpty { legacyVoiceOrphansCard }
             if model.pendingRetryCount > 0 { retryRow }
             settings
@@ -4633,6 +5013,20 @@ private struct VoiceBridgeMenu: View {
         .padding(12)
         .frame(width: 260)
         .fixedSize(horizontal: false, vertical: true)
+        .confirmationDialog(
+            "Use this possibly incomplete transcript?",
+            isPresented: $confirmingRecoveryPromotion,
+            titleVisibility: .visible
+        ) {
+            Button("Use this transcript") {
+                model.useSelectedRecoveryTranscriptFromMenu {
+                    dismiss()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Voice will use the exact text shown and the retained original recording. A linked capture will still require the specialist’s normal Attach, Exclude, or Needs decision classification.")
+        }
     }
 
     private var maximumHeight: CGFloat {
@@ -4923,18 +5317,24 @@ private struct VoiceBridgeMenu: View {
             ZStack(alignment: .bottomTrailing) {
                 if let selectedTranscript = model.selectedTranscript {
                     VStack(alignment: .leading, spacing: 4) {
-                        if selectedTranscript.recoveryStatus
-                            == .coverageUncertain {
-                            Label(
-                                "Coverage uncertain · review before inserting",
-                                systemImage: "exclamationmark.triangle"
-                            )
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(Color.orange)
-                            .lineLimit(1)
-                            .accessibilityLabel(
-                                "Recovered transcript. Coverage is uncertain. Review before inserting."
-                            )
+                        if selectedTranscript.recoveryStatus == .coverageUncertain {
+                            HStack(spacing: 6) {
+                                Label(
+                                    "Coverage uncertain · review first",
+                                    systemImage: "exclamationmark.triangle"
+                                )
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(Color.orange)
+                                .lineLimit(1)
+                                Spacer(minLength: 4)
+                                Button("Use this transcript") {
+                                    confirmingRecoveryPromotion = true
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.mini)
+                                .disabled(!model.selectedTranscriptCanUseRecovery)
+                            }
+                            .accessibilityElement(children: .contain)
                         }
                         ScrollView {
                             Text(selectedTranscript.transcript)
@@ -5063,27 +5463,21 @@ private struct VoiceBridgeMenu: View {
     private var recentCapturesCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label("Recent Captures", systemImage: "waveform.badge.magnifyingglass")
+                Label("Captures in this Workbench", systemImage: "waveform.badge.magnifyingglass")
                     .font(.caption.weight(.semibold))
                 Spacer()
-                if model.pendingVoiceCaptures.count > 3 {
-                    Button(showsAllCaptures ? "Show less" : "Show all") {
-                        showsAllCaptures.toggle()
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.caption2.weight(.semibold))
-                }
+                Text("\(model.workbenchVoiceCaptures.count)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
             }
             ScrollView {
                 VStack(spacing: 7) {
-                    ForEach(Array(model.pendingVoiceCaptures.reversed().prefix(
-                        showsAllCaptures ? model.pendingVoiceCaptures.count : 3
-                    ))) { capture in
+                    ForEach(Array(model.workbenchVoiceCaptures.reversed())) { capture in
                         captureRow(capture)
                     }
                 }
             }
-            .frame(maxHeight: showsAllCaptures ? 220 : 184)
+            .frame(maxHeight: 220)
         }
         .padding(10)
         .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
@@ -5123,6 +5517,16 @@ private struct VoiceBridgeMenu: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.mini)
+                } else if capture.localState == .acceptedDelivering {
+                    Button("Retry upload", action: model.retryPending)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.mini)
+                } else if capture.localState == .audioLostNeedsAcknowledgement {
+                    Button("Acknowledge") {
+                        model.acknowledgePendingAudioLoss(capture)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.mini)
                 }
             }
         }
@@ -5151,9 +5555,16 @@ private struct VoiceBridgeMenu: View {
         case .waitingForSpecialist: return "Waiting for specialist"
         case .needsDecision: return "Needs decision"
         case .excludedGracePeriod: return "Excluded · expires in 24h"
-        case .acceptedDelivering: return "Related · syncing"
+        case .acceptedDelivering:
+            return capture.lastErrorCode == nil
+                ? "Related · uploading audio"
+                : "Upload failed · recording safe locally"
+        case .audioLostNeedsAcknowledgement:
+            return "Recording unavailable · acknowledge"
+        case .audioLostAcknowledged:
+            return "Recording unavailable · acknowledged"
         case .quarantinedConflict: return "Conflict · review required"
-        case .complete: return "Complete"
+        case .complete: return "R2 available · complete"
         }
     }
 

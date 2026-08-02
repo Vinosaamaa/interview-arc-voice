@@ -147,7 +147,94 @@ import Testing
     #expect(VoiceCaptureRetryPolicy().isExpired(capture, now: now))
 }
 
-private func pendingCapture(createdAt: Date = Date()) -> PendingVoiceCapture {
+@Test func twentyFourHourPendingDeletionRequiresAuthoritativeServerTransition() {
+    let capture = pendingCapture(createdAt: Date(timeIntervalSince1970: 1_000))
+    let now = Date(timeIntervalSince1970: 1_000 + 86_400)
+    let policy = VoiceCaptureLifecyclePolicy()
+
+    #expect(policy.expiryAction(
+        capture: capture,
+        serverStatus: "pending",
+        now: now
+    ) == .expirePendingOnServer)
+    #expect(policy.expiryAction(
+        capture: capture,
+        serverStatus: "unrelated",
+        now: now
+    ) == .deleteExcludedOnServer)
+    #expect(policy.expiryAction(
+        capture: capture,
+        serverStatus: "expired_unclassified",
+        now: now
+    ) == .removeTerminalLocalEvidence)
+}
+
+@Test func uncertainEvidenceNeverAutoExpiresAndStillNeedsAttachOrDiscard() {
+    var capture = pendingCapture(createdAt: Date(timeIntervalSince1970: 1_000))
+    capture.localState = .needsDecision
+    let now = Date(timeIntervalSince1970: 1_000 + 10 * 86_400)
+
+    #expect(!VoiceCaptureRetryPolicy().isExpired(capture, now: now))
+    #expect(VoiceCaptureLifecyclePolicy().expiryAction(
+        capture: capture,
+        serverStatus: "uncertain",
+        now: now
+    ) == .none)
+}
+
+@Test func workbenchCaptureSurfaceIsScopedWithoutDroppingLegacyCurrentActivity() {
+    let policy = VoiceCaptureLifecyclePolicy()
+    let matching = pendingCapture(workbenchID: "workbench-1")
+    let other = pendingCapture(workbenchID: "workbench-2")
+    let legacy = pendingCapture(workbenchID: nil)
+
+    #expect(policy.belongsToCurrentWorkbench(
+        matching,
+        workbenchID: "workbench-1",
+        currentActivityIDs: []
+    ))
+    #expect(!policy.belongsToCurrentWorkbench(
+        other,
+        workbenchID: "workbench-1",
+        currentActivityIDs: []
+    ))
+    #expect(policy.belongsToCurrentWorkbench(
+        legacy,
+        workbenchID: "workbench-1",
+        currentActivityIDs: ["activity-test"]
+    ))
+    #expect(!policy.belongsToCurrentWorkbench(
+        legacy,
+        workbenchID: nil,
+        currentActivityIDs: ["activity-test"]
+    ))
+}
+
+@Test func onlySettledMetadataLeavesAfterSuccessfulWorkbenchRollover() {
+    let policy = VoiceCaptureLifecyclePolicy()
+    var complete = pendingCapture(workbenchID: "workbench-1")
+    complete.localState = .complete
+    var unresolved = pendingCapture(workbenchID: "workbench-1")
+    unresolved.localState = .acceptedDelivering
+
+    #expect(policy.canRemoveSettledMetadata(
+        complete,
+        currentWorkbenchID: "workbench-2"
+    ))
+    #expect(!policy.canRemoveSettledMetadata(
+        unresolved,
+        currentWorkbenchID: "workbench-2"
+    ))
+    #expect(!policy.canRemoveSettledMetadata(
+        complete,
+        currentWorkbenchID: nil
+    ))
+}
+
+private func pendingCapture(
+    createdAt: Date = Date(),
+    workbenchID: String? = nil
+) -> PendingVoiceCapture {
     PendingVoiceCapture(
         id: "capture-test",
         turnID: "turn-test",
@@ -155,6 +242,7 @@ private func pendingCapture(createdAt: Date = Date()) -> PendingVoiceCapture {
         checksum: String(repeating: "a", count: 64),
         activity: FocusedVoiceActivity(
             activityId: "activity-test",
+            workbenchId: workbenchID,
             questionId: "question-test",
             specialty: .coding,
             interviewArcSpecialty: "leetcode",

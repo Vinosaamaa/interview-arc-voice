@@ -250,6 +250,9 @@ public struct ReliableTranscription: Equatable, Sendable {
     public let providerLexicalCoverageEndSeconds: Double?
     public let trailingSpeechLikeFrameCount: Int?
     public let trailingSpeechLikeFraction: Double?
+    public let engine: String?
+    public let model: String?
+    public let localInferenceSeconds: Double?
 
     public init(
         transcription: TranscriptionResult,
@@ -262,7 +265,10 @@ public struct ReliableTranscription: Equatable, Sendable {
         segmentValidationSeconds: Double = 0,
         providerLexicalCoverageEndSeconds: Double? = nil,
         trailingSpeechLikeFrameCount: Int? = nil,
-        trailingSpeechLikeFraction: Double? = nil
+        trailingSpeechLikeFraction: Double? = nil,
+        engine: String? = nil,
+        model: String? = nil,
+        localInferenceSeconds: Double? = nil
     ) {
         self.transcription = transcription
         self.wasRetried = wasRetried
@@ -276,6 +282,9 @@ public struct ReliableTranscription: Equatable, Sendable {
             providerLexicalCoverageEndSeconds
         self.trailingSpeechLikeFrameCount = trailingSpeechLikeFrameCount
         self.trailingSpeechLikeFraction = trailingSpeechLikeFraction
+        self.engine = engine
+        self.model = model
+        self.localInferenceSeconds = localInferenceSeconds
     }
 }
 
@@ -287,6 +296,11 @@ public struct TranscriptionIntegrityFailure: LocalizedError, Sendable {
     public let trailingSpeechLikeFrameCount: Int?
     public let trailingSpeechLikeFraction: Double?
     public let recoveryCandidate: TranscriptionResult?
+    public let localFallbackAttempted: Bool
+    public let localFallbackEngine: String?
+    public let localFallbackModel: String?
+    public let localInferenceSeconds: Double?
+    public let localValidationReasons: [TranscriptionIntegrityReason]?
 
     public init(
         reasons: [TranscriptionIntegrityReason],
@@ -295,7 +309,12 @@ public struct TranscriptionIntegrityFailure: LocalizedError, Sendable {
         lexicalCoverageEndSeconds: Double?,
         trailingSpeechLikeFrameCount: Int?,
         trailingSpeechLikeFraction: Double?,
-        recoveryCandidate: TranscriptionResult? = nil
+        recoveryCandidate: TranscriptionResult? = nil,
+        localFallbackAttempted: Bool = false,
+        localFallbackEngine: String? = nil,
+        localFallbackModel: String? = nil,
+        localInferenceSeconds: Double? = nil,
+        localValidationReasons: [TranscriptionIntegrityReason]? = nil
     ) {
         self.reasons = reasons
         self.timing = timing
@@ -304,6 +323,11 @@ public struct TranscriptionIntegrityFailure: LocalizedError, Sendable {
         self.trailingSpeechLikeFrameCount = trailingSpeechLikeFrameCount
         self.trailingSpeechLikeFraction = trailingSpeechLikeFraction
         self.recoveryCandidate = recoveryCandidate
+        self.localFallbackAttempted = localFallbackAttempted
+        self.localFallbackEngine = localFallbackEngine
+        self.localFallbackModel = localFallbackModel
+        self.localInferenceSeconds = localInferenceSeconds
+        self.localValidationReasons = localValidationReasons
     }
 
     public var errorDescription: String? {
@@ -360,12 +384,16 @@ public actor ReliableSpeechTranscriber {
                 protectionMode: protectionMode
             )
             guard !retryCheck.result.isSuspicious else {
-                throw integrityFailure(
-                    retryCheck,
+                return try await recoverWithLocalFallbackOrThrow(
+                    retryCheck: retryCheck,
+                    checkedCandidates: [(retry, retryCheck)],
                     timing: retry.timing,
-                    recoveryCandidate: recoverableCoverageCandidate([
-                        (retry, retryCheck),
-                    ])
+                    fileURL: fileURL,
+                    temporaryDirectory: temporaryDirectory,
+                    audioDurationSeconds: audioDurationSeconds,
+                    expectedChunkCount: expectedChunkCount,
+                    speechEvidence: speechEvidence,
+                    protectionMode: protectionMode
                 )
             }
             return try protectedResult(
@@ -426,47 +454,19 @@ public actor ReliableSpeechTranscriber {
             protectionMode: protectionMode
         )
         guard !retryCheck.result.isSuspicious else {
-            var checkedCandidates = [
-                (first, firstCheck),
-                (retry, retryCheck),
-            ]
-            if retryCheck.result.reasons.contains(.missingSpeechCoverage),
-               let localFallback {
-                do {
-                    let local = try await localFallback.transcribe(
-                        fileURL: fileURL,
-                        prompt: "",
-                        temporaryDirectory: temporaryDirectory
-                    )
-                    let localCheck = check(
-                        local,
-                        prompt: "",
-                        audioDurationSeconds: audioDurationSeconds,
-                        expectedChunkCount: expectedChunkCount,
-                        speechEvidence: speechEvidence,
-                        protectionMode: protectionMode
-                    )
-                    guard localCheck.result.isSuspicious else {
-                        return try protectedResult(
-                            local,
-                            wasRetried: true,
-                            speechEvidence: speechEvidence,
-                            protectionMode: protectionMode,
-                            integrityCheck: localCheck
-                        )
-                    }
-                    checkedCandidates.append((local, localCheck))
-                } catch {
-                    // The original and provider recovery candidates remain
-                    // available even when an optional local engine fails.
-                }
-            }
-            throw integrityFailure(
-                retryCheck,
+            return try await recoverWithLocalFallbackOrThrow(
+                retryCheck: retryCheck,
+                checkedCandidates: [
+                    (first, firstCheck),
+                    (retry, retryCheck),
+                ],
                 timing: combinedTiming(first.timing, retry.timing),
-                recoveryCandidate: recoverableCoverageCandidate(
-                    checkedCandidates
-                )
+                fileURL: fileURL,
+                temporaryDirectory: temporaryDirectory,
+                audioDurationSeconds: audioDurationSeconds,
+                expectedChunkCount: expectedChunkCount,
+                speechEvidence: speechEvidence,
+                protectionMode: protectionMode
             )
         }
         return try protectedResult(
@@ -475,6 +475,93 @@ public actor ReliableSpeechTranscriber {
             speechEvidence: speechEvidence,
             protectionMode: protectionMode,
             integrityCheck: retryCheck
+        )
+    }
+
+    private func recoverWithLocalFallbackOrThrow(
+        retryCheck: IntegrityCheck,
+        checkedCandidates initialCandidates: [(
+            TranscriptionResult,
+            IntegrityCheck
+        )],
+        timing: TranscriptionTiming?,
+        fileURL: URL,
+        temporaryDirectory: URL,
+        audioDurationSeconds: Double,
+        expectedChunkCount: Int,
+        speechEvidence: SpeechEvidenceResult?,
+        protectionMode: SpeechProtectionMode
+    ) async throws -> ReliableTranscription {
+        var checkedCandidates = initialCandidates
+        var localFallbackAttempted = false
+        var localInferenceSeconds: Double?
+        var localValidationReasons: [TranscriptionIntegrityReason]?
+        if retryCheck.result.reasons.contains(.missingSpeechCoverage),
+           let localFallback {
+            localFallbackAttempted = true
+            do {
+                let rawLocal = try await localFallback.transcribe(
+                    fileURL: fileURL,
+                    prompt: "",
+                    temporaryDirectory: temporaryDirectory
+                )
+                let local = normalizedLocalFallback(
+                    rawLocal,
+                    audioDurationSeconds: audioDurationSeconds,
+                    expectedChunkCount: expectedChunkCount
+                )
+                let localCheck = check(
+                    local,
+                    prompt: "",
+                    audioDurationSeconds: audioDurationSeconds,
+                    expectedChunkCount: expectedChunkCount,
+                    speechEvidence: speechEvidence,
+                    protectionMode: protectionMode
+                )
+                localInferenceSeconds = local.localInferenceSeconds
+                localValidationReasons = localCheck.result.reasons
+                guard localCheck.result.isSuspicious else {
+                    return try protectedResult(
+                        local,
+                        wasRetried: true,
+                        speechEvidence: speechEvidence,
+                        protectionMode: protectionMode,
+                        integrityCheck: localCheck
+                    )
+                }
+                checkedCandidates.append((local, localCheck))
+            } catch {
+                // Provider candidates remain available when the optional
+                // local engine is unavailable or also fails validation.
+            }
+        }
+        throw integrityFailure(
+            retryCheck,
+            timing: timing,
+            recoveryCandidate: recoverableCoverageCandidate(checkedCandidates),
+            localFallbackAttempted: localFallbackAttempted,
+            localFallbackEngine: localFallback?.diagnosticEngine,
+            localFallbackModel: localFallback?.diagnosticModel,
+            localInferenceSeconds: localInferenceSeconds,
+            localValidationReasons: localValidationReasons
+        )
+    }
+
+    private func normalizedLocalFallback(
+        _ result: TranscriptionResult,
+        audioDurationSeconds: Double,
+        expectedChunkCount: Int
+    ) -> TranscriptionResult {
+        TranscriptionResult(
+            text: result.text,
+            words: result.words,
+            segments: result.segments,
+            durationSeconds: audioDurationSeconds,
+            chunkCount: max(1, expectedChunkCount),
+            timing: result.timing,
+            engine: result.engine,
+            model: result.model,
+            localInferenceSeconds: result.localInferenceSeconds
         )
     }
 
@@ -496,7 +583,10 @@ public actor ReliableSpeechTranscriber {
                         .speechLikeFrameCount,
                 trailingSpeechLikeFraction:
                     integrityCheck.trailingSpeechEvidence?
-                        .speechLikeFraction
+                        .speechLikeFraction,
+                engine: transcription.engine,
+                model: transcription.model,
+                localInferenceSeconds: transcription.localInferenceSeconds
             )
         }
         let validationStartedAt = Date()
@@ -539,7 +629,11 @@ public actor ReliableSpeechTranscriber {
                     .speechLikeFrameCount,
             trailingSpeechLikeFraction:
                 integrityCheck.trailingSpeechEvidence?
-                    .speechLikeFraction
+                    .speechLikeFraction,
+            engine: protected.transcription.engine,
+            model: protected.transcription.model,
+            localInferenceSeconds:
+                protected.transcription.localInferenceSeconds
         )
     }
 
@@ -674,7 +768,12 @@ public actor ReliableSpeechTranscriber {
     private func integrityFailure(
         _ check: IntegrityCheck,
         timing: TranscriptionTiming?,
-        recoveryCandidate: TranscriptionResult? = nil
+        recoveryCandidate: TranscriptionResult? = nil,
+        localFallbackAttempted: Bool = false,
+        localFallbackEngine: String? = nil,
+        localFallbackModel: String? = nil,
+        localInferenceSeconds: Double? = nil,
+        localValidationReasons: [TranscriptionIntegrityReason]? = nil
     ) -> TranscriptionIntegrityFailure {
         TranscriptionIntegrityFailure(
             reasons: check.result.reasons,
@@ -686,7 +785,12 @@ public actor ReliableSpeechTranscriber {
                 check.trailingSpeechEvidence?.speechLikeFrameCount,
             trailingSpeechLikeFraction:
                 check.trailingSpeechEvidence?.speechLikeFraction,
-            recoveryCandidate: recoveryCandidate
+            recoveryCandidate: recoveryCandidate,
+            localFallbackAttempted: localFallbackAttempted,
+            localFallbackEngine: localFallbackEngine,
+            localFallbackModel: localFallbackModel,
+            localInferenceSeconds: localInferenceSeconds,
+            localValidationReasons: localValidationReasons
         )
     }
 

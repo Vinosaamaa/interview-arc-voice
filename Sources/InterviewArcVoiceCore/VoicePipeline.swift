@@ -1,6 +1,59 @@
 import CryptoKit
 import Foundation
 
+private enum LocalAudioSourceLoss: Error {
+    case missing
+    case unreadable
+
+    var serverReason: String {
+        switch self {
+        case .missing: "local_source_missing"
+        case .unreadable: "local_source_unreadable"
+        }
+    }
+}
+
+enum RecoveryPendingCaptureFactory {
+    static func make(
+        record: LocalTranscriptRecord,
+        context: LinkedTranscriptRecoveryContext,
+        audioURL: URL
+    ) -> PendingVoiceCapture {
+        let text = record.transcript
+        let checksum = SHA256.hash(data: Data(text.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let original = context.transcription
+        let transcription = original.text == text
+            ? original
+            : TranscriptionResult(
+                text: text,
+                words: [],
+                segments: nil,
+                durationSeconds: record.durationSeconds,
+                chunkCount: original.chunkCount,
+                timing: original.timing,
+                engine: original.engine,
+                model: original.model,
+                localInferenceSeconds: original.localInferenceSeconds
+            )
+        return PendingVoiceCapture(
+            id: context.captureID,
+            turnID: context.turnID,
+            clipID: context.clipID,
+            checksum: checksum,
+            activity: context.activity,
+            transcript: text,
+            audioURL: audioURL,
+            durationSeconds: record.durationSeconds,
+            occurredAt: context.occurredAt,
+            transcription: transcription,
+            createdAt: record.createdAt,
+            localState: .insertedRegistrationPending
+        )
+    }
+}
+
 public enum VoiceDeliveryComponent: String, CaseIterable, Sendable {
     case insertion
     case transcript
@@ -44,6 +97,9 @@ public struct VoicePipelineResult: Equatable, Sendable {
     public let trailingSpeechLikeFrameCount: Int?
     public let trailingSpeechLikeFraction: Double?
     public let transcriptionTiming: TranscriptionTiming?
+    public let transcriptionEngine: String?
+    public let transcriptionModel: String?
+    public let localInferenceSeconds: Double?
 
     public var hasQueuedRetry: Bool {
         !capturePersisted || !audioUploaded || !deliveryCoachQueued
@@ -66,6 +122,7 @@ public actor VoicePipeline {
     public init(
         api: InterviewArcAPIClient,
         transcriber: any SpeechTranscribing,
+        localFallback: (any SpeechTranscribing)? = nil,
         codex: CodexBridge,
         vocabularyResolver: VocabularyResolver,
         retryQueue: VoiceRetryQueue,
@@ -77,7 +134,10 @@ public actor VoicePipeline {
     ) {
         self.api = api
         self.transcriber = transcriber
-        reliableTranscriber = ReliableSpeechTranscriber(base: transcriber)
+        reliableTranscriber = ReliableSpeechTranscriber(
+            base: transcriber,
+            localFallback: localFallback
+        )
         self.codex = codex
         self.vocabularyResolver = vocabularyResolver
         self.retryQueue = retryQueue
@@ -167,7 +227,32 @@ public actor VoicePipeline {
                 reliable.trailingSpeechLikeFrameCount,
             trailingSpeechLikeFraction:
                 reliable.trailingSpeechLikeFraction,
-            transcriptionTiming: transcription.timing
+            transcriptionTiming: transcription.timing,
+            transcriptionEngine: reliable.engine,
+            transcriptionModel: reliable.model,
+            localInferenceSeconds: reliable.localInferenceSeconds
+        )
+    }
+
+    public func promoteRecoveryTranscript(
+        record: LocalTranscriptRecord,
+        audioURL: URL
+    ) async throws -> VoiceCaptureEnvelope {
+        guard let context = record.linkedRecoveryContext else {
+            throw VoiceBridgeError.invalidResponse(0, "This recovery transcript is not linked to an activity.")
+        }
+        let pending = RecoveryPendingCaptureFactory.make(
+            record: record,
+            context: context,
+            audioURL: audioURL
+        )
+        try await pendingCaptureStore.save(pending)
+        Task { await self.registerPendingCapture(captureID: context.captureID) }
+        return VoiceCaptureEnvelope(
+            captureID: context.captureID,
+            activityID: context.activity.activityId,
+            turnID: context.turnID,
+            transcript: record.transcript
         )
     }
 
@@ -259,6 +344,26 @@ public actor VoicePipeline {
         (try? await pendingCaptureStore.items()) ?? []
     }
 
+    public func removeSettledCaptures(
+        outsideWorkbenchID currentWorkbenchID: String?
+    ) async {
+        guard let captures = try? await pendingCaptureStore.items() else {
+            return
+        }
+        for capture in captures {
+            guard VoiceCaptureLifecyclePolicy().canRemoveSettledMetadata(
+                capture,
+                currentWorkbenchID: currentWorkbenchID
+            ) else {
+                continue
+            }
+            try? await pendingCaptureStore.remove(
+                id: capture.id,
+                deleteAudio: false
+            )
+        }
+    }
+
     public func localPendingCaptureCount() async -> Int {
         (try? await pendingCaptureStore.items().count) ?? 0
     }
@@ -292,18 +397,29 @@ public actor VoicePipeline {
         }
     }
 
+    public func acknowledgeAudioLoss(captureID: String) async throws {
+        guard let capture = try await pendingCaptureStore.items().first(where: {
+            $0.id == captureID
+        }) else {
+            return
+        }
+        _ = try await api.acknowledgeAudioLoss(
+            captureID: capture.id,
+            clipID: capture.clipID
+        )
+        try await pendingCaptureStore.update(id: capture.id) {
+            $0.localState = .audioLostAcknowledged
+            $0.nextAttemptAt = nil
+            $0.lastErrorCode = "audio_lost_acknowledged"
+        }
+    }
+
     private func reconcilePendingCaptures() async -> Int {
         let now = Date()
         let retryPolicy = VoiceCaptureRetryPolicy()
-        guard var captures = try? await pendingCaptureStore.items(),
+        guard let captures = try? await pendingCaptureStore.items(),
               !captures.isEmpty else { return 0 }
         var completed = 0
-        for capture in captures where retryPolicy.isExpired(capture, now: now) {
-            try? await pendingCaptureStore.remove(id: capture.id, deleteAudio: true)
-            completed += 1
-        }
-        captures = (try? await pendingCaptureStore.items()) ?? []
-        guard !captures.isEmpty else { return completed }
         guard var intents = try? await api.retainedIntents() else {
             return completed
         }
@@ -347,8 +463,44 @@ public actor VoicePipeline {
         }
         let byID = Dictionary(uniqueKeysWithValues: intents.map { ($0.captureId, $0) })
         for capture in captures {
+            if capture.localState == .complete
+                || capture.localState == .audioLostAcknowledged
+                || capture.localState == .audioLostNeedsAcknowledgement {
+                continue
+            }
             guard let intent = byID[capture.id] else { continue }
             do {
+                switch VoiceCaptureLifecyclePolicy().expiryAction(
+                    capture: capture,
+                    serverStatus: intent.status,
+                    now: now
+                ) {
+                    case .expirePendingOnServer:
+                        _ = try await api.expireIntent(capture)
+                        try await pendingCaptureStore.remove(
+                            id: capture.id,
+                            deleteAudio: true
+                        )
+                        completed += 1
+                        continue
+                    case .deleteExcludedOnServer:
+                        try await api.deleteCapture(captureID: capture.id)
+                        try await pendingCaptureStore.remove(
+                            id: capture.id,
+                            deleteAudio: true
+                        )
+                        completed += 1
+                        continue
+                    case .removeTerminalLocalEvidence:
+                        try await pendingCaptureStore.remove(
+                            id: capture.id,
+                            deleteAudio: true
+                        )
+                        completed += 1
+                        continue
+                    case .none:
+                        break
+                }
                 switch intent.status {
                 case "pending":
                     try await pendingCaptureStore.update(id: capture.id) {
@@ -394,6 +546,14 @@ public actor VoicePipeline {
                 case "deleted":
                     try await pendingCaptureStore.remove(id: capture.id, deleteAudio: true)
                     completed += 1
+                case "discarded_unclassified", "expired_unclassified":
+                    try await pendingCaptureStore.remove(id: capture.id, deleteAudio: true)
+                    completed += 1
+                case "quarantined_conflict":
+                    try await pendingCaptureStore.update(id: capture.id) {
+                        $0.localState = .quarantinedConflict
+                        $0.nextAttemptAt = nil
+                    }
                 default:
                     break
                 }
@@ -444,6 +604,9 @@ public actor VoicePipeline {
     }
 
     private func finishAcceptedCapture(_ capture: PendingVoiceCapture) async throws {
+        if let loss = Self.localAudioSourceLoss(capture.audioURL) {
+            throw loss
+        }
         let upload = try await api.uploadAudio(
             fileURL: capture.audioURL,
             clipID: capture.clipID,
@@ -475,16 +638,64 @@ public actor VoicePipeline {
     private func completeAcceptedCapture(
         _ capture: PendingVoiceCapture
     ) async throws {
-        try await finishAcceptedCapture(capture)
-        let retainedInHistory = try await transcriptHistoryStore?
-            .adoptLinkedAudio(
-                captureID: capture.id,
-                recordingURL: capture.audioURL
-            ) ?? false
-        try await pendingCaptureStore.remove(
-            id: capture.id,
-            deleteAudio: !retainedInHistory
-        )
+        do {
+            try await finishAcceptedCapture(capture)
+            let retainedInHistory = try await transcriptHistoryStore?
+                .adoptLinkedAudio(
+                    captureID: capture.id,
+                    recordingURL: capture.audioURL
+                ) ?? false
+            if !retainedInHistory,
+               FileManager.default.fileExists(atPath: capture.audioURL.path) {
+                try FileManager.default.removeItem(at: capture.audioURL)
+            }
+            try await pendingCaptureStore.update(id: capture.id) {
+                $0.localState = .complete
+                $0.retryAttempt = 0
+                $0.nextAttemptAt = nil
+                $0.lastErrorCode = nil
+            }
+        } catch let loss as LocalAudioSourceLoss {
+            do {
+                _ = try await api.reportAudioLoss(
+                    captureID: capture.id,
+                    clipID: capture.clipID,
+                    reason: loss.serverReason
+                )
+                try await pendingCaptureStore.update(id: capture.id) {
+                    $0.localState = .audioLostNeedsAcknowledgement
+                    $0.nextAttemptAt = nil
+                    $0.lastErrorCode = loss.serverReason
+                }
+            } catch let error as InterviewArcAPIError
+                where error.code == "audio_already_available" {
+                try await pendingCaptureStore.update(id: capture.id) {
+                    $0.localState = .complete
+                    $0.nextAttemptAt = nil
+                    $0.lastErrorCode = nil
+                }
+            } catch {
+                throw error
+            }
+        }
+    }
+
+    private static func localAudioSourceLoss(
+        _ url: URL
+    ) -> LocalAudioSourceLoss? {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return .missing
+        }
+        guard FileManager.default.isReadableFile(atPath: url.path),
+              let attributes = try? FileManager.default.attributesOfItem(
+                  atPath: url.path
+              ),
+              let type = attributes[.type] as? FileAttributeType,
+              type == .typeRegular,
+              let size = attributes[.size] as? NSNumber else {
+            return .unreadable
+        }
+        return size.int64Value > 0 ? nil : .unreadable
     }
 
     private func enqueue(

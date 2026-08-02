@@ -74,6 +74,7 @@ public struct VoiceTimerActivity: Codable, Equatable, Sendable, Identifiable {
 
 public struct VoiceTimerInstrument: Codable, Equatable, Sendable {
     public let serverNow: Int64
+    public var workbenchId: String? = nil
     public let session: VoiceTimerSession?
     public let activity: VoiceTimerActivity?
     public let activities: [VoiceTimerActivity]
@@ -102,6 +103,7 @@ public struct VoiceTimerMutationResponse: Codable, Equatable, Sendable {
 
 public struct FocusedVoiceActivity: Codable, Equatable, Sendable {
     public let activityId: String
+    public let workbenchId: String?
     public let questionId: String?
     public let specialty: PracticeSpecialty
     public let interviewArcSpecialty: String
@@ -118,6 +120,7 @@ public struct FocusedVoiceActivity: Codable, Equatable, Sendable {
 
     public init(
         activityId: String,
+        workbenchId: String? = nil,
         questionId: String?,
         specialty: PracticeSpecialty,
         interviewArcSpecialty: String,
@@ -133,6 +136,7 @@ public struct FocusedVoiceActivity: Codable, Equatable, Sendable {
         runningSince: Int64? = nil
     ) {
         self.activityId = activityId
+        self.workbenchId = workbenchId
         self.questionId = questionId
         self.specialty = specialty
         self.interviewArcSpecialty = interviewArcSpecialty
@@ -262,6 +266,13 @@ public struct AudioUploadResponse: Codable, Equatable, Sendable {
     public let label: String
     public let durationSeconds: Int?
     public let status: String
+}
+
+public struct VoiceAudioLossResponse: Codable, Equatable, Sendable {
+    public let captureId: String
+    public let clipId: String
+    public let status: String
+    public let acknowledged: Bool
 }
 
 public struct DeliveryQueueResponse: Codable, Equatable, Sendable {
