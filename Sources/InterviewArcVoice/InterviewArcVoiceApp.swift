@@ -1835,13 +1835,18 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func deleteSelectedTranscript() {
-        guard let id = selectedTranscript?.id else { return }
+        guard let selectedTranscript else { return }
+        let id = selectedTranscript.id
         if lastCoverageRecoveryRecordID == id {
             lastCoverageRecoveryRecordID = nil
         }
         Task { [weak self] in
             guard let self else { return }
-            try? await transcriptHistoryStore?.delete(id: id)
+            if selectedTranscript.recoveryStatus == .coverageUncertain {
+                try? await transcriptHistoryStore?.discardRecovery(id: id)
+            } else {
+                try? await transcriptHistoryStore?.delete(id: id)
+            }
             await refreshTranscriptHistory()
         }
     }

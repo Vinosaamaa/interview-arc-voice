@@ -240,6 +240,54 @@ import Testing
     #expect(promoted.first?.linkedRecoveryContext == context)
 }
 
+@Test func explicitDiscardRemovesProtectedLinkedRecoveryEvidence() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try LocalTranscriptHistoryStore(directory: root)
+    let context = LinkedTranscriptRecoveryContext(
+        captureID: "capture-discard",
+        turnID: "voice-discard",
+        clipID: "clip-discard",
+        checksum: String(repeating: "b", count: 64),
+        activity: FocusedVoiceActivity(
+            activityId: "activity-discard",
+            questionId: nil,
+            specialty: .coding,
+            interviewArcSpecialty: "leetcode",
+            title: "Discard recovery",
+            prompt: nil,
+            topics: [],
+            tags: [],
+            companies: [],
+            projects: [],
+            vocabularyPackIds: [],
+            speechTerms: []
+        ),
+        transcription: TranscriptionResult(
+            text: "Discard me",
+            words: [],
+            durationSeconds: 2,
+            chunkCount: 1
+        ),
+        occurredAt: Date(timeIntervalSince1970: 600)
+    )
+    let recordID = UUID()
+    try await store.append(LocalTranscriptRecord(
+        id: recordID,
+        createdAt: Date(timeIntervalSince1970: 601),
+        transcript: "Discard me",
+        editorText: "Discard me",
+        durationSeconds: 2,
+        recoveryStatus: .coverageUncertain,
+        linkedRecoveryContext: context
+    ))
+
+    #expect(try await store.records().count == 1)
+    try await store.discardRecovery(id: recordID)
+    #expect(try await store.records().isEmpty)
+}
+
 @Test func promotedLinkedRecoveryAudioCannotBePrunedOrClearedWhilePending() async throws {
     let root = FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString, directoryHint: .isDirectory)

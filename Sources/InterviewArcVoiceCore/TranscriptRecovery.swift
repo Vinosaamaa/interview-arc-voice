@@ -149,6 +149,8 @@ public struct LocalTranscriptRecord: Codable, Equatable, Identifiable, Sendable 
 
     public var isLifecycleProtected: Bool {
         lifecycleProtected == true
+            || (recoveryStatus == .coverageUncertain
+                && linkedRecoveryContext != nil)
     }
 
     public init(
@@ -308,7 +310,8 @@ public actor LocalTranscriptHistoryStore {
             linkedRecoveryContext: previous.linkedRecoveryContext,
             lifecycleProtected: lifecycleProtected
                 ?? previous.lifecycleProtected
-                ?? (captureID != nil && previous.audioReference != nil),
+                ?? (previous.isLifecycleProtected
+                    || (captureID != nil && previous.audioReference != nil)),
             audioReference: previous.audioReference
         )
         current[index] = replacement
@@ -392,6 +395,17 @@ public actor LocalTranscriptHistoryStore {
             return
         }
         guard !removed.isLifecycleProtected else { return }
+        current.removeAll { $0.id == id }
+        try removeAudio(for: removed)
+        try write(current)
+    }
+
+    public func discardRecovery(id: UUID) throws {
+        var current = try readRecords()
+        guard let removed = current.first(where: { $0.id == id }),
+              removed.recoveryStatus == .coverageUncertain else {
+            return
+        }
         current.removeAll { $0.id == id }
         try removeAudio(for: removed)
         try write(current)
