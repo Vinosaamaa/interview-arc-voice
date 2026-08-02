@@ -1951,6 +1951,7 @@ struct FloatingRecorderView: View {
         case .retryTranscription, .retryConnection: "arrow.clockwise"
         case .playRecording: "play.fill"
         case .saveRecording: "square.and.arrow.down"
+        case .useRecoveryTranscript: "checkmark.circle.fill"
         case .insertAgain: "text.cursor"
         case .enableAccessibility: "hand.raised.fill"
         case .openSettings: "gearshape.fill"
@@ -1963,6 +1964,7 @@ struct FloatingRecorderView: View {
         case .retryTranscription: "Retry transcription"
         case .playRecording: "Play recording"
         case .saveRecording: "Save recording"
+        case .useRecoveryTranscript: "Use this transcript"
         case .insertAgain: "Insert transcript again"
         case .enableAccessibility: "Enable Accessibility"
         case .openSettings: "Open settings"
@@ -4649,6 +4651,7 @@ private struct PlannerPressButtonStyle: ButtonStyle {
 
 private struct FailureRecoveryPopover: View {
     @ObservedObject var model: VoiceBridgeModel
+    @State private var confirmingRecoveryPromotion = false
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
     var body: some View {
@@ -4682,16 +4685,36 @@ private struct FailureRecoveryPopover: View {
                 }
 
                 VStack(spacing: 6) {
+                    if model.failureRecoveryTranscriptCanBeUsed {
+                        Button {
+                            confirmingRecoveryPromotion = true
+                        } label: {
+                            Label(
+                                "Use this transcript",
+                                systemImage: "checkmark.circle.fill"
+                            )
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(palette.tealDark)
+                        .voiceHoverFeedback(
+                            cornerRadius: 8,
+                            tint: palette.teal
+                        )
+                    }
                     ForEach(model.availableFailureActions, id: \.self) { action in
                         if action == .openSettings {
-                            if action == model.availableFailureActions.first {
+                            if action == model.availableFailureActions.first
+                                && !model.failureRecoveryTranscriptCanBeUsed {
                                 settingsActionLink(action)
                                     .buttonStyle(.borderedProminent)
                             } else {
                                 settingsActionLink(action)
                                     .buttonStyle(.bordered)
                             }
-                        } else if action == model.availableFailureActions.first {
+                        } else if action == model.availableFailureActions.first
+                            && !model.failureRecoveryTranscriptCanBeUsed {
                             failureActionButton(action)
                                 .buttonStyle(.borderedProminent)
                         } else {
@@ -4712,6 +4735,22 @@ private struct FailureRecoveryPopover: View {
             }
             .padding(11)
             .frame(width: 232)
+            .confirmationDialog(
+                "Use this possibly incomplete transcript?",
+                isPresented: $confirmingRecoveryPromotion,
+                titleVisibility: .visible
+            ) {
+                Button("Use this transcript") {
+                    model.performFailurePopoverAction(
+                        .useRecoveryTranscript
+                    )
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(
+                    "Voice will use the exact text shown and the retained original recording. If linked, Voice will insert the normal Voice v2 metadata and register the capture as pending so the specialist can Attach it, Exclude it, or ask you to decide."
+                )
+            }
         }
     }
 
@@ -4723,8 +4762,8 @@ private struct FailureRecoveryPopover: View {
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)
         }
-        .tint(Color(red: 0.08, green: 0.44, blue: 0.39))
-        .voiceHoverFeedback(cornerRadius: 8, tint: .teal)
+        .tint(palette.tealDark)
+        .voiceHoverFeedback(cornerRadius: 8, tint: palette.teal)
     }
 
     private func settingsActionLink(_ action: VoiceFailureAction) -> some View {
@@ -4733,8 +4772,8 @@ private struct FailureRecoveryPopover: View {
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)
         }
-        .tint(Color(red: 0.08, green: 0.44, blue: 0.39))
-        .voiceHoverFeedback(cornerRadius: 8, tint: .teal)
+        .tint(palette.tealDark)
+        .voiceHoverFeedback(cornerRadius: 8, tint: palette.teal)
     }
 
     private func actionSymbol(_ action: VoiceFailureAction) -> String {
@@ -4743,6 +4782,7 @@ private struct FailureRecoveryPopover: View {
         case .retryTranscription, .retryConnection: "arrow.clockwise"
         case .playRecording: "play.fill"
         case .saveRecording: "square.and.arrow.down"
+        case .useRecoveryTranscript: "checkmark.circle.fill"
         case .insertAgain: "text.cursor"
         case .enableAccessibility: "hand.raised.fill"
         case .openSettings: "gearshape.fill"
@@ -4755,6 +4795,7 @@ private struct FailureRecoveryPopover: View {
         case .retryTranscription: "Retry"
         case .playRecording: "Play"
         case .saveRecording: "Save"
+        case .useRecoveryTranscript: "Use this transcript"
         case .insertAgain: "Insert again"
         case .enableAccessibility: "Enable access"
         case .openSettings: "Settings"

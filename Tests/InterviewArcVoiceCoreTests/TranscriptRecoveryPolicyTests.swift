@@ -50,6 +50,57 @@ import Testing
     )
 }
 
+@Test func uncertainTranscriptPromotionRequiresRetainedAudioAndNoActivePromotion() {
+    #expect(
+        RecoveryTranscriptPromotionPolicy.canUse(
+            recoveryStatus: .coverageUncertain,
+            hasRetainedAudio: true,
+            promotionInFlight: false
+        )
+    )
+    #expect(
+        !RecoveryTranscriptPromotionPolicy.canUse(
+            recoveryStatus: .coverageUncertain,
+            hasRetainedAudio: false,
+            promotionInFlight: false
+        )
+    )
+    #expect(
+        !RecoveryTranscriptPromotionPolicy.canUse(
+            recoveryStatus: .coverageUncertain,
+            hasRetainedAudio: true,
+            promotionInFlight: true
+        )
+    )
+    #expect(
+        !RecoveryTranscriptPromotionPolicy.canUse(
+            recoveryStatus: nil,
+            hasRetainedAudio: true,
+            promotionInFlight: false
+        )
+    )
+}
+
+@Test func failureNoticePreservesItsExactRecoveryTranscriptIdentity() throws {
+    let recordID = UUID()
+    let notice = VoiceFailureNotice(
+        kind: .transcription,
+        title: "Transcription failed",
+        message: "Recording preserved",
+        detail: "Coverage was uncertain.",
+        actions: [.retryTranscription, .playRecording, .saveRecording],
+        recoveryTranscriptRecordID: recordID
+    )
+
+    let encoded = try JSONEncoder().encode(notice)
+    let restored = try JSONDecoder().decode(
+        VoiceFailureNotice.self,
+        from: encoded
+    )
+
+    #expect(restored.recoveryTranscriptRecordID == recordID)
+}
+
 @Test func menuInsertionUsesTheRememberedExternalEditor() {
     let policy = ManualInsertionTargetPolicy()
 

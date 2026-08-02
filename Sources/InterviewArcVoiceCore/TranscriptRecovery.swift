@@ -50,6 +50,18 @@ public enum RecoveryActionAvailabilityPolicy {
     }
 }
 
+public enum RecoveryTranscriptPromotionPolicy {
+    public static func canUse(
+        recoveryStatus: LocalTranscriptRecoveryStatus?,
+        hasRetainedAudio: Bool,
+        promotionInFlight: Bool
+    ) -> Bool {
+        recoveryStatus == .coverageUncertain
+            && hasRetainedAudio
+            && !promotionInFlight
+    }
+}
+
 public enum ManualInsertionSurface: Sendable {
     case floatingWidget
     case menuBar

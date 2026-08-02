@@ -445,9 +445,24 @@ final class VoiceBridgeModel: ObservableObject {
             && selectedTranscript?.transcript == lastTranscript
     }
     var selectedTranscriptCanUseRecovery: Bool {
-        selectedTranscript?.recoveryStatus == .coverageUncertain
-            && selectedTranscriptOwnsAudio
-            && recoveryPromotionInFlightID == nil
+        RecoveryTranscriptPromotionPolicy.canUse(
+            recoveryStatus: selectedTranscript?.recoveryStatus,
+            hasRetainedAudio: selectedTranscriptOwnsAudio,
+            promotionInFlight: recoveryPromotionInFlightID != nil
+        )
+    }
+    var failureRecoveryTranscriptCanBeUsed: Bool {
+        guard let recordID = failureNotice?.recoveryTranscriptRecordID,
+              let record = transcriptHistory.first(where: {
+                  $0.id == recordID
+              }) else {
+            return false
+        }
+        return RecoveryTranscriptPromotionPolicy.canUse(
+            recoveryStatus: record.recoveryStatus,
+            hasRetainedAudio: record.audioReference != nil,
+            promotionInFlight: recoveryPromotionInFlightID != nil
+        )
     }
     var lastMemoDetails: String {
         let words = lastTranscript.split(whereSeparator: \.isWhitespace).count
@@ -1439,15 +1454,42 @@ final class VoiceBridgeModel: ObservableObject {
     func useSelectedRecoveryTranscriptFromMenu(
         dismissMenu: @escaping @MainActor () -> Void
     ) {
-        guard let selectedTranscript,
+        guard let recordID = selectedTranscript?.id else { return }
+        let targetPID = manualInsertionTargetPID(surface: .menuBar)
+        let menuWindow = NSApp.keyWindow
+        promoteRecoveryTranscript(
+            recordID: recordID,
+            targetPID: targetPID
+        ) {
+            dismissMenu()
+            await self.waitForMenuDismissal(menuWindow)
+        }
+    }
+
+    func useFailureRecoveryTranscriptFromFloatingWidget() {
+        guard let recordID = failureNotice?.recoveryTranscriptRecordID else {
+            return
+        }
+        promoteRecoveryTranscript(
+            recordID: recordID,
+            targetPID: manualInsertionTargetPID(surface: .floatingWidget)
+        ) {}
+    }
+
+    private func promoteRecoveryTranscript(
+        recordID: UUID,
+        targetPID: pid_t?,
+        beforeInsertion: @escaping @MainActor () async -> Void
+    ) {
+        guard let selectedTranscript = transcriptHistory.first(where: {
+                  $0.id == recordID
+              }),
               selectedTranscript.recoveryStatus == .coverageUncertain,
               selectedTranscript.audioReference != nil,
               let transcriptHistoryStore,
               recoveryPromotionInFlightID == nil else {
             return
         }
-        let targetPID = manualInsertionTargetPID(surface: .menuBar)
-        let menuWindow = NSApp.keyWindow
         recoveryPromotionInFlightID = selectedTranscript.id
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -1506,8 +1548,7 @@ final class VoiceBridgeModel: ObservableObject {
                 } ?? 0
                 await updateRetryCount()
 
-                dismissMenu()
-                await waitForMenuDismissal(menuWindow)
+                await beforeInsertion()
                 targetApplicationPID = targetPID
                 let inserted = await insertTranscript(
                     selectedTranscript.transcript,
@@ -2715,6 +2756,8 @@ final class VoiceBridgeModel: ObservableObject {
             toggleLastAudioPlayback()
         case .saveRecording:
             exportLastMemo()
+        case .useRecoveryTranscript:
+            useFailureRecoveryTranscriptFromFloatingWidget()
         case .insertAgain:
             failureDetailsPresented = false
             reinsertLastTranscript()
@@ -2741,6 +2784,20 @@ final class VoiceBridgeModel: ObservableObject {
         switch FloatingWidgetRecoveryPolicy.timing(for: action) {
         case .immediate:
             performFailureAction(action)
+        case .afterPopoverDismissalDelay:
+            pendingFailurePopoverActionTask = Task { [weak self] in
+                try? await Task.sleep(
+                    for: .milliseconds(
+                        FloatingWidgetRecoveryPolicy.dismissalSettleMilliseconds
+                    )
+                )
+                guard !Task.isCancelled else { return }
+                self?.completeFailurePopoverActionAfterClose(
+                    action,
+                    trigger: .fallbackTimer
+                )
+            }
+            failureDetailsPresented = false
         case .afterPopoverDismissal:
             pendingFailurePopoverCloseObserver = NotificationCenter.default
                 .addObserver(
@@ -2803,14 +2860,16 @@ final class VoiceBridgeModel: ObservableObject {
         title: String,
         message: String,
         detail: String,
-        actions: [VoiceFailureAction]
+        actions: [VoiceFailureAction],
+        recoveryTranscriptRecordID: UUID? = nil
     ) {
         let notice = VoiceFailureNotice(
             kind: kind,
             title: title,
             message: message,
             detail: detail,
-            actions: actions
+            actions: actions,
+            recoveryTranscriptRecordID: recoveryTranscriptRecordID
         )
         failureNotice = notice
         phase = .failed(title)
@@ -2826,7 +2885,8 @@ final class VoiceBridgeModel: ObservableObject {
     private func reportFailure(
         _ error: Error,
         stage: FailureStage,
-        hasRecoverableAudio: Bool = false
+        hasRecoverableAudio: Bool = false,
+        recoveryTranscriptRecordID: UUID? = nil
     ) {
         let detail = String(
             error.localizedDescription
@@ -2864,7 +2924,8 @@ final class VoiceBridgeModel: ObservableObject {
                 detail: detail,
                 actions: hasRecoverableAudio
                     ? [.retryTranscription, .playRecording, .saveRecording]
-                    : [.recordAgain]
+                    : [.recordAgain],
+                recoveryTranscriptRecordID: recoveryTranscriptRecordID
             )
         case .insertion:
             reportFailure(
@@ -2947,6 +3008,10 @@ final class VoiceBridgeModel: ObservableObject {
         _ error: Error,
         diagnosticSeed: CaptureDiagnosticSeed?
     ) async {
+        let integrityFailure = error as? TranscriptionIntegrityFailure
+        let recoveryTranscriptRecordID = integrityFailure?.reasons.contains(
+            .missingSpeechCoverage
+        ) == true ? lastCoverageRecoveryRecordID : nil
         canRetryLastTranscription = false
         endProcessing()
         if TranscriptionFailurePolicy.disposition(for: error)
@@ -2964,11 +3029,11 @@ final class VoiceBridgeModel: ObservableObject {
             reportFailure(
                 error,
                 stage: .transcription,
-                hasRecoverableAudio: hasLastAudio
+                hasRecoverableAudio: hasLastAudio,
+                recoveryTranscriptRecordID: recoveryTranscriptRecordID
             )
         }
         if let diagnosticSeed {
-            let integrityFailure = error as? TranscriptionIntegrityFailure
             let integrityReasons: [TranscriptionIntegrityReason]?
             if let integrityFailure {
                 integrityReasons = integrityFailure.reasons
@@ -5025,7 +5090,7 @@ private struct VoiceBridgeMenu: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Voice will use the exact text shown and the retained original recording. A linked capture will still require the specialist’s normal Attach, Exclude, or Needs decision classification.")
+            Text("Voice will use the exact text shown and the retained original recording. If linked, Voice will insert the normal Voice v2 metadata and register the capture as pending so the specialist can Attach it, Exclude it, or ask you to decide.")
         }
     }
 
@@ -5214,6 +5279,7 @@ private struct VoiceBridgeMenu: View {
         case .retryTranscription, .retryConnection: "arrow.clockwise"
         case .playRecording: "play.fill"
         case .saveRecording: "square.and.arrow.down"
+        case .useRecoveryTranscript: "checkmark.circle.fill"
         case .insertAgain: "text.cursor"
         case .enableAccessibility: "hand.raised.fill"
         case .openSettings: "gearshape.fill"
@@ -5226,6 +5292,7 @@ private struct VoiceBridgeMenu: View {
         case .retryTranscription: "Retry transcription"
         case .playRecording: "Play recording"
         case .saveRecording: "Save recording"
+        case .useRecoveryTranscript: "Use this transcript"
         case .insertAgain: "Insert transcript again"
         case .enableAccessibility: "Enable Accessibility"
         case .openSettings: "Open settings"

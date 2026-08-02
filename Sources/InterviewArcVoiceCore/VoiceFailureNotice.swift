@@ -16,6 +16,7 @@ public enum VoiceFailureAction: String, Codable, Equatable, Hashable, Sendable {
     case retryTranscription
     case playRecording
     case saveRecording
+    case useRecoveryTranscript
     case insertAgain
     case enableAccessibility
     case openSettings
@@ -29,6 +30,7 @@ public struct VoiceFailureNotice: Codable, Equatable, Identifiable, Sendable {
     public let message: String
     public let detail: String
     public let actions: [VoiceFailureAction]
+    public let recoveryTranscriptRecordID: UUID?
     public let occurredAt: Date
 
     public init(
@@ -38,6 +40,7 @@ public struct VoiceFailureNotice: Codable, Equatable, Identifiable, Sendable {
         message: String,
         detail: String,
         actions: [VoiceFailureAction],
+        recoveryTranscriptRecordID: UUID? = nil,
         occurredAt: Date = Date()
     ) {
         self.id = id
@@ -46,6 +49,7 @@ public struct VoiceFailureNotice: Codable, Equatable, Identifiable, Sendable {
         self.message = message
         self.detail = detail
         self.actions = actions
+        self.recoveryTranscriptRecordID = recoveryTranscriptRecordID
         self.occurredAt = occurredAt
     }
 }
