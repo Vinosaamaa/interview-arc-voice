@@ -13,6 +13,7 @@ rm -rf "$app_dir"
 mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources"
 cp "$repo_root/Resources/Info.plist" "$contents_dir/Info.plist"
 cp "$bin_dir/InterviewArcVoice" "$contents_dir/MacOS/InterviewArcVoice"
+cp "$bin_dir/InterviewArcVoiceVerifier" "$contents_dir/MacOS/InterviewArcVoiceVerifier"
 cp "$repo_root/Resources/AppIcon.icns" "$contents_dir/Resources/AppIcon.icns"
 
 for resource_bundle in "$bin_dir"/*.bundle; do

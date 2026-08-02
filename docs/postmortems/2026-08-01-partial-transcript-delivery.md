@@ -377,6 +377,11 @@ closes the remaining packaged-app gap without changing the healthy path:
   prompt, transcript, or audio content.
 - Cancellation is checked before model loading and after inference; a missing
   or corrupt model leaves the existing recovery candidate actionable.
+- The signed app packages an aggregate-only native verifier so retained local
+  failures can be replayed through the exact installed WhisperKit runtime. Its
+  output excludes transcript, prompt, audio, and path content, making numeric
+  coverage evidence safe to summarize in release verification without exposing
+  private recordings.
 
 The local model remains an optional recovery capability, not a replacement for
 Groq and not a dependency on a developer Python environment. Final closure of

@@ -210,6 +210,15 @@ stores the best usable text and original M4A as a coverage-uncertain Recent
 Transcript and does not insert it or create a linked D1 turn. Recovery
 derivatives are disposable.
 
+Release acceptance can replay a retained recording through the exact native
+WhisperKit implementation packaged with the signed app by invoking
+`Contents/MacOS/InterviewArcVoiceVerifier`. The executable uses the app-owned
+model manifest and the same bounded prompt policy as production. Its JSON
+schema is deliberately aggregate-only: duration, word and segment counts,
+lexical coverage end, inference time, engine and model, and conditioning
+counts. It cannot serialize transcript text, prompt text, audio bytes, or
+filesystem paths.
+
 The user may explicitly confirm **Use this transcript** for that visible
 coverage-uncertain candidate. General Dictation inserts exactly the reviewed
 text locally. A linked candidate atomically creates and persists one stable
