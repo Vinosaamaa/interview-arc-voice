@@ -1,4 +1,60 @@
 import Foundation
+@preconcurrency import WhisperKit
+
+/// Stable, content-free categories for native replay failures.
+public enum LocalWhisperVerificationFailureCode: String, Sendable {
+    case modelUnavailable = "model-unavailable"
+    case modelCorrupt = "model-corrupt"
+    case installationInProgress = "installation-in-progress"
+    case unsafeModelPath = "unsafe-model-path"
+    case emptyTranscript = "empty-transcript"
+    case tokenizerUnavailable = "tokenizer-unavailable"
+    case modelsUnavailable = "models-unavailable"
+    case audioProcessingFailed = "audio-processing-failed"
+    case decodingLogitsFailed = "decoding-logits-failed"
+    case segmentingFailed = "segmenting-failed"
+    case loadAudioFailed = "load-audio-failed"
+    case prepareDecoderInputsFailed = "prepare-decoder-inputs-failed"
+    case transcriptionFailed = "transcription-failed"
+    case decodingFailed = "decoding-failed"
+    case microphoneUnavailable = "microphone-unavailable"
+    case initializationFailed = "initialization-failed"
+    case fileSystemFailed = "filesystem-failed"
+    case unknown = "unknown"
+}
+
+/// Converts third-party/local errors into bounded categories without exposing
+/// localized messages, filenames, prompts, or transcript content.
+public func localWhisperVerificationFailureCode(
+    for error: Error
+) -> LocalWhisperVerificationFailureCode {
+    if let local = error as? LocalWhisperModelError {
+        switch local {
+        case .unavailable: return .modelUnavailable
+        case .corrupt: return .modelCorrupt
+        case .installationInProgress: return .installationInProgress
+        case .unsafeModelPath: return .unsafeModelPath
+        case .emptyTranscript: return .emptyTranscript
+        }
+    }
+    if let whisper = error as? WhisperError {
+        switch whisper {
+        case .tokenizerUnavailable: return .tokenizerUnavailable
+        case .modelsUnavailable: return .modelsUnavailable
+        case .audioProcessingFailed: return .audioProcessingFailed
+        case .decodingLogitsFailed: return .decodingLogitsFailed
+        case .segmentingFailed: return .segmentingFailed
+        case .loadAudioFailed: return .loadAudioFailed
+        case .prepareDecoderInputsFailed: return .prepareDecoderInputsFailed
+        case .transcriptionFailed: return .transcriptionFailed
+        case .decodingFailed: return .decodingFailed
+        case .microphoneUnavailable: return .microphoneUnavailable
+        case .initializationError: return .initializationFailed
+        }
+    }
+    if error is CocoaError { return .fileSystemFailed }
+    return .unknown
+}
 
 /// Aggregate-only evidence from an explicit native WhisperKit replay.
 ///

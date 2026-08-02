@@ -8,6 +8,12 @@ private enum VerificationError: Error {
     case unreadableAudio
     case oversizedPrompt
     case unavailableModel
+    case runtime(stage: RuntimeStage, code: LocalWhisperVerificationFailureCode)
+}
+
+private enum RuntimeStage: String {
+    case audioDuration = "audio-duration"
+    case transcription
 }
 
 @main
@@ -85,12 +91,28 @@ private enum InterviewArcVoiceVerifier {
             throw VerificationError.unavailableModel
         }
 
-        let asset = AVURLAsset(url: options.audioURL)
-        let duration = try await asset.load(.duration).seconds
-        let result = try await manager.transcribe(
-            fileURL: options.audioURL,
-            prompt: prompt
-        )
+        let duration: Double
+        do {
+            duration = try await AVURLAsset(url: options.audioURL)
+                .load(.duration).seconds
+        } catch {
+            throw VerificationError.runtime(
+                stage: .audioDuration,
+                code: localWhisperVerificationFailureCode(for: error)
+            )
+        }
+        let result: ArcTranscriptionResult
+        do {
+            result = try await manager.transcribe(
+                fileURL: options.audioURL,
+                prompt: prompt
+            )
+        } catch {
+            throw VerificationError.runtime(
+                stage: .transcription,
+                code: localWhisperVerificationFailureCode(for: error)
+            )
+        }
         return LocalWhisperVerificationReport(
             result: result,
             audioDurationSeconds: duration.isFinite ? duration : 0
@@ -103,7 +125,8 @@ private enum InterviewArcVoiceVerifier {
         case VerificationError.unreadableAudio: "unreadable-audio"
         case VerificationError.oversizedPrompt: "oversized-prompt"
         case VerificationError.unavailableModel: "model-unavailable"
-        case is LocalWhisperModelError: "local-model-error"
+        case let VerificationError.runtime(stage, code):
+            "\(stage.rawValue)-\(code.rawValue)"
         default: "transcription-failed"
         }
     }

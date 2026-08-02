@@ -63,3 +63,18 @@ import Testing
     #expect(report.promptTokenCount == 0)
     #expect(!report.promptConditioningUsed)
 }
+
+@Test func localVerificationFailureCodesDoNotExposeLocalizedMessages() {
+    #expect(
+        localWhisperVerificationFailureCode(for: LocalWhisperModelError.unavailable)
+            == .modelUnavailable
+    )
+    #expect(
+        localWhisperVerificationFailureCode(for: LocalWhisperModelError.corrupt)
+            == .modelCorrupt
+    )
+    #expect(
+        localWhisperVerificationFailureCode(for: CocoaError(.fileReadNoSuchFile))
+            == .fileSystemFailed
+    )
+}
