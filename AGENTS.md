@@ -47,12 +47,8 @@ replace it with “allow all applications” or store the user's password.
 
 ## Hosted CI efficiency
 
-- For every implementation turn, start the live execution ledger before the
-  first substantive action. Add one exact Pacific start/end row for each
-  concrete action this task actually performs; never impose a fixed phase list
-  or include placeholders for actions that did not happen. Reconcile the
-  timestamp-derived total with any exact client “worked for” duration before
-  reporting it. Follow `docs/agents/issue-lifecycle.md`.
+- For every implementation turn, follow the canonical live-execution-ledger
+  requirements in `docs/agents/issue-lifecycle.md`.
 - Do not use full hosted package builds as an intermediate edit/test loop.
   Batch source changes and request the complete PR workflow once the change is
   ready for independent verification.
