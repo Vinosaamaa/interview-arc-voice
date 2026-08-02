@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Testing
 @testable import InterviewArcVoiceCore
 
@@ -286,6 +287,57 @@ import Testing
     #expect(try await store.records().count == 1)
     try await store.discardRecovery(id: recordID)
     #expect(try await store.records().isEmpty)
+}
+
+@Test func editedRecoveryPromotionRebuildsChecksumAndTranscriptMetadata() {
+    let context = LinkedTranscriptRecoveryContext(
+        captureID: "capture-edited",
+        turnID: "voice-edited",
+        clipID: "clip-edited",
+        checksum: String(repeating: "c", count: 64),
+        activity: FocusedVoiceActivity(
+            activityId: "activity-edited",
+            questionId: nil,
+            specialty: .coding,
+            interviewArcSpecialty: "leetcode",
+            title: "Edited recovery",
+            prompt: nil,
+            topics: [],
+            tags: [],
+            companies: [],
+            projects: [],
+            vocabularyPackIds: [],
+            speechTerms: []
+        ),
+        transcription: TranscriptionResult(
+            text: "Original partial text",
+            words: [TranscriptWord(word: "Original", start: 0, end: 1)],
+            durationSeconds: 3,
+            chunkCount: 1
+        ),
+        occurredAt: Date(timeIntervalSince1970: 700)
+    )
+    let record = LocalTranscriptRecord(
+        createdAt: Date(timeIntervalSince1970: 701),
+        transcript: "Reviewed replacement text",
+        editorText: "Reviewed replacement text",
+        durationSeconds: 3,
+        recoveryStatus: .coverageUncertain,
+        linkedRecoveryContext: context
+    )
+    let pending = RecoveryPendingCaptureFactory.make(
+        record: record,
+        context: context,
+        audioURL: URL(fileURLWithPath: "/tmp/recovery.m4a")
+    )
+    let expectedChecksum = SHA256.hash(
+        data: Data(record.transcript.utf8)
+    ).map { String(format: "%02x", $0) }.joined()
+
+    #expect(pending.checksum == expectedChecksum)
+    #expect(pending.transcript == record.transcript)
+    #expect(pending.transcription.text == record.transcript)
+    #expect(pending.transcription.words.isEmpty)
 }
 
 @Test func promotedLinkedRecoveryAudioCannotBePrunedOrClearedWhilePending() async throws {

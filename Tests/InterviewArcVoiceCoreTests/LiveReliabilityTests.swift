@@ -225,6 +225,10 @@ import Testing
         unresolved,
         currentWorkbenchID: "workbench-2"
     ))
+    #expect(!policy.canRemoveSettledMetadata(
+        complete,
+        currentWorkbenchID: nil
+    ))
 }
 
 private func pendingCapture(

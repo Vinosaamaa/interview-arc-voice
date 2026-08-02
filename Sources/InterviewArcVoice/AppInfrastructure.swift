@@ -3828,19 +3828,11 @@ private struct FloatingTodayPlannerPanel: View {
             } else {
                 statusBadge(status)
             }
-            plannerIconButton(
-                status == .running ? "pause.fill" : "play.fill",
-                label: status == .running
-                    ? "Pause \(activity.title)"
-                    : "Start \(activity.title)",
-                enabled: model.canTogglePlanningActivityTimer(
-                    id: activity.id,
-                    status: status
-                ),
-                selected: status == .running
-            ) {
-                model.togglePlanningActivityTimer(id: activity.id, status: status)
-            }
+            planningTimerButton(
+                id: activity.id,
+                title: activity.title,
+                status: status
+            )
             plannerIconButton(
                 "trash",
                 label: "Remove \(activity.title)",
@@ -3904,19 +3896,11 @@ private struct FloatingTodayPlannerPanel: View {
             } else {
                 statusBadge(status)
             }
-            plannerIconButton(
-                status == .running ? "pause.fill" : "play.fill",
-                label: status == .running
-                    ? "Pause \(focus.title)"
-                    : "Start \(focus.title)",
-                enabled: model.canTogglePlanningActivityTimer(
-                    id: focus.id,
-                    status: status
-                ),
-                selected: status == .running
-            ) {
-                model.togglePlanningActivityTimer(id: focus.id, status: status)
-            }
+            planningTimerButton(
+                id: focus.id,
+                title: focus.title,
+                status: status
+            )
             plannerIconButton(
                 "trash",
                 label: "Remove \(focus.title)",
@@ -3935,6 +3919,24 @@ private struct FloatingTodayPlannerPanel: View {
                         .stroke(Color.purple.opacity(0.26), lineWidth: 0.8)
                 )
         )
+    }
+
+    private func planningTimerButton(
+        id: String,
+        title: String,
+        status: VoicePlanningCurrentStatus
+    ) -> some View {
+        plannerIconButton(
+            status == .running ? "pause.fill" : "play.fill",
+            label: status == .running ? "Pause \(title)" : "Start \(title)",
+            enabled: model.canTogglePlanningActivityTimer(
+                id: id,
+                status: status
+            ),
+            selected: status == .running
+        ) {
+            model.togglePlanningActivityTimer(id: id, status: status)
+        }
     }
 
     private func statusBadge(_ status: VoicePlanningCurrentStatus) -> some View {

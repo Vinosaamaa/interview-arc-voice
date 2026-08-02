@@ -471,12 +471,18 @@ public actor LocalTranscriptHistoryStore {
         now: Date
     ) -> [LocalTranscriptRecord] {
         let ordered = records.sorted { $0.createdAt > $1.createdAt }
-        let protected = ordered.filter(\.isLifecycleProtected)
-        let bounded = ordered.filter {
-            !$0.isLifecycleProtected
-                && now.timeIntervalSince($0.createdAt) < retentionDuration
-        }.prefix(retentionLimit)
-        var visible = (protected + bounded).sorted { $0.createdAt > $1.createdAt }
+        var boundedCount = 0
+        var visible: [LocalTranscriptRecord] = []
+        visible.reserveCapacity(min(ordered.count, retentionLimit))
+        for record in ordered {
+            if record.isLifecycleProtected {
+                visible.append(record)
+            } else if boundedCount < retentionLimit,
+                      now.timeIntervalSince(record.createdAt) < retentionDuration {
+                visible.append(record)
+                boundedCount += 1
+            }
+        }
         for index in visible.indices
             where visible[index].audioReference != nil
                 && audioURL(for: visible[index]) == nil {

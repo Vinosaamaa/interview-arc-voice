@@ -13,6 +13,47 @@ private enum LocalAudioSourceLoss: Error {
     }
 }
 
+enum RecoveryPendingCaptureFactory {
+    static func make(
+        record: LocalTranscriptRecord,
+        context: LinkedTranscriptRecoveryContext,
+        audioURL: URL
+    ) -> PendingVoiceCapture {
+        let text = record.transcript
+        let checksum = SHA256.hash(data: Data(text.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let original = context.transcription
+        let transcription = original.text == text
+            ? original
+            : TranscriptionResult(
+                text: text,
+                words: [],
+                segments: nil,
+                durationSeconds: record.durationSeconds,
+                chunkCount: original.chunkCount,
+                timing: original.timing,
+                engine: original.engine,
+                model: original.model,
+                localInferenceSeconds: original.localInferenceSeconds
+            )
+        return PendingVoiceCapture(
+            id: context.captureID,
+            turnID: context.turnID,
+            clipID: context.clipID,
+            checksum: checksum,
+            activity: context.activity,
+            transcript: text,
+            audioURL: audioURL,
+            durationSeconds: record.durationSeconds,
+            occurredAt: context.occurredAt,
+            transcription: transcription,
+            createdAt: record.createdAt,
+            localState: .insertedRegistrationPending
+        )
+    }
+}
+
 public enum VoiceDeliveryComponent: String, CaseIterable, Sendable {
     case insertion
     case transcript
@@ -200,19 +241,10 @@ public actor VoicePipeline {
         guard let context = record.linkedRecoveryContext else {
             throw VoiceBridgeError.invalidResponse(0, "This recovery transcript is not linked to an activity.")
         }
-        let pending = PendingVoiceCapture(
-            id: context.captureID,
-            turnID: context.turnID,
-            clipID: context.clipID,
-            checksum: context.checksum,
-            activity: context.activity,
-            transcript: record.transcript,
-            audioURL: audioURL,
-            durationSeconds: record.durationSeconds,
-            occurredAt: context.occurredAt,
-            transcription: context.transcription,
-            createdAt: record.createdAt,
-            localState: .insertedRegistrationPending
+        let pending = RecoveryPendingCaptureFactory.make(
+            record: record,
+            context: context,
+            audioURL: audioURL
         )
         try await pendingCaptureStore.save(pending)
         Task { await self.registerPendingCapture(captureID: context.captureID) }
@@ -642,6 +674,8 @@ public actor VoicePipeline {
                     $0.nextAttemptAt = nil
                     $0.lastErrorCode = nil
                 }
+            } catch {
+                throw error
             }
         }
     }

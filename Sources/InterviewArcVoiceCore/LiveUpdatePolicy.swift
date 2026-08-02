@@ -140,7 +140,8 @@ public struct VoiceCaptureLifecyclePolicy: Sendable {
         _ capture: PendingVoiceCapture,
         currentWorkbenchID: String?
     ) -> Bool {
-        guard let captureWorkbenchID = capture.workbenchID,
+        guard let currentWorkbenchID,
+              let captureWorkbenchID = capture.workbenchID,
               captureWorkbenchID != currentWorkbenchID else {
             return false
         }
