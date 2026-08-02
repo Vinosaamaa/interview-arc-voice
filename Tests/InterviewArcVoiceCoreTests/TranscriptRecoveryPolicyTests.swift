@@ -137,6 +137,52 @@ import Testing
     #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
 }
 
+@Test func transcriptHistoryPersistsCoverageUncertainRecoveryStatus() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try LocalTranscriptHistoryStore(directory: root)
+
+    try await store.append(LocalTranscriptRecord(
+        transcript: "Best available recovery text",
+        editorText: "Best available recovery text",
+        durationSeconds: 328,
+        recoveryStatus: .coverageUncertain
+    ))
+
+    let records = try await store.records()
+    #expect(records.first?.recoveryStatus == .coverageUncertain)
+}
+
+@Test func trustedRetryReplacesUncertainTextAndLinksTheCapture() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try LocalTranscriptHistoryStore(directory: root)
+    let recordID = UUID()
+
+    try await store.append(LocalTranscriptRecord(
+        id: recordID,
+        transcript: "Partial recovery text",
+        editorText: "Partial recovery text",
+        durationSeconds: 328,
+        recoveryStatus: .coverageUncertain
+    ))
+    _ = try await store.replaceTranscript(
+        id: recordID,
+        transcript: "Trusted complete retry",
+        editorText: "Trusted complete retry with envelope",
+        captureID: "capture-trusted"
+    )
+
+    let records = try await store.records()
+    #expect(records.count == 1)
+    #expect(records[0].transcript == "Trusted complete retry")
+    #expect(records[0].editorText == "Trusted complete retry with envelope")
+    #expect(records[0].captureID == "capture-trusted")
+    #expect(records[0].recoveryStatus == nil)
+}
+
 @Test func recoverableRecordingReferenceSurvivesRelaunchAndRejectsUnsafePaths() async throws {
     let root = FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString, directoryHint: .isDirectory)

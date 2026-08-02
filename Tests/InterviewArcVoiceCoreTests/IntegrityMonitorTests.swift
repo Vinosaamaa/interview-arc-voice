@@ -181,7 +181,7 @@ import Testing
     ])
 }
 
-@Test func transcriptEndingBeforeTailSpeechRetriesEvenWhenProtectionIsOff() async throws {
+@Test func transcriptEndingBeforeTailSpeechRetriesWithEnhancedProtection() async throws {
     let partial = TranscriptionResult(
         text: "The first part was transcribed but the complete ending was lost.",
         words: timestampedWords(
@@ -240,7 +240,7 @@ import Testing
         audioDurationSeconds: 53,
         expectedChunkCount: 1,
         speechEvidence: sustainedSpeechEvidence(durationSeconds: 53),
-        protectionMode: .off
+        protectionMode: .enhanced
     )
 
     #expect(result.wasRetried)
@@ -277,6 +277,7 @@ import Testing
     #expect(result.wasRetried)
     #expect(result.transcription.text == completeText)
     #expect(await transcriber.callCount == 2)
+    #expect(await transcriber.coverageRecoveryCallCount == 1)
 }
 
 @Test func sustainedSpeechInsideAProviderWordGapTriggersRetry() async throws {
@@ -325,6 +326,40 @@ import Testing
     #expect(await transcriber.callCount == 2)
 }
 
+@Test func basicProtectionDoesNotRejectProviderTextForInternalTimestampGaps() async throws {
+    let text = "How do I actually search in Codex UI?"
+    let transcription = TranscriptionResult(
+        text: text,
+        words: [
+            TranscriptWord(word: "How", start: 0.1, end: 0.35),
+            TranscriptWord(word: "do", start: 0.4, end: 0.55),
+            TranscriptWord(word: "I", start: 0.6, end: 0.7),
+            TranscriptWord(word: "actually", start: 0.75, end: 1.15),
+            TranscriptWord(word: "search", start: 1.2, end: 1.55),
+            TranscriptWord(word: "in", start: 1.6, end: 1.75),
+            TranscriptWord(word: "Codex", start: 1.8, end: 2.2),
+            TranscriptWord(word: "UI?", start: 13.5, end: 13.84),
+        ],
+        durationSeconds: 14.4,
+        chunkCount: 1
+    )
+    let transcriber = CountingTranscriber(results: [transcription])
+    let reliable = ReliableSpeechTranscriber(base: transcriber)
+
+    let result = try await reliable.transcribe(
+        fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+        prompt: "",
+        temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+        audioDurationSeconds: 14.4,
+        speechEvidence: sustainedSpeechEvidence(durationSeconds: 14.4),
+        protectionMode: .basic
+    )
+
+    #expect(result.transcription.text == text)
+    #expect(!result.wasRetried)
+    #expect(await transcriber.callCount == 1)
+}
+
 @Test func repeatedMalformedWordTimestampPartialFailsInsteadOfDelivering() async {
     let partial = malformedFullLengthSegmentPartial()
     let transcriber = CountingTranscriber(results: [partial, partial])
@@ -346,11 +381,44 @@ import Testing
         #expect(failure.providerRetryOccurred)
         #expect(failure.lexicalCoverageEndSeconds == 72)
         #expect(failure.trailingSpeechLikeFrameCount != nil)
+        #expect(failure.recoveryCandidate?.text == partial.text)
     } catch {
         Issue.record("Unexpected error: \(error)")
     }
 
     #expect(await transcriber.callCount == 2)
+}
+
+@Test func localFallbackCanRecoverAfterWholeAndChunkedCoverageFailures() async throws {
+    let partial = malformedFullLengthSegmentPartial()
+    let completeText = "The local fallback preserved the complete spoken answer through the ending."
+    let localResult = TranscriptionResult(
+        text: completeText,
+        words: [],
+        durationSeconds: 80.88,
+        chunkCount: 1
+    )
+    let provider = CountingTranscriber(results: [partial, partial])
+    let local = CountingTranscriber(results: [localResult])
+    let reliable = ReliableSpeechTranscriber(
+        base: provider,
+        localFallback: local
+    )
+
+    let result = try await reliable.transcribe(
+        fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+        prompt: "Context vocabulary",
+        temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+        audioDurationSeconds: 80.88,
+        speechEvidence: sustainedSpeechEvidence(durationSeconds: 80.88),
+        protectionMode: .enhanced
+    )
+
+    #expect(result.transcription.text == completeText)
+    #expect(result.wasRetried)
+    #expect(await provider.callCount == 2)
+    #expect(await provider.coverageRecoveryCallCount == 1)
+    #expect(await local.callCount == 1)
 }
 
 @Test func twoPartialProviderResultsFailRecoverablyInsteadOfDeliveringEitherOne() async {
@@ -431,6 +499,7 @@ import Testing
 private actor CountingTranscriber: SpeechTranscribing {
     private var results: [TranscriptionResult]
     private(set) var prompts: [String] = []
+    private(set) var coverageRecoveryCallCount = 0
 
     init(results: [TranscriptionResult]) {
         self.results = results
@@ -444,6 +513,16 @@ private actor CountingTranscriber: SpeechTranscribing {
         temporaryDirectory: URL
     ) async throws -> TranscriptionResult {
         prompts.append(prompt)
+        guard !results.isEmpty else { throw VoiceBridgeError.emptyTranscript }
+        return results.removeFirst()
+    }
+
+    func transcribeCoverageRecovery(
+        fileURL: URL,
+        temporaryDirectory: URL
+    ) async throws -> TranscriptionResult {
+        coverageRecoveryCallCount += 1
+        prompts.append("")
         guard !results.isEmpty else { throw VoiceBridgeError.emptyTranscript }
         return results.removeFirst()
     }

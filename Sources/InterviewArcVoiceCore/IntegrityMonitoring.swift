@@ -286,6 +286,7 @@ public struct TranscriptionIntegrityFailure: LocalizedError, Sendable {
     public let lexicalCoverageEndSeconds: Double?
     public let trailingSpeechLikeFrameCount: Int?
     public let trailingSpeechLikeFraction: Double?
+    public let recoveryCandidate: TranscriptionResult?
 
     public init(
         reasons: [TranscriptionIntegrityReason],
@@ -293,7 +294,8 @@ public struct TranscriptionIntegrityFailure: LocalizedError, Sendable {
         providerRetryOccurred: Bool,
         lexicalCoverageEndSeconds: Double?,
         trailingSpeechLikeFrameCount: Int?,
-        trailingSpeechLikeFraction: Double?
+        trailingSpeechLikeFraction: Double?,
+        recoveryCandidate: TranscriptionResult? = nil
     ) {
         self.reasons = reasons
         self.timing = timing
@@ -301,10 +303,11 @@ public struct TranscriptionIntegrityFailure: LocalizedError, Sendable {
         self.lexicalCoverageEndSeconds = lexicalCoverageEndSeconds
         self.trailingSpeechLikeFrameCount = trailingSpeechLikeFrameCount
         self.trailingSpeechLikeFraction = trailingSpeechLikeFraction
+        self.recoveryCandidate = recoveryCandidate
     }
 
     public var errorDescription: String? {
-        "Groq returned incomplete text twice. The original audio was preserved; use Play, Save, or Retry."
+        "Groq recovery could not produce a trusted complete transcript. The best available text and original audio were preserved for review or retry."
     }
 }
 
@@ -316,9 +319,14 @@ public actor ReliableSpeechTranscriber {
     }
 
     private let base: any SpeechTranscribing
+    private let localFallback: (any SpeechTranscribing)?
 
-    public init(base: any SpeechTranscribing) {
+    public init(
+        base: any SpeechTranscribing,
+        localFallback: (any SpeechTranscribing)? = nil
+    ) {
         self.base = base
+        self.localFallback = localFallback
     }
 
     public func transcribe(
@@ -348,12 +356,16 @@ public actor ReliableSpeechTranscriber {
                 prompt: "",
                 audioDurationSeconds: audioDurationSeconds,
                 expectedChunkCount: expectedChunkCount,
-                speechEvidence: speechEvidence
+                speechEvidence: speechEvidence,
+                protectionMode: protectionMode
             )
             guard !retryCheck.result.isSuspicious else {
                 throw integrityFailure(
                     retryCheck,
-                    timing: retry.timing
+                    timing: retry.timing,
+                    recoveryCandidate: recoverableCoverageCandidate([
+                        (retry, retryCheck),
+                    ])
                 )
             }
             return try protectedResult(
@@ -369,7 +381,8 @@ public actor ReliableSpeechTranscriber {
             prompt: prompt,
             audioDurationSeconds: audioDurationSeconds,
             expectedChunkCount: expectedChunkCount,
-            speechEvidence: speechEvidence
+            speechEvidence: speechEvidence,
+            protectionMode: protectionMode
         )
         guard firstCheck.result.isSuspicious else {
             return try protectedResult(
@@ -381,22 +394,79 @@ public actor ReliableSpeechTranscriber {
             )
         }
 
-        let retry = try await base.transcribe(
-            fileURL: fileURL,
-            prompt: "",
-            temporaryDirectory: temporaryDirectory
-        )
+        let retry: TranscriptionResult
+        if firstCheck.result.reasons.contains(.missingSpeechCoverage) {
+            do {
+                retry = try await base.transcribeCoverageRecovery(
+                    fileURL: fileURL,
+                    temporaryDirectory: temporaryDirectory
+                )
+            } catch {
+                throw integrityFailure(
+                    firstCheck,
+                    timing: first.timing,
+                    recoveryCandidate: recoverableCoverageCandidate([
+                        (first, firstCheck),
+                    ])
+                )
+            }
+        } else {
+            retry = try await base.transcribe(
+                fileURL: fileURL,
+                prompt: "",
+                temporaryDirectory: temporaryDirectory
+            )
+        }
         let retryCheck = check(
             retry,
             prompt: "",
             audioDurationSeconds: audioDurationSeconds,
             expectedChunkCount: expectedChunkCount,
-            speechEvidence: speechEvidence
+            speechEvidence: speechEvidence,
+            protectionMode: protectionMode
         )
         guard !retryCheck.result.isSuspicious else {
+            var checkedCandidates = [
+                (first, firstCheck),
+                (retry, retryCheck),
+            ]
+            if retryCheck.result.reasons.contains(.missingSpeechCoverage),
+               let localFallback {
+                do {
+                    let local = try await localFallback.transcribe(
+                        fileURL: fileURL,
+                        prompt: "",
+                        temporaryDirectory: temporaryDirectory
+                    )
+                    let localCheck = check(
+                        local,
+                        prompt: "",
+                        audioDurationSeconds: audioDurationSeconds,
+                        expectedChunkCount: expectedChunkCount,
+                        speechEvidence: speechEvidence,
+                        protectionMode: protectionMode
+                    )
+                    guard localCheck.result.isSuspicious else {
+                        return try protectedResult(
+                            local,
+                            wasRetried: true,
+                            speechEvidence: speechEvidence,
+                            protectionMode: protectionMode,
+                            integrityCheck: localCheck
+                        )
+                    }
+                    checkedCandidates.append((local, localCheck))
+                } catch {
+                    // The original and provider recovery candidates remain
+                    // available even when an optional local engine fails.
+                }
+            }
             throw integrityFailure(
                 retryCheck,
-                timing: combinedTiming(first.timing, retry.timing)
+                timing: combinedTiming(first.timing, retry.timing),
+                recoveryCandidate: recoverableCoverageCandidate(
+                    checkedCandidates
+                )
             )
         }
         return try protectedResult(
@@ -478,7 +548,8 @@ public actor ReliableSpeechTranscriber {
         prompt: String,
         audioDurationSeconds: Double,
         expectedChunkCount: Int,
-        speechEvidence: SpeechEvidenceResult?
+        speechEvidence: SpeechEvidenceResult?,
+        protectionMode: SpeechProtectionMode
     ) -> IntegrityCheck {
         let providerCoverageEnd = providerLexicalCoverageEnd(result)
         let trailingSpeechEvidence: SpeechIntervalEvidence?
@@ -496,11 +567,14 @@ public actor ReliableSpeechTranscriber {
         } else {
             trailingSpeechEvidence = nil
         }
+        let evaluatesProviderSpeechCoverage = protectionMode == .enhanced
         let hasSustainedSpeechAfterProviderCoverage =
-            trailingSpeechEvidence?.hasSustainedSpeech == true
+            evaluatesProviderSpeechCoverage
+            && trailingSpeechEvidence?.hasSustainedSpeech == true
             && (trailingSpeechEvidence?.speechLikeFraction ?? 0) >= 0.05
         let hasSustainedSpeechBetweenProviderWords =
-            containsSustainedSpeechBetweenProviderWords(
+            evaluatesProviderSpeechCoverage
+            && containsSustainedSpeechBetweenProviderWords(
                 result,
                 audioDurationSeconds: audioDurationSeconds,
                 speechEvidence: speechEvidence
@@ -599,7 +673,8 @@ public actor ReliableSpeechTranscriber {
 
     private func integrityFailure(
         _ check: IntegrityCheck,
-        timing: TranscriptionTiming?
+        timing: TranscriptionTiming?,
+        recoveryCandidate: TranscriptionResult? = nil
     ) -> TranscriptionIntegrityFailure {
         TranscriptionIntegrityFailure(
             reasons: check.result.reasons,
@@ -610,8 +685,31 @@ public actor ReliableSpeechTranscriber {
             trailingSpeechLikeFrameCount:
                 check.trailingSpeechEvidence?.speechLikeFrameCount,
             trailingSpeechLikeFraction:
-                check.trailingSpeechEvidence?.speechLikeFraction
+                check.trailingSpeechEvidence?.speechLikeFraction,
+            recoveryCandidate: recoveryCandidate
         )
+    }
+
+    private func recoverableCoverageCandidate(
+        _ candidates: [(TranscriptionResult, IntegrityCheck)]
+    ) -> TranscriptionResult? {
+        candidates
+            .filter { transcription, check in
+                !transcription.text
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .isEmpty
+                    && !check.result.reasons.isEmpty
+                    && check.result.reasons.allSatisfy {
+                        $0 == .missingSpeechCoverage
+                    }
+            }
+            .map(\.0)
+            .max { lhs, rhs in
+                let lhsWords = lhs.text.split(whereSeparator: \.isWhitespace).count
+                let rhsWords = rhs.text.split(whereSeparator: \.isWhitespace).count
+                if lhsWords != rhsWords { return lhsWords < rhsWords }
+                return lhs.text.count < rhs.text.count
+            }
     }
 
     private func combinedTiming(

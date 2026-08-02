@@ -308,6 +308,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var lastAudioData: Data?
     private var lastAudioURL: URL?
     private var lastAudioDuration: TimeInterval = 0
+    private var lastCoverageRecoveryRecordID: UUID?
     private var lastMemoCreatedAt = Date()
     private var lastMemoActivityTitle: String?
     private var lastRetryDestination: CaptureDestination?
@@ -1649,6 +1650,9 @@ final class VoiceBridgeModel: ObservableObject {
 
     func deleteSelectedTranscript() {
         guard let id = selectedTranscript?.id else { return }
+        if lastCoverageRecoveryRecordID == id {
+            lastCoverageRecoveryRecordID = nil
+        }
         Task { [weak self] in
             guard let self else { return }
             try? await transcriptHistoryStore?.delete(id: id)
@@ -1657,6 +1661,7 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func clearRecentTranscriptHistory() {
+        lastCoverageRecoveryRecordID = nil
         Task { [weak self] in
             guard let self else { return }
             try? await transcriptHistoryStore?.clear()
@@ -1724,6 +1729,7 @@ final class VoiceBridgeModel: ObservableObject {
                         activity: activity,
                         startedAt: startedAt,
                         generation: generation,
+                        isRetry: true,
                         speechEvidence: speechEvidence,
                         diagnosticSeed: diagnosticSeed
                     )
@@ -1731,6 +1737,7 @@ final class VoiceBridgeModel: ObservableObject {
                     await processGeneral(
                         recording: recording,
                         rememberAudio: false,
+                        isRetry: true,
                         speechEvidence: speechEvidence,
                         diagnosticSeed: diagnosticSeed
                     )
@@ -1830,6 +1837,11 @@ final class VoiceBridgeModel: ObservableObject {
         _ records: [LocalTranscriptRecord]
     ) {
         transcriptHistory = records
+        if lastCoverageRecoveryRecordID == nil {
+            lastCoverageRecoveryRecordID = records.first(where: {
+                $0.recoveryStatus == .coverageUncertain
+            })?.id
+        }
         selectedTranscriptIndex = min(
             selectedTranscriptIndex,
             max(0, transcriptHistory.count - 1)
@@ -1868,28 +1880,62 @@ final class VoiceBridgeModel: ObservableObject {
         }
     }
 
+    @discardableResult
     private func rememberTranscriptHistory(
         transcript: String,
         editorText: String,
         durationSeconds: Double,
         activityTitle: String?,
         captureID: String? = nil,
-        recordingURL: URL? = nil
-    ) async {
-        guard let transcriptHistoryStore else { return }
+        recoveryStatus: LocalTranscriptRecoveryStatus? = nil,
+        recordingURL: URL? = nil,
+        recordID: UUID = UUID()
+    ) async -> UUID? {
+        guard let transcriptHistoryStore else { return nil }
         let record = LocalTranscriptRecord(
+            id: recordID,
             transcript: transcript,
             editorText: editorText,
             durationSeconds: durationSeconds,
             activityTitle: activityTitle,
-            captureID: captureID
+            captureID: captureID,
+            recoveryStatus: recoveryStatus
         )
-        _ = try? await transcriptHistoryStore.append(
+        let archived = try? await transcriptHistoryStore.append(
             record,
             recordingURL: recordingURL
         )
         await refreshTranscriptHistory()
         selectedTranscriptIndex = 0
+        return archived?.id
+    }
+
+    private func preserveCoverageRecoveryCandidate(
+        from error: Error,
+        recording: RecordedCapture,
+        activityTitle: String?
+    ) async {
+        guard let failure = error as? TranscriptionIntegrityFailure,
+              failure.reasons.contains(.missingSpeechCoverage),
+              let candidate = failure.recoveryCandidate else {
+            return
+        }
+        let transcript = candidate.text.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard !transcript.isEmpty else { return }
+        let recordID = lastCoverageRecoveryRecordID ?? UUID()
+        lastCoverageRecoveryRecordID = await rememberTranscriptHistory(
+            transcript: transcript,
+            editorText: transcript,
+            durationSeconds: recording.duration,
+            activityTitle: activityTitle,
+            recoveryStatus: .coverageUncertain,
+            recordingURL: recording.url,
+            recordID: recordID
+        )
+        lastTranscript = transcript
+        lastInsertionText = transcript
     }
 
     private func scheduleTranscriptHistoryExpiry() {
@@ -3234,6 +3280,7 @@ final class VoiceBridgeModel: ObservableObject {
     private func processGeneral(
         recording: RecordedCapture,
         rememberAudio: Bool = true,
+        isRetry: Bool = false,
         speechEvidence: SpeechEvidenceResult? = nil,
         diagnosticSeed: CaptureDiagnosticSeed? = nil
     ) async {
@@ -3271,13 +3318,26 @@ final class VoiceBridgeModel: ObservableObject {
                 editorText: transcript,
                 showDeliveryStep: false
             )
-            await rememberTranscriptHistory(
-                transcript: transcript,
-                editorText: transcript,
-                durationSeconds: recording.duration,
-                activityTitle: nil,
-                recordingURL: recording.url
-            )
+            if isRetry,
+               let recordID = lastCoverageRecoveryRecordID,
+               let transcriptHistoryStore {
+                _ = try? await transcriptHistoryStore.replaceTranscript(
+                    id: recordID,
+                    transcript: transcript,
+                    editorText: transcript
+                )
+                await refreshTranscriptHistory()
+                selectedTranscriptIndex = 0
+            } else {
+                await rememberTranscriptHistory(
+                    transcript: transcript,
+                    editorText: transcript,
+                    durationSeconds: recording.duration,
+                    activityTitle: nil,
+                    recordingURL: recording.url
+                )
+            }
+            lastCoverageRecoveryRecordID = nil
             try? recoverableRecordingStore?.clear()
             canRetryLastTranscription = false
             endProcessing()
@@ -3319,6 +3379,11 @@ final class VoiceBridgeModel: ObservableObject {
                 )
             }
         } catch {
+            await preserveCoverageRecoveryCandidate(
+                from: error,
+                recording: recording,
+                activityTitle: nil
+            )
             await reportTranscriptionFailure(
                 error,
                 diagnosticSeed: diagnosticSeed
@@ -3331,6 +3396,7 @@ final class VoiceBridgeModel: ObservableObject {
         activity: FocusedVoiceActivity,
         startedAt: Date,
         generation: UUID,
+        isRetry: Bool = false,
         speechEvidence: SpeechEvidenceResult? = nil,
         diagnosticSeed: CaptureDiagnosticSeed? = nil
     ) async {
@@ -3357,19 +3423,12 @@ final class VoiceBridgeModel: ObservableObject {
                 protectionMode: diagnosticSeed?.protectionMode
                     ?? speechProtectionMode,
                 transcriptReady: { capture in
-                    await self.rememberTranscriptHistory(
-                        transcript: capture.transcript,
-                        editorText: capture.editorText,
-                        durationSeconds: recording.duration,
+                    await self.handleLinkedTranscriptReady(
+                        capture,
+                        recordingDuration: recording.duration,
                         activityTitle: activity.title,
-                        captureID: capture.captureID
+                        isRetry: isRetry
                     )
-                    _ = await self.insertTranscript(
-                        capture.transcript,
-                        editorText: capture.editorText,
-                        showDeliveryStep: true
-                    )
-                    await self.finishForegroundInsertion()
                 },
                 progress: { update in
                     await self.applyDeliveryUpdate(update, generation: generation)
@@ -3417,12 +3476,52 @@ final class VoiceBridgeModel: ObservableObject {
                 )
             }
         } catch {
+            await preserveCoverageRecoveryCandidate(
+                from: error,
+                recording: recording,
+                activityTitle: activity.title
+            )
             guard generation == captureGeneration else { return }
             await reportTranscriptionFailure(
                 error,
                 diagnosticSeed: diagnosticSeed
             )
         }
+    }
+
+    private func handleLinkedTranscriptReady(
+        _ capture: VoiceCaptureEnvelope,
+        recordingDuration: Double,
+        activityTitle: String,
+        isRetry: Bool
+    ) async {
+        if isRetry,
+           let recordID = lastCoverageRecoveryRecordID,
+           let transcriptHistoryStore {
+            _ = try? await transcriptHistoryStore.replaceTranscript(
+                id: recordID,
+                transcript: capture.transcript,
+                editorText: capture.editorText,
+                captureID: capture.captureID
+            )
+            await refreshTranscriptHistory()
+            selectedTranscriptIndex = 0
+        } else {
+            await rememberTranscriptHistory(
+                transcript: capture.transcript,
+                editorText: capture.editorText,
+                durationSeconds: recordingDuration,
+                activityTitle: activityTitle,
+                captureID: capture.captureID
+            )
+        }
+        lastCoverageRecoveryRecordID = nil
+        _ = await insertTranscript(
+            capture.transcript,
+            editorText: capture.editorText,
+            showDeliveryStep: true
+        )
+        await finishForegroundInsertion()
     }
 
     private func updateRetryCount() async {
@@ -3769,6 +3868,7 @@ final class VoiceBridgeModel: ObservableObject {
         lastAudioURL = recording.url
         hasLastAudio = lastAudioData != nil
         lastAudioDuration = recording.duration
+        lastCoverageRecoveryRecordID = nil
         playbackDuration = recording.duration
         lastMemoCreatedAt = Date()
         lastMemoActivityTitle = activityTitle
@@ -3855,6 +3955,7 @@ final class VoiceBridgeModel: ObservableObject {
         lastAudioURL = nil
         hasLastAudio = false
         lastAudioDuration = 0
+        lastCoverageRecoveryRecordID = nil
         lastMemoActivityTitle = nil
         lastRetryDestination = nil
         lastTranscript = ""
@@ -4821,12 +4922,30 @@ private struct VoiceBridgeMenu: View {
             }
             ZStack(alignment: .bottomTrailing) {
                 if let selectedTranscript = model.selectedTranscript {
-                    ScrollView {
-                        Text(selectedTranscript.transcript)
-                            .font(.caption)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
-                            .padding(.trailing, 4)
+                    VStack(alignment: .leading, spacing: 4) {
+                        if selectedTranscript.recoveryStatus
+                            == .coverageUncertain {
+                            Label(
+                                "Coverage uncertain · review before inserting",
+                                systemImage: "exclamationmark.triangle"
+                            )
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color.orange)
+                            .lineLimit(1)
+                            .accessibilityLabel(
+                                "Recovered transcript. Coverage is uncertain. Review before inserting."
+                            )
+                        }
+                        ScrollView {
+                            Text(selectedTranscript.transcript)
+                                .font(.caption)
+                                .textSelection(.enabled)
+                                .frame(
+                                    maxWidth: .infinity,
+                                    alignment: .topLeading
+                                )
+                                .padding(.trailing, 4)
+                        }
                     }
                 } else {
                     Text("The recording is safe in memory. Retry transcription when ready.")
