@@ -202,7 +202,7 @@ import Testing
     )
     #expect(
         FloatingWidgetRecoveryPolicy.timing(for: .useRecoveryTranscript)
-            == .afterPopoverDismissal
+            == .afterPopoverDismissalDelay
     )
     #expect(FloatingWidgetRecoveryPolicy.dismissalSettleMilliseconds >= 240)
     #expect(

@@ -23,6 +23,7 @@ public enum FloatingWidgetContentAlignment: Equatable, Sendable {
 public enum FloatingWidgetRecoveryActionTiming: Equatable, Sendable {
     case immediate
     case afterPopoverDismissal
+    case afterPopoverDismissalDelay
 }
 
 public enum FloatingWidgetRecoveryCompletionTrigger: Equatable, Sendable {
@@ -39,8 +40,10 @@ public enum FloatingWidgetRecoveryPolicy {
         for action: VoiceFailureAction
     ) -> FloatingWidgetRecoveryActionTiming {
         switch action {
-        case .playRecording, .recordAgain, .useRecoveryTranscript:
+        case .playRecording, .recordAgain:
             return .afterPopoverDismissal
+        case .useRecoveryTranscript:
+            return .afterPopoverDismissalDelay
         default:
             return .immediate
         }

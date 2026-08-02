@@ -452,9 +452,9 @@ final class VoiceBridgeModel: ObservableObject {
         )
     }
     var failureRecoveryTranscriptCanBeUsed: Bool {
-        guard let lastCoverageRecoveryRecordID,
+        guard let recordID = failureNotice?.recoveryTranscriptRecordID,
               let record = transcriptHistory.first(where: {
-                  $0.id == lastCoverageRecoveryRecordID
+                  $0.id == recordID
               }) else {
             return false
         }
@@ -1467,7 +1467,9 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func useFailureRecoveryTranscriptFromFloatingWidget() {
-        guard let recordID = lastCoverageRecoveryRecordID else { return }
+        guard let recordID = failureNotice?.recoveryTranscriptRecordID else {
+            return
+        }
         promoteRecoveryTranscript(
             recordID: recordID,
             targetPID: manualInsertionTargetPID(surface: .floatingWidget)
@@ -2782,6 +2784,20 @@ final class VoiceBridgeModel: ObservableObject {
         switch FloatingWidgetRecoveryPolicy.timing(for: action) {
         case .immediate:
             performFailureAction(action)
+        case .afterPopoverDismissalDelay:
+            pendingFailurePopoverActionTask = Task { [weak self] in
+                try? await Task.sleep(
+                    for: .milliseconds(
+                        FloatingWidgetRecoveryPolicy.dismissalSettleMilliseconds
+                    )
+                )
+                guard !Task.isCancelled else { return }
+                self?.completeFailurePopoverActionAfterClose(
+                    action,
+                    trigger: .fallbackTimer
+                )
+            }
+            failureDetailsPresented = false
         case .afterPopoverDismissal:
             pendingFailurePopoverCloseObserver = NotificationCenter.default
                 .addObserver(
@@ -2844,14 +2860,16 @@ final class VoiceBridgeModel: ObservableObject {
         title: String,
         message: String,
         detail: String,
-        actions: [VoiceFailureAction]
+        actions: [VoiceFailureAction],
+        recoveryTranscriptRecordID: UUID? = nil
     ) {
         let notice = VoiceFailureNotice(
             kind: kind,
             title: title,
             message: message,
             detail: detail,
-            actions: actions
+            actions: actions,
+            recoveryTranscriptRecordID: recoveryTranscriptRecordID
         )
         failureNotice = notice
         phase = .failed(title)
@@ -2867,7 +2885,8 @@ final class VoiceBridgeModel: ObservableObject {
     private func reportFailure(
         _ error: Error,
         stage: FailureStage,
-        hasRecoverableAudio: Bool = false
+        hasRecoverableAudio: Bool = false,
+        recoveryTranscriptRecordID: UUID? = nil
     ) {
         let detail = String(
             error.localizedDescription
@@ -2905,7 +2924,8 @@ final class VoiceBridgeModel: ObservableObject {
                 detail: detail,
                 actions: hasRecoverableAudio
                     ? [.retryTranscription, .playRecording, .saveRecording]
-                    : [.recordAgain]
+                    : [.recordAgain],
+                recoveryTranscriptRecordID: recoveryTranscriptRecordID
             )
         case .insertion:
             reportFailure(
@@ -2988,6 +3008,10 @@ final class VoiceBridgeModel: ObservableObject {
         _ error: Error,
         diagnosticSeed: CaptureDiagnosticSeed?
     ) async {
+        let integrityFailure = error as? TranscriptionIntegrityFailure
+        let recoveryTranscriptRecordID = integrityFailure?.reasons.contains(
+            .missingSpeechCoverage
+        ) == true ? lastCoverageRecoveryRecordID : nil
         canRetryLastTranscription = false
         endProcessing()
         if TranscriptionFailurePolicy.disposition(for: error)
@@ -3005,11 +3029,11 @@ final class VoiceBridgeModel: ObservableObject {
             reportFailure(
                 error,
                 stage: .transcription,
-                hasRecoverableAudio: hasLastAudio
+                hasRecoverableAudio: hasLastAudio,
+                recoveryTranscriptRecordID: recoveryTranscriptRecordID
             )
         }
         if let diagnosticSeed {
-            let integrityFailure = error as? TranscriptionIntegrityFailure
             let integrityReasons: [TranscriptionIntegrityReason]?
             if let integrityFailure {
                 integrityReasons = integrityFailure.reasons
