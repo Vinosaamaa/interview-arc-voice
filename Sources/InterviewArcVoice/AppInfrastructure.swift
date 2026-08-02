@@ -3829,6 +3829,19 @@ private struct FloatingTodayPlannerPanel: View {
                 statusBadge(status)
             }
             plannerIconButton(
+                status == .running ? "pause.fill" : "play.fill",
+                label: status == .running
+                    ? "Pause \(activity.title)"
+                    : "Start \(activity.title)",
+                enabled: model.canTogglePlanningActivityTimer(
+                    id: activity.id,
+                    status: status
+                ),
+                selected: status == .running
+            ) {
+                model.togglePlanningActivityTimer(id: activity.id, status: status)
+            }
+            plannerIconButton(
                 "trash",
                 label: "Remove \(activity.title)",
                 enabled: status == .upcoming
@@ -3890,6 +3903,19 @@ private struct FloatingTodayPlannerPanel: View {
                     .foregroundStyle(Color.purple)
             } else {
                 statusBadge(status)
+            }
+            plannerIconButton(
+                status == .running ? "pause.fill" : "play.fill",
+                label: status == .running
+                    ? "Pause \(focus.title)"
+                    : "Start \(focus.title)",
+                enabled: model.canTogglePlanningActivityTimer(
+                    id: focus.id,
+                    status: status
+                ),
+                selected: status == .running
+            ) {
+                model.togglePlanningActivityTimer(id: focus.id, status: status)
             }
             plannerIconButton(
                 "trash",

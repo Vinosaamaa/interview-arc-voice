@@ -203,6 +203,15 @@ TranscriptHistory/transcript-history.json
 - Normal use of the first post-release General and linked recordings provides
   final user-facing acceptance of the new Play and Save controls. A recurrence
   should reopen #107 with the affected transcript and release evidence.
+- The later #64/#93 durability repair keeps accepted linked audio locally until
+  the server acknowledges D1 status `available`, which is written only after
+  the private R2 put succeeds. Local cleanup therefore cannot win the upload
+  boundary merely because transcript delivery completed.
+- If the local source is irrecoverably missing or unreadable before that
+  acknowledgement, Voice reports `audio_lost` with a privacy-safe reason. The
+  server rejects that report when the clip is already `available`; otherwise
+  Finish blocks until the user acknowledges the loss and publication renders
+  **Recording unavailable** without a player or fabricated coaching evidence.
 
 ## Technical glossary
 

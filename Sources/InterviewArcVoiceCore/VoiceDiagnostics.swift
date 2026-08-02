@@ -32,6 +32,11 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
     public let trailingSpeechLikeFrameCount: Int?
     public let trailingSpeechLikeFraction: Double?
     public let integrityReasons: [TranscriptionIntegrityReason]?
+    public let transcriptionEngine: String?
+    public let transcriptionModel: String?
+    public let localInferenceSeconds: Double?
+    public let localFallbackAttempted: Bool?
+    public let localValidationReasons: [TranscriptionIntegrityReason]?
     public let outcome: VoiceDiagnosticOutcome
 
     public init(
@@ -60,6 +65,11 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         trailingSpeechLikeFrameCount: Int? = nil,
         trailingSpeechLikeFraction: Double? = nil,
         integrityReasons: [TranscriptionIntegrityReason]? = nil,
+        transcriptionEngine: String? = nil,
+        transcriptionModel: String? = nil,
+        localInferenceSeconds: Double? = nil,
+        localFallbackAttempted: Bool? = nil,
+        localValidationReasons: [TranscriptionIntegrityReason]? = nil,
         outcome: VoiceDiagnosticOutcome
     ) {
         self.id = id
@@ -87,6 +97,11 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         self.trailingSpeechLikeFrameCount = trailingSpeechLikeFrameCount
         self.trailingSpeechLikeFraction = trailingSpeechLikeFraction
         self.integrityReasons = integrityReasons
+        self.transcriptionEngine = transcriptionEngine
+        self.transcriptionModel = transcriptionModel
+        self.localInferenceSeconds = localInferenceSeconds
+        self.localFallbackAttempted = localFallbackAttempted
+        self.localValidationReasons = localValidationReasons
         self.outcome = outcome
     }
 
@@ -116,6 +131,11 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
             "Trailing speech-like frames: \(trailingSpeechLikeFrameCount.map { String($0) } ?? "Unavailable")",
             "Trailing speech-like fraction: \(fraction(trailingSpeechLikeFraction))",
             "Transcription integrity reasons: \(integrityReasons?.map(\.rawValue).joined(separator: ", ") ?? "None")",
+            "Transcription engine: \(transcriptionEngine ?? "Unavailable")",
+            "Transcription model: \(transcriptionModel ?? "Unavailable")",
+            "Local inference: \(milliseconds(localInferenceSeconds ?? 0))",
+            "Local fallback attempted: \(localFallbackAttempted.map { String($0) } ?? "Unavailable")",
+            "Local validation reasons: \(localValidationReasons?.map(\.rawValue).joined(separator: ", ") ?? "None")",
             "Outcome: \(outcome.rawValue)",
         ].joined(separator: "\n")
     }

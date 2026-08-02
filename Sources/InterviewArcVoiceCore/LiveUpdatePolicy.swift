@@ -58,7 +58,8 @@ public struct VoicePendingReconciliationPolicy: Sendable {
                 return true
             case .acceptedDelivering:
                 return true
-            case .excludedGracePeriod, .quarantinedConflict, .complete:
+            case .excludedGracePeriod, .audioLostNeedsAcknowledgement,
+                 .audioLostAcknowledged, .quarantinedConflict, .complete:
                 return false
             }
         }
@@ -87,9 +88,64 @@ public struct VoiceCaptureRetryPolicy: Sendable {
     }
 
     public func isExpired(_ capture: PendingVoiceCapture, now: Date = Date()) -> Bool {
-        guard [.insertedRegistrationPending, .waitingForSpecialist, .needsDecision, .excludedGracePeriod]
+        guard [.insertedRegistrationPending, .waitingForSpecialist, .excludedGracePeriod]
             .contains(capture.localState ?? .insertedRegistrationPending) else { return false }
         return now.timeIntervalSince(capture.createdAt) >= 86_400
+    }
+}
+
+public enum VoiceCaptureExpiryAction: Equatable, Sendable {
+    case none
+    case expirePendingOnServer
+    case deleteExcludedOnServer
+    case removeTerminalLocalEvidence
+}
+
+public struct VoiceCaptureLifecyclePolicy: Sendable {
+    public init() {}
+
+    public func expiryAction(
+        capture: PendingVoiceCapture,
+        serverStatus: String,
+        now: Date = Date()
+    ) -> VoiceCaptureExpiryAction {
+        guard VoiceCaptureRetryPolicy().isExpired(capture, now: now) else {
+            return .none
+        }
+        switch serverStatus {
+        case "pending":
+            return .expirePendingOnServer
+        case "unrelated", "deleting":
+            return .deleteExcludedOnServer
+        case "deleted", "discarded_unclassified", "expired_unclassified":
+            return .removeTerminalLocalEvidence
+        default:
+            return .none
+        }
+    }
+
+    public func belongsToCurrentWorkbench(
+        _ capture: PendingVoiceCapture,
+        workbenchID: String?,
+        currentActivityIDs: Set<String>
+    ) -> Bool {
+        guard let workbenchID else { return false }
+        if let captureWorkbenchID = capture.workbenchID {
+            return captureWorkbenchID == workbenchID
+        }
+        return currentActivityIDs.contains(capture.activity.activityId)
+    }
+
+    public func canRemoveSettledMetadata(
+        _ capture: PendingVoiceCapture,
+        currentWorkbenchID: String?
+    ) -> Bool {
+        guard let captureWorkbenchID = capture.workbenchID,
+              captureWorkbenchID != currentWorkbenchID else {
+            return false
+        }
+        return capture.localState == .complete
+            || capture.localState == .audioLostAcknowledged
     }
 }
 

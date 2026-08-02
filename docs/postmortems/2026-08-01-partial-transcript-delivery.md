@@ -352,10 +352,44 @@ It is therefore not final verification for issue #123.
   and the floating widget was responsive with the expected general-dictation,
   memo-action, planner, and recording controls.
 
-The packaged app does not currently bundle a local transcription model. The
-fallback boundary is intentionally optional; if provider recovery remains
-uncertain, the app preserves the best eligible text and original audio locally
-instead of inventing confidence or silently discarding the user's recording.
+## Native local-fallback follow-up
+
+Issue [#151](https://github.com/Vinosaamaa/interview-arc-voice/issues/151)
+closes the remaining packaged-app gap without changing the healthy path:
+
+- Settings can explicitly install, inspect, or delete the supported `base.en`
+  WhisperKit model; Voice never downloads it automatically.
+- A permission-0600, SHA-256 file manifest in private app-owned storage detects
+  missing, changed, symlinked, or incompatible model files across relaunch.
+- General and initial linked transcription pipelines receive the production
+  local fallback, but invoke it only after the normal whole-file Groq request
+  and bounded overlapping Groq recovery both remain coverage-uncertain.
+- Local output passes the same integrity and silence-protection policy. A still
+  uncertain result preserves the original M4A and best candidate rather than
+  inventing success.
+- Diagnostics record engine, model, inference duration, local attempt, and
+  privacy-safe result codes without transcript or audio content.
+- Cancellation is checked before model loading and after inference; a missing
+  or corrupt model leaves the existing recovery candidate actionable.
+
+The local model remains an optional recovery capability, not a replacement for
+Groq and not a dependency on a developer Python environment. Final closure of
+#151 requires the exact merged-main signed artifact, staged and installed, plus
+the repository-owned synthetic coverage fixture. Until then this section is an
+implemented-local, release-verification-pending follow-up.
+
+## Explicit uncertain-candidate promotion
+
+Issue [#150](https://github.com/Vinosaamaa/interview-arc-voice/issues/150)
+adds the deliberate recovery action that automatic protection intentionally
+omitted. **Use this transcript** always asks for confirmation and uses the exact
+visible recovered text plus the retained original M4A. General Dictation stays
+local. A linked candidate atomically persists one stable capture/turn/clip
+identity from the activity context frozen when recording began, inserts the
+ordinary Voice v2 envelope, and then waits for the specialist's normal
+related/unrelated/uncertain decision. Repeated confirmation, relaunch, Insert
+Again, and registration retry reuse that identity; confirmation never uploads
+to D1/R2 or marks the capture related by itself.
 
 ## Lessons
 

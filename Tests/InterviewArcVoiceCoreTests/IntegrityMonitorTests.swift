@@ -396,7 +396,10 @@ import Testing
         text: completeText,
         words: [],
         durationSeconds: 80.88,
-        chunkCount: 1
+        chunkCount: 1,
+        engine: "whisperkit",
+        model: "base.en",
+        localInferenceSeconds: 1.25
     )
     let provider = CountingTranscriber(results: [partial, partial])
     let local = CountingTranscriber(results: [localResult])
@@ -416,6 +419,9 @@ import Testing
 
     #expect(result.transcription.text == completeText)
     #expect(result.wasRetried)
+    #expect(result.engine == "whisperkit")
+    #expect(result.model == "base.en")
+    #expect(result.localInferenceSeconds == 1.25)
     #expect(await provider.callCount == 2)
     #expect(await provider.coverageRecoveryCallCount == 1)
     #expect(await local.callCount == 1)
@@ -465,6 +471,40 @@ import Testing
     let callCount = await transcriber.callCount
     #expect(callCount == 2)
     #expect(await transcriber.coverageRecoveryCallCount == 1)
+}
+
+@Test func uncertainLocalFallbackRemainsPreservedAndDiagnosable() async {
+    let partial = malformedFullLengthSegmentPartial()
+    let provider = CountingTranscriber(results: [partial, partial])
+    let local = CountingTranscriber(
+        results: [partial],
+        engine: "whisperkit",
+        model: "base.en"
+    )
+    let reliable = ReliableSpeechTranscriber(
+        base: provider,
+        localFallback: local
+    )
+
+    do {
+        _ = try await reliable.transcribe(
+            fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+            prompt: "Context vocabulary",
+            temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+            audioDurationSeconds: 80.88,
+            speechEvidence: sustainedSpeechEvidence(durationSeconds: 80.88),
+            protectionMode: .enhanced
+        )
+        Issue.record("Expected local fallback to remain uncertain")
+    } catch let failure as TranscriptionIntegrityFailure {
+        #expect(failure.localFallbackAttempted)
+        #expect(failure.localFallbackEngine == "whisperkit")
+        #expect(failure.localFallbackModel == "base.en")
+        #expect(failure.localValidationReasons?.contains(.missingSpeechCoverage) == true)
+        #expect(failure.recoveryCandidate != nil)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
 }
 
 @Test func combinedCoverageAndDurationFailureStillPreservesReviewableText() async {
@@ -531,12 +571,20 @@ import Testing
 }
 
 private actor CountingTranscriber: SpeechTranscribing {
+    nonisolated let diagnosticEngine: String
+    nonisolated let diagnosticModel: String?
     private var results: [TranscriptionResult]
     private(set) var prompts: [String] = []
     private(set) var coverageRecoveryCallCount = 0
 
-    init(results: [TranscriptionResult]) {
+    init(
+        results: [TranscriptionResult],
+        engine: String = "fixture",
+        model: String? = nil
+    ) {
         self.results = results
+        diagnosticEngine = engine
+        diagnosticModel = model
     }
 
     var callCount: Int { prompts.count }

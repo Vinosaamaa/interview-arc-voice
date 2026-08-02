@@ -8,11 +8,15 @@ public actor GeneralDictationPipeline {
 
     public init(
         transcriber: any SpeechTranscribing,
+        localFallback: (any SpeechTranscribing)? = nil,
         temporaryDirectory: URL,
         vocabularyPrompt: String = "",
         fileManager: FileManager = .default
     ) {
-        reliableTranscriber = ReliableSpeechTranscriber(base: transcriber)
+        reliableTranscriber = ReliableSpeechTranscriber(
+            base: transcriber,
+            localFallback: localFallback
+        )
         self.temporaryDirectory = temporaryDirectory
         self.vocabularyPrompt = vocabularyPrompt
         self.fileManager = fileManager

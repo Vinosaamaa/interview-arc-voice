@@ -11,6 +11,7 @@ public struct RecordingStore: Sendable {
     public let diagnosticsDirectory: URL
     public let transcriptHistoryDirectory: URL
     public let recoveryDirectory: URL
+    public let localModelsDirectory: URL
 
     public init(fileManager: FileManager = .default) throws {
         let support = try fileManager.url(
@@ -58,6 +59,10 @@ public struct RecordingStore: Sendable {
             path: "Recovery",
             directoryHint: .isDirectory
         )
+        localModelsDirectory = root.appending(
+            path: "Models/WhisperKit",
+            directoryHint: .isDirectory
+        )
         for directory in [
             recordingsDirectory,
             legacyRecordingsDirectory,
@@ -68,6 +73,7 @@ public struct RecordingStore: Sendable {
             diagnosticsDirectory,
             transcriptHistoryDirectory,
             recoveryDirectory,
+            localModelsDirectory,
         ] {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
             try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)

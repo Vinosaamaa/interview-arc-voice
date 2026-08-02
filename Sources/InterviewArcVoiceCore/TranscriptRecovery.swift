@@ -106,6 +106,34 @@ public enum LocalTranscriptRecoveryStatus:
     case coverageUncertain
 }
 
+public struct LinkedTranscriptRecoveryContext: Codable, Equatable, Sendable {
+    public let captureID: String
+    public let turnID: String
+    public let clipID: String
+    public let checksum: String
+    public let activity: FocusedVoiceActivity
+    public let transcription: TranscriptionResult
+    public let occurredAt: Date
+
+    public init(
+        captureID: String,
+        turnID: String,
+        clipID: String,
+        checksum: String,
+        activity: FocusedVoiceActivity,
+        transcription: TranscriptionResult,
+        occurredAt: Date
+    ) {
+        self.captureID = captureID
+        self.turnID = turnID
+        self.clipID = clipID
+        self.checksum = checksum
+        self.activity = activity
+        self.transcription = transcription
+        self.occurredAt = occurredAt
+    }
+}
+
 public struct LocalTranscriptRecord: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public let createdAt: Date
@@ -115,7 +143,13 @@ public struct LocalTranscriptRecord: Codable, Equatable, Identifiable, Sendable 
     public let activityTitle: String?
     public let captureID: String?
     public let recoveryStatus: LocalTranscriptRecoveryStatus?
+    public let linkedRecoveryContext: LinkedTranscriptRecoveryContext?
+    public var lifecycleProtected: Bool?
     public var audioReference: LocalTranscriptAudioReference?
+
+    public var isLifecycleProtected: Bool {
+        lifecycleProtected == true
+    }
 
     public init(
         id: UUID = UUID(),
@@ -126,6 +160,8 @@ public struct LocalTranscriptRecord: Codable, Equatable, Identifiable, Sendable 
         activityTitle: String? = nil,
         captureID: String? = nil,
         recoveryStatus: LocalTranscriptRecoveryStatus? = nil,
+        linkedRecoveryContext: LinkedTranscriptRecoveryContext? = nil,
+        lifecycleProtected: Bool? = nil,
         audioReference: LocalTranscriptAudioReference? = nil
     ) {
         self.id = id
@@ -136,6 +172,8 @@ public struct LocalTranscriptRecord: Codable, Equatable, Identifiable, Sendable 
         self.activityTitle = activityTitle
         self.captureID = captureID
         self.recoveryStatus = recoveryStatus
+        self.linkedRecoveryContext = linkedRecoveryContext
+        self.lifecycleProtected = lifecycleProtected
         self.audioReference = audioReference
     }
 
@@ -201,12 +239,20 @@ public actor LocalTranscriptHistoryStore {
                 || ($0.transcript == record.transcript
                     && $0.editorText == record.editorText)
         }
+        let destination = archivedAudioURL(recordID: record.id)
+        let reusesArchivedAudio = recordingURL?.standardizedFileURL
+            == destination.standardizedFileURL
+            && Self.isNonemptyFile(destination, fileManager: fileManager)
         current.removeAll { candidate in replaced.contains { $0.id == candidate.id } }
-        for replacedRecord in replaced {
+        for replacedRecord in replaced where !reusesArchivedAudio {
             try removeAudio(for: replacedRecord)
         }
         var archived = record
-        if let recordingURL {
+        if reusesArchivedAudio {
+            archived.audioReference = LocalTranscriptAudioReference(
+                storageName: destination.lastPathComponent
+            )
+        } else if let recordingURL {
             archived.audioReference = try archive(
                 recordingURL: recordingURL,
                 recordID: record.id
@@ -242,6 +288,7 @@ public actor LocalTranscriptHistoryStore {
         transcript: String,
         editorText: String,
         captureID: String? = nil,
+        lifecycleProtected: Bool? = nil,
         now: Date = Date()
     ) throws -> LocalTranscriptRecord? {
         var current = try readRecords()
@@ -258,6 +305,10 @@ public actor LocalTranscriptHistoryStore {
             activityTitle: previous.activityTitle,
             captureID: captureID ?? previous.captureID,
             recoveryStatus: nil,
+            linkedRecoveryContext: previous.linkedRecoveryContext,
+            lifecycleProtected: lifecycleProtected
+                ?? previous.lifecycleProtected
+                ?? (captureID != nil && previous.audioReference != nil),
             audioReference: previous.audioReference
         )
         current[index] = replacement
@@ -296,6 +347,15 @@ public actor LocalTranscriptHistoryStore {
             return false
         }
         let destination = archivedAudioURL(recordID: current[index].id)
+        if recordingURL.standardizedFileURL == destination.standardizedFileURL,
+           Self.isNonemptyFile(destination, fileManager: fileManager) {
+            current[index].audioReference = LocalTranscriptAudioReference(
+                storageName: destination.lastPathComponent
+            )
+            current[index].lifecycleProtected = false
+            try write(try pruned(current, now: now))
+            return true
+        }
         let sourceExists = Self.isNonemptyFile(
             recordingURL,
             fileManager: fileManager
@@ -321,6 +381,7 @@ public actor LocalTranscriptHistoryStore {
         current[index].audioReference = LocalTranscriptAudioReference(
             storageName: destination.lastPathComponent
         )
+        current[index].lifecycleProtected = false
         try write(try pruned(current, now: now))
         return true
     }
@@ -330,6 +391,7 @@ public actor LocalTranscriptHistoryStore {
         guard let removed = current.first(where: { $0.id == id }) else {
             return
         }
+        guard !removed.isLifecycleProtected else { return }
         current.removeAll { $0.id == id }
         try removeAudio(for: removed)
         try write(current)
@@ -337,14 +399,16 @@ public actor LocalTranscriptHistoryStore {
 
     public func clear() throws {
         let current = try readRecords()
-        for record in current {
+        let retained = current.filter(\.isLifecycleProtected)
+        for record in current where !record.isLifecycleProtected {
             try removeAudio(for: record)
         }
-        try write([])
+        try write(retained)
     }
 
     public func nextExpiryDate(now: Date = Date()) throws -> Date? {
         try records(now: now)
+            .filter { !$0.isLifecycleProtected }
             .map { $0.createdAt.addingTimeInterval(retentionDuration) }
             .filter { $0 > now }
             .min()
@@ -379,7 +443,7 @@ public actor LocalTranscriptHistoryStore {
         }
         while total > diskBudgetBytes,
               let oldestAudioIndex = retained.lastIndex(where: {
-                  $0.audioReference != nil
+                  $0.audioReference != nil && !$0.isLifecycleProtected
               }) {
             let evicted = retained.remove(at: oldestAudioIndex)
             total -= audioByteCount(for: evicted)
@@ -392,14 +456,13 @@ public actor LocalTranscriptHistoryStore {
         _ records: [LocalTranscriptRecord],
         now: Date
     ) -> [LocalTranscriptRecord] {
-        var visible = Array(
-            records
-                .sorted { $0.createdAt > $1.createdAt }
-                .filter {
-                    now.timeIntervalSince($0.createdAt) < retentionDuration
-                }
-                .prefix(retentionLimit)
-        )
+        let ordered = records.sorted { $0.createdAt > $1.createdAt }
+        let protected = ordered.filter(\.isLifecycleProtected)
+        let bounded = ordered.filter {
+            !$0.isLifecycleProtected
+                && now.timeIntervalSince($0.createdAt) < retentionDuration
+        }.prefix(retentionLimit)
+        var visible = (protected + bounded).sorted { $0.createdAt > $1.createdAt }
         for index in visible.indices
             where visible[index].audioReference != nil
                 && audioURL(for: visible[index]) == nil {
