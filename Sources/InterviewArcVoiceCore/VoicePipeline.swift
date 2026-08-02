@@ -385,7 +385,7 @@ public actor VoicePipeline {
     private func reconcilePendingCaptures() async -> Int {
         let now = Date()
         let retryPolicy = VoiceCaptureRetryPolicy()
-        guard var captures = try? await pendingCaptureStore.items(),
+        guard let captures = try? await pendingCaptureStore.items(),
               !captures.isEmpty else { return 0 }
         var completed = 0
         guard var intents = try? await api.retainedIntents() else {

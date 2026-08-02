@@ -653,7 +653,7 @@ final class VoiceBridgeModel: ObservableObject {
         status: VoicePlanningCurrentStatus
     ) -> Bool {
         let runningID = timerInstrument?.activities.first(where: {
-            $0.timer.isRunning
+            $0.timer?.isRunning == true
         })?.id
         return VoicePlanningTimerControlPolicy.isEnabled(
             subjectID: id,
