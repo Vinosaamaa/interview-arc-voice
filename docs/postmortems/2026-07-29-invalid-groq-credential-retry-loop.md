@@ -119,7 +119,11 @@ the evidence needed to tell those cases apart.
   diagnostics; never retain the response message, key, transcript, or audio in
   that diagnostic record.
 - Persist a non-secret rejection state, preserve audio, and disable Record and
-  Retry until a different key is saved.
+  automatic retry until a different key is saved.
+- Preserve an explicit user-initiated Retry for the protected recording in the
+  floating recovery popover and its matching Settings diagnostic. Persist the
+  original linked/general destination so a retry after relaunch cannot guess
+  its delivery semantics or create a duplicate linked turn.
 - Keep transient provider failures retryable.
 - Make manual insertion surface-aware: menu insertion prefers the remembered
   external editor; floating insertion prefers the current eligible editor.
@@ -142,7 +146,10 @@ the evidence needed to tell those cases apart.
 - Store tests cover ordering, five-record bounds, 24-hour expiry, and file
   permissions.
 - Recovery-store tests cover relaunch hydration, `0600` metadata permissions,
-  missing/unsafe-path rejection, and bounded newest-audio migration.
+  original-destination restoration, missing/unsafe-path rejection, and bounded
+  newest-audio migration.
+- Settings renders all records retained by the existing 100-record diagnostic
+  store instead of silently presenting only the newest five.
 - The release must repeat recording/transcription and menu insertion with the
   exact installed artifact produced from merged `main`.
 

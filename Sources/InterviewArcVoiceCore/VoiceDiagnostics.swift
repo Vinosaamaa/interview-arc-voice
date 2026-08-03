@@ -230,6 +230,30 @@ public enum DiagnosticTranscriptionRetryPolicy {
     }
 }
 
+public enum DiagnosticHistoryPresentationPolicy {
+    public static func visibleRecords(
+        _ retainedRecords: [VoiceDiagnosticRecord]
+    ) -> [VoiceDiagnosticRecord] {
+        retainedRecords
+    }
+}
+
+public enum DiagnosticRecoverableRecordingRetryPolicy {
+    public static func matches(
+        diagnostic: VoiceDiagnosticRecord,
+        reference: LocalRecoverableRecordingReference
+    ) -> Bool {
+        reference.retryDestination != nil
+            && abs(
+                reference.durationSeconds
+                    - diagnostic.recordingDurationSeconds
+            ) <= 0.75
+            && abs(
+                reference.createdAt.timeIntervalSince(diagnostic.createdAt)
+            ) <= 30
+    }
+}
+
 public actor VoiceDiagnosticsStore {
     public nonisolated let fileURL: URL
 

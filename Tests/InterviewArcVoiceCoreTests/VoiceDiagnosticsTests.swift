@@ -222,6 +222,53 @@ import Testing
     #expect(records.isEmpty)
 }
 
+@Test func settingsPresentsEveryRecordRetainedByTheBoundedStore() {
+    let records = (0..<20).map { offset in
+        VoiceDiagnosticRecord.fixture(
+            id: UUID(),
+            createdAt: Date(timeIntervalSince1970: Double(offset))
+        )
+    }
+
+    #expect(
+        DiagnosticHistoryPresentationPolicy.visibleRecords(records).count
+            == 20
+    )
+}
+
+@Test func failedDiagnosticCanRetryItsMatchingProtectedRecording() {
+    let createdAt = Date(timeIntervalSince1970: 500)
+    let diagnostic = VoiceDiagnosticRecord.fixture(
+        id: UUID(),
+        createdAt: createdAt
+    )
+    let matching = LocalRecoverableRecordingReference(
+        audioURL: URL(fileURLWithPath: "/tmp/matching.m4a"),
+        durationSeconds: 5.2,
+        createdAt: createdAt.addingTimeInterval(1),
+        retryDestination: .general(startedAt: createdAt)
+    )
+    let wrong = LocalRecoverableRecordingReference(
+        audioURL: URL(fileURLWithPath: "/tmp/wrong.m4a"),
+        durationSeconds: 12,
+        createdAt: createdAt,
+        retryDestination: .general(startedAt: createdAt)
+    )
+
+    #expect(
+        DiagnosticRecoverableRecordingRetryPolicy.matches(
+            diagnostic: diagnostic,
+            reference: matching
+        )
+    )
+    #expect(
+        !DiagnosticRecoverableRecordingRetryPolicy.matches(
+            diagnostic: diagnostic,
+            reference: wrong
+        )
+    )
+}
+
 private extension VoiceDiagnosticRecord {
     static let fixture = VoiceDiagnosticRecord(
         id: UUID(),
@@ -239,4 +286,27 @@ private extension VoiceDiagnosticRecord {
         omittedUnsupportedSegmentCount: 0,
         outcome: .delivered
     )
+
+
+    static func fixture(
+        id: UUID,
+        createdAt: Date
+    ) -> VoiceDiagnosticRecord {
+        VoiceDiagnosticRecord(
+            id: id,
+            createdAt: createdAt,
+            recordingDurationSeconds: 5,
+            fileFinalizationSeconds: 0.01,
+            integrityInspectionSeconds: 0.01,
+            localSpeechScanSeconds: 0.01,
+            providerWaitSeconds: 0.5,
+            responseProcessingSeconds: 0.01,
+            segmentValidationSeconds: 0.001,
+            insertionSeconds: 0.01,
+            totalSeconds: 0.55,
+            protectionMode: .basic,
+            omittedUnsupportedSegmentCount: 0,
+            outcome: .delivered
+        )
+    }
 }

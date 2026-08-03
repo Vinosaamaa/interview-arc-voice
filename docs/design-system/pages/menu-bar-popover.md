@@ -66,13 +66,15 @@ empty size-probing placeholder.
 ## Provider authentication and permission failures
 
 - Groq `401` means the saved credential was rejected. Voice preserves the
-  finalized recording, disables Record and Retry for that key, and offers
-  Settings, Play, and Save until a different key is saved.
+  finalized recording, disables Record and automatic retries for that key,
+  and offers one explicit Retry together with Settings, Play, and Save. Each
+  Retry is user initiated and may fail back into the same protected state; it
+  never restores an automatic retry loop.
 - Groq `403` means the request was authenticated but the project or model is
-  not permitted. Voice preserves the finalized recording and offers Settings,
-  Play, and Save, but it does not invalidate or erase the saved key. The copy
-  names project/model permissions rather than instructing the user to rotate a
-  key.
+  not permitted. Voice preserves the finalized recording and offers Retry,
+  Settings, Play, and Save, but it does not invalidate or erase the saved key.
+  The copy names project/model permissions rather than instructing the user to
+  rotate a key.
 - The recoverable recording reference is stored locally with permission
   `0600` and rehydrated before recovery actions appear after relaunch. Play and
   Save are absent when the referenced file is missing, empty, or outside
@@ -83,6 +85,10 @@ empty size-probing placeholder.
 - A `401` failure clears only after a different key is saved. A `403` failure
   clears after a successful transcription or an explicit user recovery.
   Transient provider or network failures keep the ordinary Retry path.
+- Settings Diagnostics presents the complete store-bounded diagnostic history
+  in its existing scrolling window rather than hiding records after the newest
+  five. A matching failed diagnostic may retry the same protected recording;
+  linked/general routing is persisted and reused instead of guessing.
 
 ## Floating timer integration
 

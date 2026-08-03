@@ -23,6 +23,34 @@ import Testing
     )
 }
 
+@Test func providerRejectionOffersOneShotManualRecoveryForPreservedAudio() {
+    let expected: [VoiceFailureAction] = [
+        .retryTranscription,
+        .openSettings,
+        .playRecording,
+        .saveRecording,
+    ]
+
+    #expect(
+        ProviderFailureRecoveryPolicy.actions(
+            for: .replaceCredential,
+            hasRecoverableAudio: true
+        ) == expected
+    )
+    #expect(
+        ProviderFailureRecoveryPolicy.actions(
+            for: .reviewProviderPermission,
+            hasRecoverableAudio: true
+        ) == expected
+    )
+    #expect(
+        ProviderFailureRecoveryPolicy.actions(
+            for: .replaceCredential,
+            hasRecoverableAudio: false
+        ) == [.openSettings]
+    )
+}
+
 @Test func groqHTTP401RequiresCredentialReplacement() {
     let error = GroqProviderFailurePolicy.error(
         statusCode: 401,
@@ -583,7 +611,25 @@ import Testing
         audioURL: audio,
         durationSeconds: 42,
         createdAt: Date(timeIntervalSince1970: 100),
-        activityTitle: "Course Schedule"
+        activityTitle: "Course Schedule",
+        retryDestination: .linked(
+            activity: FocusedVoiceActivity(
+                activityId: "activity-1",
+                workbenchId: "workbench-1",
+                questionId: "question-1",
+                specialty: .coding,
+                interviewArcSpecialty: "coding",
+                title: "Course Schedule",
+                prompt: nil,
+                topics: [],
+                tags: [],
+                companies: [],
+                projects: [],
+                vocabularyPackIds: [],
+                speechTerms: []
+            ),
+            startedAt: Date(timeIntervalSince1970: 90)
+        )
     )
     try store.save(reference)
 
@@ -601,6 +647,24 @@ import Testing
     )
     try store.save(unsafe)
     #expect(try store.load(allowedDirectories: [recordings]) == nil)
+}
+
+@Test func recoverableRecordingReferenceDecodesBeforeRetryDestinationWasStored() throws {
+    let json = """
+    {
+      "audioPath":"/tmp/preserved.m4a",
+      "durationSeconds":42,
+      "createdAt":100,
+      "activityTitle":"Course Schedule"
+    }
+    """
+
+    let reference = try JSONDecoder().decode(
+        LocalRecoverableRecordingReference.self,
+        from: Data(json.utf8)
+    )
+
+    #expect(reference.retryDestination == nil)
 }
 
 @Test func recoverableRecordingMigrationUsesTheNewestNonemptyAudioFile() throws {

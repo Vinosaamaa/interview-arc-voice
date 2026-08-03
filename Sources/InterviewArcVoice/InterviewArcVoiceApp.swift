@@ -366,6 +366,8 @@ final class VoiceBridgeModel: ObservableObject {
     private var lastMemoCreatedAt = Date()
     private var lastMemoActivityTitle: String?
     private var lastRetryDestination: CaptureDestination?
+    private var recoverableRecordingReference:
+        LocalRecoverableRecordingReference?
     private var audioPlayer: AVAudioPlayer?
     private var playbackTranscriptID: UUID?
     private var playbackTimer: Timer?
@@ -2327,12 +2329,29 @@ final class VoiceBridgeModel: ObservableObject {
 
     func canRetryDiagnostic(_ diagnostic: VoiceDiagnosticRecord) -> Bool {
         guard !isBusy, diagnosticRetryInFlightID == nil else { return false }
-        return DiagnosticTranscriptionRetryPolicy.supportsLocalRetry(
+        if DiagnosticTranscriptionRetryPolicy.supportsLocalRetry(
             diagnosticHistoryRecord(for: diagnostic)
+        ) {
+            return true
+        }
+        guard canRetryLastTranscription,
+              let recoverableRecordingReference else {
+            return false
+        }
+        return DiagnosticRecoverableRecordingRetryPolicy.matches(
+            diagnostic: diagnostic,
+            reference: recoverableRecordingReference
         )
     }
 
     func diagnosticRetryHelp(_ diagnostic: VoiceDiagnosticRecord) -> String {
+        if let recoverableRecordingReference,
+           DiagnosticRecoverableRecordingRetryPolicy.matches(
+               diagnostic: diagnostic,
+               reference: recoverableRecordingReference
+           ) {
+            return "Retry this protected recording once using its original linked or general-dictation destination."
+        }
         guard let record = diagnosticHistoryRecord(for: diagnostic) else {
             return "The retained audio for this diagnostic is unavailable."
         }
@@ -2343,8 +2362,21 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func retryDiagnostic(_ diagnostic: VoiceDiagnosticRecord) {
-        guard canRetryDiagnostic(diagnostic),
-              let record = diagnosticHistoryRecord(for: diagnostic) else {
+        guard canRetryDiagnostic(diagnostic) else {
+            return
+        }
+        if let recoverableRecordingReference,
+           DiagnosticRecoverableRecordingRetryPolicy.matches(
+               diagnostic: diagnostic,
+               reference: recoverableRecordingReference
+           ) {
+            diagnosticRetryInFlightID = diagnostic.id
+            diagnosticRetryMessage = "Retrying the protected recording…"
+            retryLastTranscription()
+            diagnosticRetryInFlightID = nil
+            return
+        }
+        guard let record = diagnosticHistoryRecord(for: diagnostic) else {
             return
         }
         diagnosticRetryInFlightID = diagnostic.id
@@ -3073,23 +3105,32 @@ final class VoiceBridgeModel: ObservableObject {
         let providerError = error as? VoiceBridgeError
         canRetryLastTranscription = false
         endProcessing()
-        switch TranscriptionFailurePolicy.disposition(for: error) {
+        let disposition = TranscriptionFailurePolicy.disposition(for: error)
+        switch disposition {
         case .replaceCredential:
             rejectCurrentGroqCredential()
+            canRetryLastTranscription = hasLastAudio
             reportFailure(
                 kind: .configuration,
                 title: "Groq key rejected",
                 message: "Recording preserved · replace the key in Settings",
-                detail: "Groq rejected the saved API key. Voice stopped automatic retries so the protected recording cannot enter a failure loop.",
-                actions: [.openSettings, .playRecording, .saveRecording]
+                detail: "Groq rejected the saved API key. Automatic retries remain stopped, but you can retry this protected recording once after checking the key.",
+                actions: ProviderFailureRecoveryPolicy.actions(
+                    for: disposition,
+                    hasRecoverableAudio: hasLastAudio
+                )
             )
         case .reviewProviderPermission:
+            canRetryLastTranscription = hasLastAudio
             reportFailure(
                 kind: .transcription,
                 title: "Groq access denied",
                 message: "Recording preserved · review Groq project/model permissions",
-                detail: "The saved key was accepted, but this Groq project is not allowed to use the selected transcription model. Voice stopped automatic retries so the protected recording cannot enter a failure loop.",
-                actions: [.openSettings, .playRecording, .saveRecording]
+                detail: "The saved key was accepted, but this Groq project is not allowed to use the selected transcription model. Automatic retries remain stopped; retry is available after permissions change.",
+                actions: ProviderFailureRecoveryPolicy.actions(
+                    for: disposition,
+                    hasRecoverableAudio: hasLastAudio
+                )
             )
         case .retryTranscription:
             canRetryLastTranscription = hasLastAudio
@@ -3777,6 +3818,7 @@ final class VoiceBridgeModel: ObservableObject {
             }
             lastCoverageRecoveryRecordID = nil
             try? recoverableRecordingStore?.clear()
+            recoverableRecordingReference = nil
             canRetryLastTranscription = false
             endProcessing()
             if inserted {
@@ -4356,14 +4398,43 @@ final class VoiceBridgeModel: ObservableObject {
         lastTranscript = ""
         lastInsertionText = ""
         if hasLastAudio {
-            try? recoverableRecordingStore?.save(
-                LocalRecoverableRecordingReference(
-                    audioURL: recording.url,
-                    durationSeconds: recording.duration,
-                    createdAt: lastMemoCreatedAt,
-                    activityTitle: activityTitle
+            let reference = LocalRecoverableRecordingReference(
+                audioURL: recording.url,
+                durationSeconds: recording.duration,
+                createdAt: lastMemoCreatedAt,
+                activityTitle: activityTitle,
+                retryDestination: recoverableRetryDestination(
+                    from: lastRetryDestination
                 )
             )
+            recoverableRecordingReference = reference
+            try? recoverableRecordingStore?.save(reference)
+        }
+    }
+
+    private func recoverableRetryDestination(
+        from destination: CaptureDestination?
+    ) -> RecoverableTranscriptionDestination? {
+        switch destination {
+        case .general(let startedAt):
+            return .general(startedAt: startedAt)
+        case .linked(let activity, let startedAt):
+            return .linked(activity: activity, startedAt: startedAt)
+        case nil:
+            return nil
+        }
+    }
+
+    private func captureDestination(
+        from destination: RecoverableTranscriptionDestination?
+    ) -> CaptureDestination? {
+        switch destination {
+        case .general(let startedAt):
+            return .general(startedAt: startedAt)
+        case .linked(let activity, let startedAt):
+            return .linked(activity, startedAt: startedAt)
+        case nil:
+            return nil
         }
     }
 
@@ -4408,10 +4479,18 @@ final class VoiceBridgeModel: ObservableObject {
             return
         }
         lastAudioData = data
+        recoverableRecordingReference = reference
         lastAudioURL = reference.audioURL
         hasLastAudio = true
         lastMemoCreatedAt = reference.createdAt
         lastMemoActivityTitle = reference.activityTitle
+        lastRetryDestination = captureDestination(
+            from: reference.retryDestination
+        )
+        if failureNotice?.actions.contains(.retryTranscription) == true,
+           lastRetryDestination != nil {
+            canRetryLastTranscription = true
+        }
         if let player = try? AVAudioPlayer(data: data) {
             lastAudioDuration = reference.durationSeconds > 0
                 ? reference.durationSeconds
@@ -4439,6 +4518,7 @@ final class VoiceBridgeModel: ObservableObject {
         lastCoverageRecoveryRecordID = nil
         lastMemoActivityTitle = nil
         lastRetryDestination = nil
+        recoverableRecordingReference = nil
         lastTranscript = ""
         lastInsertionText = ""
     }
@@ -4813,7 +4893,11 @@ private struct VoiceSettingsWindow: View {
                     Text("Timing details will appear after the next transcription.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(model.diagnosticRecords.prefix(5)) { record in
+                    ForEach(
+                        DiagnosticHistoryPresentationPolicy.visibleRecords(
+                            model.diagnosticRecords
+                        )
+                    ) { record in
                         DisclosureGroup {
                             LabeledContent(
                                 "Recording",

@@ -21,6 +21,37 @@ public enum TranscriptionFailurePolicy {
     }
 }
 
+public enum ProviderFailureRecoveryPolicy {
+    public static func actions(
+        for disposition: TranscriptionFailureDisposition,
+        hasRecoverableAudio: Bool
+    ) -> [VoiceFailureAction] {
+        var actions: [VoiceFailureAction]
+        switch disposition {
+        case .replaceCredential, .reviewProviderPermission:
+            actions = [
+                .retryTranscription,
+                .openSettings,
+                .playRecording,
+                .saveRecording,
+            ]
+        case .retryTranscription:
+            actions = [
+                .retryTranscription,
+                .playRecording,
+                .saveRecording,
+            ]
+        }
+        if !hasRecoverableAudio {
+            actions.removeAll { $0 == .retryTranscription }
+        }
+        return RecoveryActionAvailabilityPolicy.availableActions(
+            from: actions,
+            hasRecoverableAudio: hasRecoverableAudio
+        )
+    }
+}
+
 public struct RejectedCredentialPolicy: Sendable {
     public init() {}
 
@@ -586,6 +617,15 @@ public actor LocalTranscriptHistoryStore {
     }
 }
 
+public enum RecoverableTranscriptionDestination:
+    Codable,
+    Equatable,
+    Sendable
+{
+    case general(startedAt: Date)
+    case linked(activity: FocusedVoiceActivity, startedAt: Date)
+}
+
 public struct LocalRecoverableRecordingReference:
     Codable,
     Equatable,
@@ -595,17 +635,20 @@ public struct LocalRecoverableRecordingReference:
     public let durationSeconds: Double
     public let createdAt: Date
     public let activityTitle: String?
+    public let retryDestination: RecoverableTranscriptionDestination?
 
     public init(
         audioURL: URL,
         durationSeconds: Double,
         createdAt: Date = Date(),
-        activityTitle: String? = nil
+        activityTitle: String? = nil,
+        retryDestination: RecoverableTranscriptionDestination? = nil
     ) {
         audioPath = audioURL.standardizedFileURL.path
         self.durationSeconds = max(0, durationSeconds)
         self.createdAt = createdAt
         self.activityTitle = activityTitle
+        self.retryDestination = retryDestination
     }
 
     public var audioURL: URL {
