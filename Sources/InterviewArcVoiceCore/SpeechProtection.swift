@@ -438,14 +438,6 @@ public enum SegmentLocalTranscriptValidator {
         guard lastWord.end >= audioEnd - 0.75 else { return nil }
         let timestampOverrunsAudio =
             lastWord.end - audioEnd >= minimumTerminalTimestampOverrunSeconds
-        guard terminalProviderCorroboratesRejection(
-            wordIndices: wordIndices,
-            words: words,
-            segments: segments,
-            audioEnd: audioEnd
-        ) else {
-            return nil
-        }
         let evidenceStart: Double
         if timestampOverrunsAudio {
             let phraseDuration = max(
@@ -497,35 +489,6 @@ public enum SegmentLocalTranscriptValidator {
         guard let other = optionalOther else { return false }
         return interval.lowerBound < other.upperBound
             && interval.upperBound > other.lowerBound
-    }
-
-    private static func terminalProviderCorroboratesRejection(
-        wordIndices: [Int],
-        words: [TranscriptWord],
-        segments: [TranscriptSegment],
-        audioEnd: Double
-    ) -> Bool {
-        guard let lastIndex = wordIndices.last else { return false }
-        if words[lastIndex].end - audioEnd
-            >= minimumTerminalTimestampOverrunSeconds {
-            return true
-        }
-
-        let overlappingSegments = segments.filter { segment in
-            wordIndices.contains { index in
-                words[index].end > segment.start
-                    && words[index].start < segment.end
-            }
-        }
-        guard !overlappingSegments.isEmpty else { return false }
-        return overlappingSegments.allSatisfy { segment in
-            guard let noSpeechProbability = segment.noSpeechProbability,
-                  let averageLogProbability = segment.averageLogProbability else {
-                return false
-            }
-            return noSpeechProbability >= providerNoSpeechThreshold
-                && averageLogProbability <= providerLogProbabilityThreshold
-        }
     }
 
     private static func uniqueTokenInterval(

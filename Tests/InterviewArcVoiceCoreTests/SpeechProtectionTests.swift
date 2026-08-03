@@ -147,11 +147,53 @@ private let protectionSampleRate = 16_000.0
     #expect(protected.wordAlignmentComplete)
 }
 
-@Test func enhancedProtectionPreservesQuietHighConfidenceTerminalThankYou() {
+@Test func enhancedProtectionOmitsHighConfidenceTerminalThankYouOverSilentTail() {
     let evidence = LocalSpeechEvidenceAnalyzer.analyze(
         samples:
             protectionSpeech(duration: 1)
             + Array(repeating: Float.zero, count: Int(protectionSampleRate * 2)),
+        sampleRate: protectionSampleRate
+    )
+    let transcription = TranscriptionResult(
+        text: "Real answer. Thank you.",
+        words: [
+            TranscriptWord(word: "Real", start: 0.1, end: 0.4),
+            TranscriptWord(word: "answer.", start: 0.45, end: 0.9),
+            TranscriptWord(word: "Thank", start: 2.2, end: 2.5),
+            TranscriptWord(word: "you.", start: 2.55, end: 2.85),
+        ],
+        segments: [
+            TranscriptSegment(
+                start: 0.1,
+                end: 2.85,
+                text: "Real answer. Thank you.",
+                averageLogProbability: -0.1,
+                noSpeechProbability: 0.01
+            ),
+        ],
+        durationSeconds: 3,
+        chunkCount: 1
+    )
+
+    let protected = SegmentLocalTranscriptValidator.apply(
+        transcription,
+        speechEvidence: evidence,
+        mode: .enhanced
+    )
+
+    #expect(protected.transcription.text == "Real answer.")
+    #expect(protected.transcription.words.map(\.word) == ["Real", "answer."])
+    #expect(protected.omittedUnsupportedWordCount == 2)
+    #expect(protected.wordAlignmentComplete)
+}
+
+@Test func enhancedProtectionPreservesSoftHighConfidenceSpokenTerminalThankYou() {
+    let softTerminalSpeech = protectionSpeech(duration: 0.8).map { $0 * 0.55 }
+    let evidence = LocalSpeechEvidenceAnalyzer.analyze(
+        samples:
+            protectionSpeech(duration: 1)
+            + Array(repeating: Float.zero, count: Int(protectionSampleRate * 1.2))
+            + softTerminalSpeech,
         sampleRate: protectionSampleRate
     )
     let transcription = TranscriptionResult(

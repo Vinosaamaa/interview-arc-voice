@@ -461,3 +461,29 @@ speech preserves the same phrase even under the malformed provider timeline.
 An additional extreme-overrun fixture prevents an empty evidence window from
 failing open again. A naturally occurring installed recurrence remains the
 final product-level observation; no literal phrase is globally blacklisted.
+
+## 2026-08-03 second terminal-tail recurrence: in-range provider confidence
+
+The installed PR #168 application delivered another genuine long-form
+Enhanced-mode dictation with the known terminal phrase even though the user did
+not speak it. The private audio and complete transcript remain local. Bounded
+diagnostics showed about 30.6 seconds of decoded audio, complete alignment
+across 75 words and five segments, no omitted text, and provider lexical
+coverage ending about 0.16 seconds before the decoded file.
+
+The malformed-time repair was present but not applicable. The phrase timestamps
+were inside the decoded timeline, and its encompassing provider segment carried
+ordinary high-confidence metadata. The validator required that provider
+metadata to corroborate local silence before removing an exact terminal phrase,
+so it failed open even though Enhanced mode had already computed independent
+local tail evidence.
+
+Provider confidence is evidence about the provider's own token prediction; it
+is not acoustic proof that a person spoke those tokens. The repair therefore
+makes the bounded local tail decisive for this exact, fully word-aligned
+terminal phrase in Enhanced mode. A tail with no sustained speech and at most
+the existing 10 percent speech-like fraction is removed whether the provider
+reports low or high confidence. Genuine terminal speech—including a soft,
+high-confidence paired fixture—continues to preserve the phrase. Interior uses,
+incomplete word alignment, Basic mode, and any locally supported terminal use
+remain untouched.
