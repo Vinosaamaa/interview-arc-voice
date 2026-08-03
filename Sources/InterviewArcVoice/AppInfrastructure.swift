@@ -869,21 +869,24 @@ final class FloatingPanelController {
         if reduceMotion {
             panel.setFrame(frame, display: true)
         } else {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = FloatingWidgetMotionPolicy.durationSeconds
-                context.timingFunction = CAMediaTimingFunction(
-                    name: .easeInEaseOut
-                )
-                panel.animator().setFrame(frame, display: true)
-            } completionHandler: { [weak self, weak panel] in
-                Task { @MainActor in
-                    guard let self,
-                          let panel,
-                          generation == self.resizeAnimationGeneration else {
-                        return
+            switch FloatingWidgetMotionPolicy.backend {
+            case .nativeAppKitAnimationContext:
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = FloatingWidgetMotionPolicy.durationSeconds
+                    context.timingFunction = CAMediaTimingFunction(
+                        name: .easeInEaseOut
+                    )
+                    panel.animator().setFrame(frame, display: true)
+                } completionHandler: { [weak self, weak panel] in
+                    Task { @MainActor in
+                        guard let self,
+                              let panel,
+                              generation == self.resizeAnimationGeneration else {
+                            return
+                        }
+                        panel.setFrame(frame, display: true)
+                        panel.contentView?.needsLayout = true
                     }
-                    panel.setFrame(frame, display: true)
-                    panel.contentView?.needsLayout = true
                 }
             }
         }
@@ -1233,6 +1236,7 @@ struct FloatingRecorderView: View {
     @State private var miniSmoothedLevel = 0.0
     @State private var retainedUpperSurface: FloatingWidgetUpperSurface?
     @State private var upperSurfaceRetentionGeneration = 0
+    @State private var plannerActivationGeneration = 0
 
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
@@ -1330,6 +1334,8 @@ struct FloatingRecorderView: View {
             )
         }
         .onChange(of: model.plannerPresented) { _, presented in
+            plannerActivationGeneration += 1
+            let generation = plannerActivationGeneration
             if presented {
                 if reduceMotion {
                     FloatingPanelController.shared.beginPlannerTextEntry()
@@ -1340,7 +1346,8 @@ struct FloatingRecorderView: View {
                                 FloatingWidgetMotionPolicy.deferredWorkDelaySeconds
                             )
                         )
-                        guard model.plannerPresented else { return }
+                        guard generation == plannerActivationGeneration,
+                              model.plannerPresented else { return }
                         FloatingPanelController.shared.beginPlannerTextEntry()
                     }
                 }

@@ -241,6 +241,7 @@ final class VoiceBridgeModel: ObservableObject {
     }
     @Published var planningState = VoicePlanningPresentationState()
     @Published private(set) var planningResponse: VoicePlanningResponse?
+    private var plannerDeferredRefreshTask: Task<Void, Never>?
     @Published private(set) var planningLoading = false
     @Published private(set) var planningMutationInFlight = false
     @Published private(set) var planningMutationStatus: String?
@@ -967,6 +968,8 @@ final class VoiceBridgeModel: ObservableObject {
 
     func togglePlanner() {
         guard linkToInterviewArc, !isRecording, !isStartingRecording else { return }
+        plannerDeferredRefreshTask?.cancel()
+        plannerDeferredRefreshTask = nil
         if plannerPresented {
             let restoresFocus = timerPanelExpandedBeforePlanner ?? false
             floatingPresentationState = restoresFocus
@@ -992,13 +995,15 @@ final class VoiceBridgeModel: ObservableObject {
             }
         }
         if plannerPresented {
-            Task { [weak self] in
+            plannerDeferredRefreshTask = Task { [weak self] in
                 try? await Task.sleep(
                     for: .seconds(
                         FloatingWidgetMotionPolicy.deferredWorkDelaySeconds
                     )
                 )
-                guard let self, self.plannerPresented else { return }
+                guard !Task.isCancelled,
+                      let self,
+                      self.plannerPresented else { return }
                 await self.refreshPlanning()
             }
         }

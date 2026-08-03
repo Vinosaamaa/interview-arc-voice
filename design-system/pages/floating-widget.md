@@ -366,9 +366,9 @@ least 58 points for the activity title.
   the same native geometry sequence as the explicit collapse control. Audio
   startup must not delay or compete with visible panel motion.
 - The borderless panel must expose real intermediate frames in both directions.
-  Use one cancellable 60 Hz eased frame sequence so a reversal continues from
-  the current frame; do not rely on a proxy animation that can settle directly
-  at the target and make collapse look disabled.
+  Retarget the native AppKit animation from the panel's current presentation
+  frame when direction reverses; do not start an application-scheduled frame
+  loop or a proxy animation that can settle directly at the target.
 - The visible recorder capsule follows the live host width at every
   intermediate AppKit frame. It must not bind directly to the final model
   width, which makes collapse appear to snap even while the panel is animating.
