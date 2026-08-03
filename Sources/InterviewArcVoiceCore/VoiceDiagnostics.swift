@@ -39,6 +39,8 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
     public let localFallbackAttempted: Bool?
     public let localFallbackSkippedBecauseNotReady: Bool?
     public let localValidationReasons: [TranscriptionIntegrityReason]?
+    public let providerHTTPStatus: Int?
+    public let providerErrorCode: String?
     public let captureTargetKind: CaptureTargetKind?
     public let captureTargetDecisionReason: CaptureTargetDecisionReason?
     public let captureRouteReason: CaptureRouteReason?
@@ -77,6 +79,8 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         localFallbackAttempted: Bool? = nil,
         localFallbackSkippedBecauseNotReady: Bool? = nil,
         localValidationReasons: [TranscriptionIntegrityReason]? = nil,
+        providerHTTPStatus: Int? = nil,
+        providerErrorCode: String? = nil,
         captureTargetKind: CaptureTargetKind? = nil,
         captureTargetDecisionReason: CaptureTargetDecisionReason? = nil,
         captureRouteReason: CaptureRouteReason? = nil,
@@ -115,6 +119,8 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         self.localFallbackSkippedBecauseNotReady =
             localFallbackSkippedBecauseNotReady
         self.localValidationReasons = localValidationReasons
+        self.providerHTTPStatus = providerHTTPStatus
+        self.providerErrorCode = providerErrorCode
         self.captureTargetKind = captureTargetKind
         self.captureTargetDecisionReason = captureTargetDecisionReason
         self.captureRouteReason = captureRouteReason
@@ -155,6 +161,8 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
             "Local fallback attempted: \(localFallbackAttempted.map { String($0) } ?? "Unavailable")",
             "Local fallback skipped because model was not warm: \(localFallbackSkippedBecauseNotReady.map { String($0) } ?? "Unavailable")",
             "Local validation reasons: \(localValidationReasons?.map(\.rawValue).joined(separator: ", ") ?? "None")",
+            "Provider HTTP status: \(providerHTTPStatus.map(String.init) ?? "Unavailable")",
+            "Provider error code: \(providerErrorCode ?? "Unavailable")",
             "Capture target: \(captureTargetKind?.rawValue ?? "Unavailable")",
             "Capture target decision: \(captureTargetDecisionReason?.rawValue ?? "Unavailable")",
             "Capture route: \(captureRouteReason?.rawValue ?? "Unavailable")",

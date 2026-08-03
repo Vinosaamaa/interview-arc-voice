@@ -204,6 +204,8 @@ final class VoiceBridgeModel: ObservableObject {
         var localFallbackAttempted: Bool?
         var localFallbackSkippedBecauseNotReady: Bool?
         var localValidationReasons: [TranscriptionIntegrityReason]?
+        var providerHTTPStatus: Int?
+        var providerErrorCode: String?
     }
 
     @Published var phase: Phase = .setup
@@ -2513,6 +2515,8 @@ final class VoiceBridgeModel: ObservableObject {
             localFallbackSkippedBecauseNotReady:
                 transcription.localFallbackSkippedBecauseNotReady,
             localValidationReasons: transcription.localValidationReasons,
+            providerHTTPStatus: transcription.providerHTTPStatus,
+            providerErrorCode: transcription.providerErrorCode,
             captureTargetKind: seed.captureTargetKind,
             captureTargetDecisionReason: seed.captureTargetDecisionReason,
             captureRouteReason: seed.captureRouteReason,
@@ -3066,10 +3070,11 @@ final class VoiceBridgeModel: ObservableObject {
         let recoveryTranscriptRecordID = integrityFailure?.reasons.contains(
             .missingSpeechCoverage
         ) == true ? lastCoverageRecoveryRecordID : nil
+        let providerError = error as? VoiceBridgeError
         canRetryLastTranscription = false
         endProcessing()
-        if TranscriptionFailurePolicy.disposition(for: error)
-            == .replaceCredential {
+        switch TranscriptionFailurePolicy.disposition(for: error) {
+        case .replaceCredential:
             rejectCurrentGroqCredential()
             reportFailure(
                 kind: .configuration,
@@ -3078,7 +3083,15 @@ final class VoiceBridgeModel: ObservableObject {
                 detail: "Groq rejected the saved API key. Voice stopped automatic retries so the protected recording cannot enter a failure loop.",
                 actions: [.openSettings, .playRecording, .saveRecording]
             )
-        } else {
+        case .reviewProviderPermission:
+            reportFailure(
+                kind: .transcription,
+                title: "Groq access denied",
+                message: "Recording preserved · review Groq project/model permissions",
+                detail: "The saved key was accepted, but this Groq project is not allowed to use the selected transcription model. Voice stopped automatic retries so the protected recording cannot enter a failure loop.",
+                actions: [.openSettings, .playRecording, .saveRecording]
+            )
+        case .retryTranscription:
             canRetryLastTranscription = hasLastAudio
             reportFailure(
                 error,
@@ -3126,7 +3139,9 @@ final class VoiceBridgeModel: ObservableObject {
                         integrityFailure?
                             .localFallbackSkippedBecauseNotReady,
                     localValidationReasons:
-                        integrityFailure?.localValidationReasons
+                        integrityFailure?.localValidationReasons,
+                    providerHTTPStatus: providerError?.providerHTTPStatus,
+                    providerErrorCode: providerError?.providerErrorCode
                 ),
                 outcome: .failed
             )

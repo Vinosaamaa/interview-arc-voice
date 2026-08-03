@@ -11,9 +11,69 @@ import Testing
     )
     #expect(
         TranscriptionFailurePolicy.disposition(
+            for: VoiceBridgeError.providerPermissionDenied(
+                "model_access_denied"
+            )
+        ) == .reviewProviderPermission
+    )
+    #expect(
+        TranscriptionFailurePolicy.disposition(
             for: VoiceBridgeError.invalidResponse(503, "Unavailable")
         ) == .retryTranscription
     )
+}
+
+@Test func groqHTTP401RequiresCredentialReplacement() {
+    let error = GroqProviderFailurePolicy.error(
+        statusCode: 401,
+        responseData: Data(
+            #"{"error":{"message":"Invalid API Key","type":"invalid_request_error","code":"invalid_api_key"}}"#.utf8
+        )
+    )
+
+    #expect(
+        TranscriptionFailurePolicy.disposition(for: error)
+            == .replaceCredential
+    )
+    #expect(error.providerHTTPStatus == 401)
+    #expect(error.providerErrorCode == "invalid_authentication")
+}
+
+@Test func groqHTTP403RequiresPermissionReviewWithoutRejectingTheKey() {
+    let error = GroqProviderFailurePolicy.error(
+        statusCode: 403,
+        responseData: Data(
+            #"{"error":{"message":"Model blocked","type":"permission_error","code":"model_access_denied"}}"#.utf8
+        )
+    )
+
+    guard case let VoiceBridgeError.providerPermissionDenied(code) = error else {
+        Issue.record("Expected a permission-denied provider error")
+        return
+    }
+    #expect(code == "model_access_denied")
+    #expect(error.providerHTTPStatus == 403)
+    #expect(error.providerErrorCode == "model_access_denied")
+    #expect(
+        TranscriptionFailurePolicy.disposition(for: error)
+            == .reviewProviderPermission
+    )
+}
+
+@Test func groqRateLimitsAndServerFailuresRemainRetryableAndPrivacySafe() {
+    for statusCode in [429, 503] {
+        let error = GroqProviderFailurePolicy.error(
+            statusCode: statusCode,
+            responseData: Data(
+                #"{"error":{"message":"secret provider detail"}}"#.utf8
+            )
+        )
+        #expect(
+            TranscriptionFailurePolicy.disposition(for: error)
+                == .retryTranscription
+        )
+        #expect(!error.localizedDescription.contains("secret provider detail"))
+    }
 }
 
 @Test func aRejectedCredentialMustChangeBeforeRetry() {

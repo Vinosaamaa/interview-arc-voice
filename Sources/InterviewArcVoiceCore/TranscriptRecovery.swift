@@ -2,6 +2,7 @@ import Foundation
 
 public enum TranscriptionFailureDisposition: Equatable, Sendable {
     case replaceCredential
+    case reviewProviderPermission
     case retryTranscription
 }
 
@@ -9,10 +10,14 @@ public enum TranscriptionFailurePolicy {
     public static func disposition(
         for error: Error
     ) -> TranscriptionFailureDisposition {
-        guard case VoiceBridgeError.invalidProviderCredential = error else {
+        switch error {
+        case VoiceBridgeError.invalidProviderCredential:
+            return .replaceCredential
+        case VoiceBridgeError.providerPermissionDenied:
+            return .reviewProviderPermission
+        default:
             return .retryTranscription
         }
-        return .replaceCredential
     }
 }
 

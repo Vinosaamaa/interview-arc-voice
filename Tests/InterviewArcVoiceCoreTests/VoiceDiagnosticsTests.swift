@@ -91,6 +91,8 @@ import Testing
         localInferenceSeconds: 1.25,
         localPromptTokenCount: 17,
         localFallbackSkippedBecauseNotReady: true,
+        providerHTTPStatus: 403,
+        providerErrorCode: "model_access_denied",
         captureTargetKind: .codexCLITerminal,
         captureTargetDecisionReason: .verifiedCodexCLIProcess,
         captureRouteReason: .linkedAfterContextRefresh,
@@ -112,6 +114,8 @@ import Testing
     #expect(record.report.contains("Local vocabulary conditioning: true"))
     #expect(record.report.contains("Local vocabulary prompt tokens: 17"))
     #expect(record.report.contains("Local fallback skipped because model was not warm: true"))
+    #expect(record.report.contains("Provider HTTP status: 403"))
+    #expect(record.report.contains("Provider error code: model_access_denied"))
     #expect(record.report.contains("Capture target: codexCLITerminal"))
     #expect(record.report.contains("Capture target decision: verifiedCodexCLIProcess"))
     #expect(record.report.contains("Capture route: linkedAfterContextRefresh"))
@@ -197,6 +201,8 @@ import Testing
     #expect(records[0].trailingSpeechLikeFrameCount == nil)
     #expect(records[0].trailingSpeechLikeFraction == nil)
     #expect(records[0].integrityReasons == nil)
+    #expect(records[0].providerHTTPStatus == nil)
+    #expect(records[0].providerErrorCode == nil)
     #expect(records[0].captureTargetKind == nil)
     #expect(records[0].captureRouteReason == nil)
 }

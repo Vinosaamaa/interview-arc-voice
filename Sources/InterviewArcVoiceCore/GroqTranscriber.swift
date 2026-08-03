@@ -104,6 +104,52 @@ public struct TranscriptionResult: Codable, Equatable, Sendable {
 
 public typealias ArcTranscriptionResult = TranscriptionResult
 
+public enum GroqProviderFailurePolicy {
+    private struct FailureEnvelope: Decodable {
+        struct Failure: Decodable {
+            let type: String?
+            let code: String?
+        }
+
+        let error: Failure?
+    }
+
+    public static func error(
+        statusCode: Int,
+        responseData: Data
+    ) -> VoiceBridgeError {
+        if statusCode == 401 {
+            return .invalidProviderCredential
+        }
+        if statusCode == 403 {
+            let failure = try? JSONDecoder().decode(
+                FailureEnvelope.self,
+                from: responseData
+            ).error
+            return .providerPermissionDenied(
+                safeIdentifier(failure?.code ?? failure?.type)
+            )
+        }
+        return .invalidResponse(statusCode, "Groq transcription failed")
+    }
+
+    private static func safeIdentifier(_ rawValue: String?) -> String? {
+        guard let rawValue else { return nil }
+        var result = ""
+        for scalar in rawValue.unicodeScalars {
+            let value = scalar.value
+            let isASCIIAlphaNumeric = (48...57).contains(value)
+                || (65...90).contains(value)
+                || (97...122).contains(value)
+            let isSafeSeparator = value == 45 || value == 46 || value == 95
+            guard isASCIIAlphaNumeric || isSafeSeparator else { continue }
+            result.unicodeScalars.append(scalar)
+            if result.count == 80 { break }
+        }
+        return result.isEmpty ? nil : result
+    }
+}
+
 public protocol SpeechTranscribing: Sendable {
     var diagnosticEngine: String { get }
     var diagnosticModel: String? { get }
@@ -299,10 +345,10 @@ public actor GroqTranscriber: SpeechTranscribing {
         let (data, response) = try await session.upload(for: request, from: body)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            if status == 401 || status == 403 {
-                throw VoiceBridgeError.invalidProviderCredential
-            }
-            throw VoiceBridgeError.invalidResponse(status, String(data: data, encoding: .utf8) ?? "Groq transcription failed")
+            throw GroqProviderFailurePolicy.error(
+                statusCode: status,
+                responseData: data
+            )
         }
         return try JSONDecoder().decode(GroqTranscription.self, from: data)
     }
