@@ -346,25 +346,23 @@ public actor LocalTranscriptHistoryStore {
             return nil
         }
         let previous = current[index]
-        let replacement = LocalTranscriptRecord(
-            id: previous.id,
-            createdAt: previous.createdAt,
+        let replacement = copyRecord(
+            previous,
             transcript: transcript,
             editorText: editorText,
-            durationSeconds: previous.durationSeconds,
-            activityTitle: previous.activityTitle,
             captureID: captureID ?? previous.captureID,
             recoveryStatus: nil,
-            linkedRecoveryContext: previous.linkedRecoveryContext,
             lifecycleProtected: lifecycleProtected
                 ?? previous.lifecycleProtected
                 ?? (previous.isLifecycleProtected
-                    || (captureID != nil && previous.audioReference != nil)),
-            audioReference: previous.audioReference
+                    || (captureID != nil && previous.audioReference != nil))
         )
-        current[index] = replacement
-        try write(pruned(current, now: now))
-        return replacement
+        return try persistReplacement(
+            replacement,
+            in: &current,
+            at: index,
+            now: now
+        )
     }
 
     @discardableResult
@@ -379,19 +377,51 @@ public actor LocalTranscriptHistoryStore {
             return nil
         }
         let previous = current[index]
-        let replacement = LocalTranscriptRecord(
-            id: previous.id,
-            createdAt: previous.createdAt,
+        let replacement = copyRecord(
+            previous,
             transcript: previous.transcript,
             editorText: previous.editorText,
-            durationSeconds: previous.durationSeconds,
-            activityTitle: previous.activityTitle,
             captureID: previous.captureID,
             recoveryStatus: .coverageUncertain,
+            lifecycleProtected: previous.lifecycleProtected
+        )
+        return try persistReplacement(
+            replacement,
+            in: &current,
+            at: index,
+            now: now
+        )
+    }
+
+    private func copyRecord(
+        _ previous: LocalTranscriptRecord,
+        transcript: String,
+        editorText: String,
+        captureID: String?,
+        recoveryStatus: LocalTranscriptRecoveryStatus?,
+        lifecycleProtected: Bool?
+    ) -> LocalTranscriptRecord {
+        LocalTranscriptRecord(
+            id: previous.id,
+            createdAt: previous.createdAt,
+            transcript: transcript,
+            editorText: editorText,
+            durationSeconds: previous.durationSeconds,
+            activityTitle: previous.activityTitle,
+            captureID: captureID,
+            recoveryStatus: recoveryStatus,
             linkedRecoveryContext: previous.linkedRecoveryContext,
-            lifecycleProtected: previous.lifecycleProtected,
+            lifecycleProtected: lifecycleProtected,
             audioReference: previous.audioReference
         )
+    }
+
+    private func persistReplacement(
+        _ replacement: LocalTranscriptRecord,
+        in current: inout [LocalTranscriptRecord],
+        at index: Int,
+        now: Date
+    ) throws -> LocalTranscriptRecord {
         current[index] = replacement
         try write(pruned(current, now: now))
         return replacement

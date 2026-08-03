@@ -179,11 +179,7 @@ final class VoiceBridgeModel: ObservableObject {
         let microphoneRecoveryCount: Int
         let vadSpeechFrameCount: Int?
         let vadLongestSpeechRunFrames: Int?
-        var captureTargetBundleIdentifier: String? = nil
-        var captureTargetWindowTitle: String? = nil
-        var captureTargetKind: CaptureTargetKind? = nil
-        var captureTargetDecisionReason: CaptureTargetDecisionReason? = nil
-        var captureRouteReason: CaptureRouteReason? = nil
+        var captureTarget: CaptureTargetDiagnosticMetadata? = nil
     }
 
     private struct TranscriptionDiagnosticMetadata {
@@ -2546,12 +2542,7 @@ final class VoiceBridgeModel: ObservableObject {
             localValidationReasons: transcription.localValidationReasons,
             providerHTTPStatus: transcription.providerHTTPStatus,
             providerErrorCode: transcription.providerErrorCode,
-            captureTargetBundleIdentifier:
-                seed.captureTargetBundleIdentifier,
-            captureTargetWindowTitle: seed.captureTargetWindowTitle,
-            captureTargetKind: seed.captureTargetKind,
-            captureTargetDecisionReason: seed.captureTargetDecisionReason,
-            captureRouteReason: seed.captureRouteReason,
+            captureTarget: seed.captureTarget,
             outcome: outcome
         )
         try? await diagnosticsStore?.append(record)
@@ -3642,13 +3633,11 @@ final class VoiceBridgeModel: ObservableObject {
                 vadSpeechFrameCount: speechEvidence?.vadSpeechFrameCount,
                 vadLongestSpeechRunFrames:
                     speechEvidence?.vadLongestSpeechRunFrames,
-                captureTargetBundleIdentifier:
-                    currentTargetDescriptor?.bundleIdentifier,
-                captureTargetWindowTitle:
-                    currentTargetDescriptor?.windowTitle,
-                captureTargetKind: currentTargetDecision.kind,
-                captureTargetDecisionReason: currentTargetDecision.reason,
-                captureRouteReason: captureRouteReason
+                captureTarget: CaptureTargetDiagnosticMetadata(
+                    kind: currentTargetDecision.kind,
+                    decisionReason: currentTargetDecision.reason,
+                    routeReason: captureRouteReason
+                )
             )
 
             switch recovery {

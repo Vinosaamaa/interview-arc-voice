@@ -12,6 +12,10 @@ public actor GeneralDictationPipeline {
         vocabularyPrompt: String = "",
         fileManager: FileManager = .default
     ) {
+        // Product policy intentionally gives General Dictation the same
+        // bounded provider-only coverage recovery as linked dictation. An
+        // eligible nonempty candidate remains usable and is returned with the
+        // coverageUncertain marker instead of entering a blocking failure path.
         reliableTranscriber = ReliableSpeechTranscriber(base: transcriber)
         self.temporaryDirectory = temporaryDirectory
         self.vocabularyPrompt = vocabularyPrompt

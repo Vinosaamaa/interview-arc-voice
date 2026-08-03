@@ -6,6 +6,28 @@ public enum VoiceDiagnosticOutcome: String, Codable, Equatable, Sendable {
     case failed
 }
 
+/// Privacy-safe routing classifications. Raw bundle identifiers and window
+/// titles are deliberately never persisted in diagnostics.
+public struct CaptureTargetDiagnosticMetadata:
+    Codable,
+    Equatable,
+    Sendable
+{
+    public let kind: CaptureTargetKind
+    public let decisionReason: CaptureTargetDecisionReason
+    public let routeReason: CaptureRouteReason
+
+    public init(
+        kind: CaptureTargetKind,
+        decisionReason: CaptureTargetDecisionReason,
+        routeReason: CaptureRouteReason
+    ) {
+        self.kind = kind
+        self.decisionReason = decisionReason
+        self.routeReason = routeReason
+    }
+}
+
 public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public let createdAt: Date
@@ -41,11 +63,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
     public let localValidationReasons: [TranscriptionIntegrityReason]?
     public let providerHTTPStatus: Int?
     public let providerErrorCode: String?
-    public let captureTargetBundleIdentifier: String?
-    public let captureTargetWindowTitle: String?
-    public let captureTargetKind: CaptureTargetKind?
-    public let captureTargetDecisionReason: CaptureTargetDecisionReason?
-    public let captureRouteReason: CaptureRouteReason?
+    public let captureTarget: CaptureTargetDiagnosticMetadata?
     public let outcome: VoiceDiagnosticOutcome
 
     public init(
@@ -83,11 +101,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         localValidationReasons: [TranscriptionIntegrityReason]? = nil,
         providerHTTPStatus: Int? = nil,
         providerErrorCode: String? = nil,
-        captureTargetBundleIdentifier: String? = nil,
-        captureTargetWindowTitle: String? = nil,
-        captureTargetKind: CaptureTargetKind? = nil,
-        captureTargetDecisionReason: CaptureTargetDecisionReason? = nil,
-        captureRouteReason: CaptureRouteReason? = nil,
+        captureTarget: CaptureTargetDiagnosticMetadata? = nil,
         outcome: VoiceDiagnosticOutcome
     ) {
         self.id = id
@@ -125,11 +139,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         self.localValidationReasons = localValidationReasons
         self.providerHTTPStatus = providerHTTPStatus
         self.providerErrorCode = providerErrorCode
-        self.captureTargetBundleIdentifier = captureTargetBundleIdentifier
-        self.captureTargetWindowTitle = captureTargetWindowTitle
-        self.captureTargetKind = captureTargetKind
-        self.captureTargetDecisionReason = captureTargetDecisionReason
-        self.captureRouteReason = captureRouteReason
+        self.captureTarget = captureTarget
         self.outcome = outcome
     }
 
@@ -169,11 +179,9 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
             "Local validation reasons: \(localValidationReasons?.map(\.rawValue).joined(separator: ", ") ?? "None")",
             "Provider HTTP status: \(providerHTTPStatus.map(String.init) ?? "Unavailable")",
             "Provider error code: \(providerErrorCode ?? "Unavailable")",
-            "Capture target host: \(captureTargetBundleIdentifier ?? "Unavailable")",
-            "Capture target window: \(captureTargetWindowTitle ?? "Unavailable")",
-            "Capture target: \(captureTargetKind?.rawValue ?? "Unavailable")",
-            "Capture target decision: \(captureTargetDecisionReason?.rawValue ?? "Unavailable")",
-            "Capture route: \(captureRouteReason?.rawValue ?? "Unavailable")",
+            "Capture target: \(captureTarget?.kind.rawValue ?? "Unavailable")",
+            "Capture target decision: \(captureTarget?.decisionReason.rawValue ?? "Unavailable")",
+            "Capture route: \(captureTarget?.routeReason.rawValue ?? "Unavailable")",
             "Outcome: \(outcome.rawValue)",
         ].joined(separator: "\n")
     }
@@ -294,6 +302,22 @@ public actor VoiceDiagnosticsStore {
                 [.posixPermissions: 0o600],
                 ofItemAtPath: fileURL.path
             )
+        } else {
+            // Re-encode older records immediately so retired raw target-title
+            // keys cannot remain in the privacy-safe diagnostics file.
+            let data = try Data(contentsOf: fileURL)
+            if !data.isEmpty,
+               let records = try? decoder.decode(
+                   [VoiceDiagnosticRecord].self,
+                   from: data
+               ) {
+                let sanitized = try encoder.encode(records)
+                try sanitized.write(to: fileURL, options: .atomic)
+                try fileManager.setAttributes(
+                    [.posixPermissions: 0o600],
+                    ofItemAtPath: fileURL.path
+                )
+            }
         }
     }
 

@@ -188,10 +188,16 @@ public enum FloatingWidgetUpperSurfaceTransitionStyle: Equatable, Sendable {
 public enum FloatingWidgetUpperSurfaceTransitionPolicy {
     public static let style: FloatingWidgetUpperSurfaceTransitionStyle =
         .destinationOnly
-    public static let keepsBottomAnchor = true
-    public static let usesSingleHostResize = true
-    public static let retainsOutgoingSurface = false
-    public static let animatesModelState = false
+}
+
+public enum FloatingWidgetCoverageNoticePolicy {
+    public static func showsInlineNotice(
+        noticePresented: Bool,
+        hasTimerInstrument: Bool,
+        isBusy: Bool
+    ) -> Bool {
+        noticePresented && !hasTimerInstrument && !isBusy
+    }
 }
 
 public enum CompactTimerTextPolicy {

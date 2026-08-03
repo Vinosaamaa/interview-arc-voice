@@ -55,12 +55,6 @@ import Testing
             windowTitle: "Interview Arc — Coordinator | codex"
         )
     )
-    let codexProcessOutsideWorkspace = CaptureTargetApplicationPolicy.decision(
-        for: CaptureTargetDescriptor(
-            bundleIdentifier: "com.cmuxterm.app",
-            windowTitle: "Personal shell"
-        )
-    )
     let browser = CaptureTargetApplicationPolicy.decision(
         for: CaptureTargetDescriptor(
             bundleIdentifier: "com.google.Chrome",
@@ -76,8 +70,8 @@ import Testing
     #expect(detachedCodexWorkspace.canAttach)
     #expect(detachedCodexWorkspace.kind == .codexCLITerminal)
     #expect(detachedCodexWorkspace.reason == .verifiedCodexWorkspace)
-    #expect(!codexProcessOutsideWorkspace.canAttach)
-    #expect(codexProcessOutsideWorkspace.reason == .terminalWithoutWorkspaceEvidence)
+    #expect(!shell.canAttach)
+    #expect(shell.reason == .terminalWithoutWorkspaceEvidence)
     #expect(!browser.canAttach)
     #expect(browser.reason == .unsupportedApplication)
     #expect(!missing.canAttach)

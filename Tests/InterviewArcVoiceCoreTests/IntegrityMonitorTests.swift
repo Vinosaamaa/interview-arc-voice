@@ -383,6 +383,26 @@ import Testing
     #expect(await transcriber.callCount == 2)
 }
 
+@Test func generalDictationReturnsUsableCoverageCandidateInsteadOfFailing() async throws {
+    let partial = malformedFullLengthSegmentPartial()
+    let transcriber = CountingTranscriber(results: [partial, partial])
+    let pipeline = GeneralDictationPipeline(
+        transcriber: transcriber,
+        temporaryDirectory: URL(fileURLWithPath: "/tmp")
+    )
+
+    let result = try await pipeline.process(
+        recordingURL: URL(fileURLWithPath: "/tmp/general.m4a"),
+        durationSeconds: 80.88,
+        speechEvidence: sustainedSpeechEvidence(durationSeconds: 80.88),
+        protectionMode: .enhanced
+    )
+
+    #expect(result.transcription.text == partial.text)
+    #expect(result.coverageUncertain)
+    #expect(await transcriber.callCount == 2)
+}
+
 @Test func initialProviderFailureDeliversTheRetryCandidateWithWarning() async throws {
     let partial = malformedFullLengthSegmentPartial()
     let provider = CountingTranscriber(

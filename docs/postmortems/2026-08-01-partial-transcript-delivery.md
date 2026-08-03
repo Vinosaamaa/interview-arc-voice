@@ -255,17 +255,19 @@ complete-file request and changes only the experimental coverage path:
    overlap-deduplicated and timestamp evidence is offset;
 5. an optional local fallback interface can supply a final candidate without
    making local transcription a required packaged dependency;
-6. if every candidate remains uncertain, the best nonempty candidate and
-   original M4A are retained as a visibly labeled Recent Transcript; and
-7. uncertain recovery text is not inserted, registered as a Voice v2 intent,
-   uploaded to D1/R2, or presented as an ordinary success.
+6. if every provider candidate remains uncertain, the best nonempty candidate
+   is inserted immediately with a quiet **May be incomplete** warning and the
+   original M4A is retained; and
+7. a linked best-provider candidate follows the ordinary protocol-v2 envelope,
+   specialist decision, D1, and R2 lifecycle exactly once.
 
 The best-candidate rule remains safety-scoped: a candidate must be nonempty,
 must include the missing-speech-coverage signal, and must not contain prompt
 leakage or known hallucination boilerplate. Other incompleteness diagnostics
-may remain on the visibly uncertain preview because preserving partial user
-text is safer than silently discarding it; none of those candidates is inserted
-or delivered automatically.
+may remain on the visibly uncertain result because preserving partial user text
+is safer than silently discarding it. This bounded provider path is distinct
+from a legacy recovery record whose user must still explicitly choose
+**Use this transcript**.
 
 Implementation ownership is split deliberately: alternate provider windows
 and request concurrency live in
@@ -406,10 +408,11 @@ implemented-local, release-verification-pending follow-up.
 ## Explicit uncertain-candidate promotion
 
 Issue [#150](https://github.com/Vinosaamaa/interview-arc-voice/issues/150)
-adds the deliberate recovery action that automatic protection intentionally
-omitted. **Use this transcript** always asks for confirmation and uses the exact
-visible recovered text plus the retained original M4A. General Dictation stays
-local. A linked candidate atomically persists one stable capture/turn/clip
+adds the deliberate recovery action for legacy discrepancy records that were
+preserved before the bounded best-provider path. **Use this transcript** always
+asks for confirmation and uses the exact visible recovered text plus the
+retained original M4A. General Dictation stays local. A linked candidate
+atomically persists one stable capture/turn/clip
 identity from the activity context frozen when recording began, inserts the
 ordinary Voice v2 envelope, and then waits for the specialist's normal
 related/unrelated/uncertain decision. Repeated confirmation, relaunch, Insert
@@ -447,10 +450,12 @@ recovery**. A failed preparation remains visibly installed but not ready and
 offers an explicit **Prepare** retry, so model presence can no longer be
 mistaken for foreground readiness.
 
-This does not weaken the trust boundary. A coverage-uncertain candidate is not
-inserted, registered, sent to D1, or uploaded to R2 unless the user explicitly
-chooses **Use this transcript**. Exact merged-main package and installed-app
-verification remain pending for this reopened incident.
+This does not weaken the trust boundary. A legacy discrepancy record still
+requires explicit **Use this transcript** confirmation. The bounded
+best-provider candidate described below is an ordinary inserted result with a
+visible warning and, when linked, the ordinary specialist decision and D1/R2
+lifecycle. Exact merged-main package and installed-app verification remain
+pending for this reopened incident.
 
 ## 2026-08-03 bounded best-provider-candidate decision
 

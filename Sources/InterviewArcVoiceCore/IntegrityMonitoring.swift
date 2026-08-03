@@ -528,33 +528,12 @@ public actor ReliableSpeechTranscriber {
             localInferenceSeconds: candidate.localInferenceSeconds,
             localPromptTokenCount: candidate.localPromptTokenCount
         )
-        let protected = try protectedResult(
+        return try protectedResult(
             timedCandidate,
             wasRetried: wasRetried,
             speechEvidence: speechEvidence,
             protectionMode: protectionMode,
-            integrityCheck: check
-        )
-        return ReliableTranscription(
-            transcription: protected.transcription,
-            wasRetried: protected.wasRetried,
-            omittedUnsupportedSegmentCount:
-                protected.omittedUnsupportedSegmentCount,
-            omittedUnsupportedWordCount:
-                protected.omittedUnsupportedWordCount,
-            wordAlignmentComplete: protected.wordAlignmentComplete,
-            evaluatedSegmentCount: protected.evaluatedSegmentCount,
-            wordTimestampCount: protected.wordTimestampCount,
-            segmentValidationSeconds: protected.segmentValidationSeconds,
-            providerLexicalCoverageEndSeconds:
-                protected.providerLexicalCoverageEndSeconds,
-            trailingSpeechLikeFrameCount:
-                protected.trailingSpeechLikeFrameCount,
-            trailingSpeechLikeFraction: protected.trailingSpeechLikeFraction,
-            engine: protected.engine,
-            model: protected.model,
-            localInferenceSeconds: protected.localInferenceSeconds,
-            localPromptTokenCount: protected.localPromptTokenCount,
+            integrityCheck: check,
             coverageUncertain: true
         )
     }
@@ -564,7 +543,8 @@ public actor ReliableSpeechTranscriber {
         wasRetried: Bool,
         speechEvidence: SpeechEvidenceResult?,
         protectionMode: SpeechProtectionMode,
-        integrityCheck: IntegrityCheck
+        integrityCheck: IntegrityCheck,
+        coverageUncertain: Bool = false
     ) throws -> ReliableTranscription {
         guard let speechEvidence, protectionMode != .off else {
             return ReliableTranscription(
@@ -581,7 +561,8 @@ public actor ReliableSpeechTranscriber {
                 engine: transcription.engine,
                 model: transcription.model,
                 localInferenceSeconds: transcription.localInferenceSeconds,
-                localPromptTokenCount: transcription.localPromptTokenCount
+                localPromptTokenCount: transcription.localPromptTokenCount,
+                coverageUncertain: coverageUncertain
             )
         }
         let validationStartedAt = Date()
@@ -630,7 +611,8 @@ public actor ReliableSpeechTranscriber {
             localInferenceSeconds:
                 protected.transcription.localInferenceSeconds,
             localPromptTokenCount:
-                protected.transcription.localPromptTokenCount
+                protected.transcription.localPromptTokenCount,
+            coverageUncertain: coverageUncertain
         )
     }
 

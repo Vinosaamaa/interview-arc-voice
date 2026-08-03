@@ -23,7 +23,7 @@ public struct CaptureTargetDescriptor: Equatable, Sendable {
 
     public init(
         bundleIdentifier: String?,
-        windowTitle: String?
+        windowTitle: String? = nil
     ) {
         self.bundleIdentifier = bundleIdentifier
         self.windowTitle = windowTitle

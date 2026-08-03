@@ -266,6 +266,44 @@ private let protectionSampleRate = 16_000.0
     #expect(protected.wordAlignmentComplete)
 }
 
+@Test func enhancedProtectionBoundsExtremeTerminalTimestampOverrun() {
+    let evidence = LocalSpeechEvidenceAnalyzer.analyze(
+        samples:
+            protectionSpeech(duration: 1)
+            + Array(repeating: Float.zero, count: Int(protectionSampleRate * 29)),
+        sampleRate: protectionSampleRate
+    )
+    let transcription = TranscriptionResult(
+        text: "Real answer. Thank you.",
+        words: [
+            TranscriptWord(word: "Real", start: 0.1, end: 0.4),
+            TranscriptWord(word: "answer.", start: 0.45, end: 0.9),
+            TranscriptWord(word: "Thank", start: 30.1, end: 30.4),
+            TranscriptWord(word: "you.", start: 30.45, end: 100),
+        ],
+        segments: [
+            TranscriptSegment(
+                start: 0.1,
+                end: 100,
+                text: "Real answer. Thank you.",
+                averageLogProbability: -0.1,
+                noSpeechProbability: 0.01
+            ),
+        ],
+        durationSeconds: 100,
+        chunkCount: 1
+    )
+
+    let protected = SegmentLocalTranscriptValidator.apply(
+        transcription,
+        speechEvidence: evidence,
+        mode: .enhanced
+    )
+
+    #expect(protected.transcription.text == "Real answer.")
+    #expect(protected.omittedUnsupportedWordCount == 2)
+}
+
 @Test func enhancedProtectionOmitsSilentWordsInsideMixedProviderSegment() {
     let evidence = LocalSpeechEvidenceAnalyzer.analyze(
         samples:
