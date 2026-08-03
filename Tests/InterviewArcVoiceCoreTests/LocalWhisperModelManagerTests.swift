@@ -28,6 +28,17 @@ import Testing
     #expect(!encoderCalled)
 }
 
+@Test func conditionedLocalWhisperChunksUseOneWorker() {
+    #expect(
+        LocalWhisperPromptPolicy.concurrentWorkerCount(forPromptTokens: [42])
+            == 1
+    )
+    #expect(
+        LocalWhisperPromptPolicy.concurrentWorkerCount(forPromptTokens: [])
+            == nil
+    )
+}
+
 @Test func localWhisperModelLifecycleSurvivesRelaunchAndDetectsCorruption() async throws {
     let root = FileManager.default.temporaryDirectory.appending(
         path: "InterviewArcVoice-LocalWhisper-\(UUID().uuidString)",
