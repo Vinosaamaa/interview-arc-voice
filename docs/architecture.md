@@ -2,6 +2,16 @@
 
 ## Linked practice flow
 
+Before a capture may enter this flow, Voice verifies its insertion target. The
+desktop Codex app is an intrinsic specialist surface. A CLI terminal is a
+specialist surface only when its approved host, focused workspace title, and
+live descendant `codex` process all agree. This avoids treating an arbitrary
+shell or a spoofed window title as practice evidence. Target inspection reads
+only process names and the focused window title; it does not inspect terminal
+contents, arguments, environment variables, or transcript text. The widget
+uses the same target decision, so it cannot advertise a linked activity while
+the next capture silently takes the General Dictation route.
+
 1. Fetch and cache the focused Interview Arc activity through the authenticated
    API at startup, reconnect, wake, explicit refresh, and revisioned
    owner-scoped server events. WebSocket connection/open is an authoritative

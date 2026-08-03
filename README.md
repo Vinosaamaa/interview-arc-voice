@@ -205,8 +205,9 @@ discarded.
 
 ## First-time setup
 
-You need macOS 14 or later, the ChatGPT/Codex desktop app, a Groq API key, and
-your Interview Arc personal connection token.
+You need macOS 14 or later, the ChatGPT/Codex desktop app or a verified Codex
+CLI workspace in cmux/Warp, a Groq API key, and your Interview Arc personal
+connection token.
 
 1. Open Interview Arc, choose **Connect tools**, and copy the personal token.
 2. Launch **Interview Arc Voice** from the packaged application.
@@ -232,6 +233,10 @@ credential re-save; subsequent replacements signed by the same certificate do
 not.
 7. For interview practice, focus an activity on Today. Keep **Link to Interview Arc** on.
    The activity title appears in the floating recorder.
+   For Codex CLI, keep the CLI inside an Interview Arc/Codex-named cmux or Warp
+   workspace. Voice also verifies a live descendant `codex` process before it
+   treats that terminal as a specialist destination; ordinary terminal windows
+   remain General Dictation.
 8. Select the microphone or press `Control-Option-Space`. Voice uses the
    continuously refreshed focused activity and immediately starts the local
    capture backend without a network or Bluetooth output-route wait.
@@ -312,6 +317,9 @@ The packaged capture regression and recovery-policy repair are documented in
 The partial-transcript recurrence caused by non-lexical trailing provider
 segments is documented in
 [`docs/postmortems/2026-08-01-partial-transcript-delivery.md`](docs/postmortems/2026-08-01-partial-transcript-delivery.md).
+The Codex CLI destination regression that silently omitted Voice v2 envelopes
+is documented in
+[`docs/postmortems/2026-08-02-codex-cli-envelope-routing.md`](docs/postmortems/2026-08-02-codex-cli-envelope-routing.md).
 The Keychain readiness and empty-credential repair is documented in
 [`docs/postmortems/2026-07-24-keychain-readiness-regression.md`](docs/postmortems/2026-07-24-keychain-readiness-regression.md).
 The recording-start self-rejection and lifecycle-policy repair is documented

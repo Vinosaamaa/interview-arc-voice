@@ -90,6 +90,8 @@ import Testing
         integrityReasons: [.missingSpeechCoverage],
         localInferenceSeconds: 1.25,
         localPromptTokenCount: 17,
+        captureTargetKind: .codexCLITerminal,
+        captureRouteReason: .linkedAfterContextRefresh,
         outcome: .failed
     )
 
@@ -107,6 +109,8 @@ import Testing
     #expect(record.report.contains("Transcription integrity reasons: missingSpeechCoverage"))
     #expect(record.report.contains("Local vocabulary conditioning: true"))
     #expect(record.report.contains("Local vocabulary prompt tokens: 17"))
+    #expect(record.report.contains("Capture target: codexCLITerminal"))
+    #expect(record.report.contains("Capture route: linkedAfterContextRefresh"))
 }
 
 @Test func diagnosticRetryMatchesRetainedGeneralAudioWithoutEnablingLinkedDuplication() {
@@ -189,6 +193,8 @@ import Testing
     #expect(records[0].trailingSpeechLikeFrameCount == nil)
     #expect(records[0].trailingSpeechLikeFraction == nil)
     #expect(records[0].integrityReasons == nil)
+    #expect(records[0].captureTargetKind == nil)
+    #expect(records[0].captureRouteReason == nil)
 }
 
 @Test func diagnosticsStoreCanBeCleared() async throws {
