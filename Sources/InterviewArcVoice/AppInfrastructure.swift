@@ -760,6 +760,7 @@ final class FloatingPanelController {
     private var miniDragStartFrame: NSRect?
     private var miniDragStartPointer: CGPoint?
     private var miniDragDidMove = false
+    private var resizeAnimationTask: Task<Void, Never>?
 
     func show(model: VoiceBridgeModel) {
         if let panel {
@@ -863,13 +864,36 @@ final class FloatingPanelController {
                 || abs(panel.frame.height - frame.height) > 0.5
                 || abs(panel.frame.minX - frame.minX) > 0.5
                 || abs(panel.frame.minY - frame.minY) > 0.5 else { return }
+        resizeAnimationTask?.cancel()
+        resizeAnimationTask = nil
         if reduceMotion {
             panel.setFrame(frame, display: true)
         } else {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = FloatingWidgetMotionPolicy.durationSeconds
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                panel.animator().setFrame(frame, display: true)
+            let startFrame = panel.frame
+            let duration = FloatingWidgetMotionPolicy.durationSeconds
+            resizeAnimationTask = Task { @MainActor [weak panel] in
+                let startedAt = Date()
+                while !Task.isCancelled {
+                    guard let panel else { return }
+                    let progress = Date().timeIntervalSince(startedAt) / duration
+                    let intermediate = FloatingWidgetFrameInterpolationPolicy.frame(
+                        from: startFrame,
+                        to: frame,
+                        progress: progress
+                    )
+                    panel.setFrame(intermediate, display: true)
+                    panel.contentView?.needsLayout = true
+                    panel.contentView?.layoutSubtreeIfNeeded()
+                    if progress >= 1 {
+                        panel.setFrame(frame, display: true)
+                        return
+                    }
+                    try? await Task.sleep(
+                        for: .seconds(
+                            FloatingWidgetMotionPolicy.frameIntervalSeconds
+                        )
+                    )
+                }
             }
         }
     }

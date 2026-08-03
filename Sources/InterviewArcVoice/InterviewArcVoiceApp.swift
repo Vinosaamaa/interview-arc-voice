@@ -2624,15 +2624,7 @@ final class VoiceBridgeModel: ObservableObject {
             }
             connectionTokenDraft = savedToken ?? ""
             groqKeyDraft = savedGroqKey ?? ""
-            groqCredentialRejected = false
-            rejectedGroqCredential = nil
-            rejectedGroqCredentialFingerprint = nil
-            UserDefaults.standard.removeObject(
-                forKey: "voice.groqCredentialRejected"
-            )
-            UserDefaults.standard.removeObject(
-                forKey: "voice.rejectedGroqCredentialFingerprint"
-            )
+            clearPersistedGroqCredentialRejection()
             UserDefaults.standard.set(apiBaseURL, forKey: "voice.apiBaseURL")
             UserDefaults.standard.set(workspacePath, forKey: "voice.workspacePath")
             UserDefaults.standard.set(codexPath, forKey: "voice.codexPath")
@@ -3085,6 +3077,18 @@ final class VoiceBridgeModel: ObservableObject {
         )
     }
 
+    private func clearPersistedGroqCredentialRejection() {
+        groqCredentialRejected = false
+        rejectedGroqCredential = nil
+        rejectedGroqCredentialFingerprint = nil
+        UserDefaults.standard.removeObject(
+            forKey: "voice.groqCredentialRejected"
+        )
+        UserDefaults.standard.removeObject(
+            forKey: "voice.rejectedGroqCredentialFingerprint"
+        )
+    }
+
     private func reportTranscriptionFailure(
         _ error: Error,
         diagnosticSeed: CaptureDiagnosticSeed?
@@ -3200,19 +3204,20 @@ final class VoiceBridgeModel: ObservableObject {
 
         connectionTokenDraft = snapshot.interviewArcToken
         groqKeyDraft = snapshot.groqAPIKey
-        if let failureNotice,
-           failureNotice.kind == .transcription,
-           failureNotice.detail.localizedCaseInsensitiveContains(
-               "invalid api key"
-           ) || failureNotice.detail.contains("Request failed (401)") {
-            rejectCurrentGroqCredential()
-            reportFailure(
-                kind: .configuration,
-                title: "Groq key rejected",
-                message: "Recording preserved · replace the key in Settings",
-                detail: "Groq rejected the saved API key. Voice stopped automatic retries so the protected recording cannot enter a failure loop.",
-                actions: [.openSettings, .playRecording, .saveRecording]
-            )
+        let currentCredential = snapshot.groqAPIKey.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        let currentFingerprint = currentCredential.isEmpty
+            ? nil
+            : credentialFingerprint(currentCredential)
+        if CredentialRejectionReconciliationPolicy.shouldClearRejection(
+            rejectionIsPersisted: groqCredentialRejected,
+            rejectedCredentialFingerprint: rejectedGroqCredentialFingerprint,
+            currentCredentialFingerprint: currentFingerprint,
+            currentCredentialIsPresent: !currentCredential.isEmpty
+        ) {
+            clearPersistedGroqCredentialRejection()
+            reconcilePersistedCredentialFailure()
         }
         accessibilityNeeded = !textInjector.accessibilityTrusted
         if let errorDescription = snapshot.errorDescription {

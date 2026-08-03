@@ -179,6 +179,34 @@ public enum PlannerSelectionTrayPolicy {
 
 public enum FloatingWidgetMotionPolicy {
     public static let durationSeconds: TimeInterval = 0.30
+    public static let frameIntervalSeconds: TimeInterval = 1.0 / 60.0
+}
+
+public enum FloatingWidgetFrameInterpolationPolicy {
+    public static func frame(
+        from start: CGRect,
+        to end: CGRect,
+        progress: Double
+    ) -> CGRect {
+        let bounded = min(1, max(0, progress))
+        // Smoothstep keeps the same ease-in-out character in both directions
+        // while guaranteeing visible intermediate frames.
+        let eased = bounded * bounded * (3 - 2 * bounded)
+        return CGRect(
+            x: interpolate(start.minX, end.minX, eased),
+            y: interpolate(start.minY, end.minY, eased),
+            width: interpolate(start.width, end.width, eased),
+            height: interpolate(start.height, end.height, eased)
+        )
+    }
+
+    private static func interpolate(
+        _ start: CGFloat,
+        _ end: CGFloat,
+        _ progress: Double
+    ) -> CGFloat {
+        start + (end - start) * CGFloat(progress)
+    }
 }
 
 public enum FloatingWidgetUpperSurfaceTransitionStyle: Equatable, Sendable {
