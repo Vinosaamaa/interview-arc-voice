@@ -300,6 +300,8 @@ public enum VoiceBridgeError: LocalizedError, Sendable {
     case noFocusedActivity(String)
     case noSpecialist(String)
     case invalidProviderCredential
+    case providerPermissionDenied(String?)
+    case providerResponseFailure(Int, String?)
     case invalidResponse(Int, String)
     case protocolMismatch(Int)
     case microphoneDenied
@@ -309,6 +311,32 @@ public enum VoiceBridgeError: LocalizedError, Sendable {
     case suspiciousTranscript([TranscriptionIntegrityReason])
     case codexUnavailable(String)
 
+    public var providerHTTPStatus: Int? {
+        switch self {
+        case .invalidProviderCredential:
+            return 401
+        case .providerPermissionDenied:
+            return 403
+        case .providerResponseFailure(let status, _):
+            return status
+        default:
+            return nil
+        }
+    }
+
+    public var providerErrorCode: String? {
+        switch self {
+        case .invalidProviderCredential:
+            return "invalid_authentication"
+        case .providerPermissionDenied(let code):
+            return code ?? "permission_denied"
+        case .providerResponseFailure(_, let code):
+            return code
+        default:
+            return nil
+        }
+    }
+
     public var errorDescription: String? {
         switch self {
         case .missingCredential(let name): return "Add your \(name) in Interview Arc Voice settings."
@@ -316,6 +344,10 @@ public enum VoiceBridgeError: LocalizedError, Sendable {
         case .noSpecialist(let message): return message
         case .invalidProviderCredential:
             return "Groq rejected the saved API key. Replace it in Voice settings."
+        case .providerPermissionDenied:
+            return "Groq denied this project's transcription access. Review its model and project permissions."
+        case .providerResponseFailure(let status, _):
+            return "Groq transcription failed (\(status))."
         case .invalidResponse(let status, let body): return "Request failed (\(status)): \(body)"
         case .protocolMismatch(let version): return "Interview Arc Voice protocol \(version) is not supported by this app."
         case .microphoneDenied: return "Microphone access is required to record an answer."

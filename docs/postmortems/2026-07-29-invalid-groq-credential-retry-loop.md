@@ -9,8 +9,10 @@ Repeated **Retry transcription** actions therefore resubmitted the same
 protected recording even though the credential was already known to be
 invalid.
 
-Issues: [#87](https://github.com/Vinosaamaa/interview-arc-voice/issues/87) and
-[#88](https://github.com/Vinosaamaa/interview-arc-voice/issues/88).
+Issues: [#87](https://github.com/Vinosaamaa/interview-arc-voice/issues/87),
+[#88](https://github.com/Vinosaamaa/interview-arc-voice/issues/88), and the
+August 2 follow-up
+[#161](https://github.com/Vinosaamaa/interview-arc-voice/issues/161).
 
 ## User impact
 
@@ -63,6 +65,10 @@ Settings presenter.
   started playback, then the newly assigned fallback toggled it off 900 ms
   later. The fallback must be armed before dismissal so the close handler can
   cancel it.
+- On August 2, a newly saved key worked and Voice later presented **Groq key
+  rejected** again. The released client had discarded the provider status and
+  safe error code after mapping both HTTP 401 and 403 into the same error, so
+  the recurrence could not be classified conclusively after the fact.
 
 ## Root cause
 
@@ -84,6 +90,16 @@ state those actions required. In addition, menu recovery reused the model-only
 Open Settings action intended for a disclosure path that no longer owned a
 visible Settings surface.
 
+The first repair then introduced a distinct classification defect: it treated
+Groq HTTP 401 and 403 as equivalent invalid credentials. HTTP 401 means the
+request is not authenticated. HTTP 403 can mean an authenticated project is
+not permitted to use the requested model. Collapsing both responses into a
+hard credential rejection invalidated a possibly valid Keychain entry and
+instructed the user to rotate a key even when project or model permissions
+could be the required change. Because the response class and safe provider
+error code were not retained in bounded diagnostics, the August 2 event lacked
+the evidence needed to tell those cases apart.
+
 ## Contributing factors
 
 - Settings verified only that the Keychain value was persisted, not that Groq
@@ -95,9 +111,19 @@ visible Settings surface.
 
 ## Resolution
 
-- Map Groq 401/403 to a dedicated invalid-provider-credential error.
+- Map Groq 401 to a dedicated invalid-provider-credential error.
+- Map Groq 403 to a separate provider-permission error that preserves the key,
+  disables futile automatic retries, and directs the user to project/model
+  permissions.
+- Record only the provider HTTP status and a bounded safe error identifier in
+  diagnostics; never retain the response message, key, transcript, or audio in
+  that diagnostic record.
 - Persist a non-secret rejection state, preserve audio, and disable Record and
-  Retry until a different key is saved.
+  automatic retry until a different key is saved.
+- Preserve an explicit user-initiated Retry for the protected recording in the
+  floating recovery popover and its matching Settings diagnostic. Persist the
+  original linked/general destination so a retry after relaunch cannot guess
+  its delivery semantics or create a duplicate linked turn.
 - Keep transient provider failures retryable.
 - Make manual insertion surface-aware: menu insertion prefers the remembered
   external editor; floating insertion prefers the current eligible editor.
@@ -114,12 +140,16 @@ visible Settings surface.
 
 ## Regression prevention
 
-- Policy tests cover provider-auth classification and rejected-key replacement.
+- Policy tests cover 401 authentication rejection, 403 permission denial,
+  retryable 429/5xx failures, and rejected-key replacement.
 - Target-selection tests distinguish menu and floating surfaces.
 - Store tests cover ordering, five-record bounds, 24-hour expiry, and file
   permissions.
 - Recovery-store tests cover relaunch hydration, `0600` metadata permissions,
-  missing/unsafe-path rejection, and bounded newest-audio migration.
+  original-destination restoration, missing/unsafe-path rejection, and bounded
+  newest-audio migration.
+- Settings renders all records retained by the existing 100-record diagnostic
+  store instead of silently presenting only the newest five.
 - The release must repeat recording/transcription and menu insertion with the
   exact installed artifact produced from merged `main`.
 

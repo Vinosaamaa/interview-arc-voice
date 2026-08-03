@@ -305,6 +305,10 @@ least 58 points for the activity title.
   treatment.
 - Failure: show the concise cause in the capsule and an anchored recovery
   popover narrower than the 250-point widget.
+- Provider authentication and permission failures keep automatic retry
+  disabled while exposing one explicit Retry beside Settings, Play, and Save
+  when protected audio exists. Retrying never discards the recording or
+  guesses whether its original destination was linked or general dictation.
 
 ## Recovery popover
 

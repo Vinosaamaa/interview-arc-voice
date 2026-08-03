@@ -11,9 +11,105 @@ import Testing
     )
     #expect(
         TranscriptionFailurePolicy.disposition(
+            for: VoiceBridgeError.providerPermissionDenied(
+                "model_access_denied"
+            )
+        ) == .reviewProviderPermission
+    )
+    #expect(
+        TranscriptionFailurePolicy.disposition(
             for: VoiceBridgeError.invalidResponse(503, "Unavailable")
         ) == .retryTranscription
     )
+}
+
+@Test func providerRejectionOffersOneShotManualRecoveryForPreservedAudio() {
+    let expected: [VoiceFailureAction] = [
+        .retryTranscription,
+        .openSettings,
+        .playRecording,
+        .saveRecording,
+    ]
+
+    #expect(
+        ProviderFailureRecoveryPolicy.actions(
+            for: .replaceCredential,
+            hasRecoverableAudio: true
+        ) == expected
+    )
+    #expect(
+        ProviderFailureRecoveryPolicy.actions(
+            for: .reviewProviderPermission,
+            hasRecoverableAudio: true
+        ) == expected
+    )
+    #expect(
+        ProviderFailureRecoveryPolicy.actions(
+            for: .replaceCredential,
+            hasRecoverableAudio: false
+        ) == [.openSettings]
+    )
+}
+
+@Test func groqHTTP401RequiresCredentialReplacement() {
+    let error = GroqProviderFailurePolicy.error(
+        statusCode: 401,
+        responseData: Data(
+            #"{"error":{"message":"Invalid API Key","type":"invalid_request_error","code":"invalid_api_key"}}"#.utf8
+        )
+    )
+
+    #expect(
+        TranscriptionFailurePolicy.disposition(for: error)
+            == .replaceCredential
+    )
+    #expect(error.providerHTTPStatus == 401)
+    #expect(error.providerErrorCode == "invalid_authentication")
+}
+
+@Test func groqHTTP403RequiresPermissionReviewWithoutRejectingTheKey() {
+    let error = GroqProviderFailurePolicy.error(
+        statusCode: 403,
+        responseData: Data(
+            #"{"error":{"message":"Model blocked","type":"permission_error","code":"model_access_denied"}}"#.utf8
+        )
+    )
+
+    guard case let VoiceBridgeError.providerPermissionDenied(code) = error else {
+        Issue.record("Expected a permission-denied provider error")
+        return
+    }
+    #expect(code == "model_access_denied")
+    #expect(error.providerHTTPStatus == 403)
+    #expect(error.providerErrorCode == "model_access_denied")
+    #expect(
+        TranscriptionFailurePolicy.disposition(for: error)
+            == .reviewProviderPermission
+    )
+}
+
+@Test func groqRateLimitsAndServerFailuresRemainRetryableAndPrivacySafe() {
+    for statusCode in [429, 503] {
+        let error = GroqProviderFailurePolicy.error(
+            statusCode: statusCode,
+            responseData: Data(
+                #"{"error":{"message":"secret provider detail"}}"#.utf8
+            )
+        )
+        #expect(
+            TranscriptionFailurePolicy.disposition(for: error)
+                == .retryTranscription
+        )
+        #expect(error.providerHTTPStatus == statusCode)
+        #expect(!error.localizedDescription.contains("secret provider detail"))
+    }
+}
+
+@Test func genericHTTPFailuresAreNotReportedAsGroqFailures() {
+    let error = VoiceBridgeError.invalidResponse(503, "Interview Arc failed")
+
+    #expect(error.providerHTTPStatus == nil)
+    #expect(error.providerErrorCode == nil)
 }
 
 @Test func aRejectedCredentialMustChangeBeforeRetry() {
@@ -515,7 +611,25 @@ import Testing
         audioURL: audio,
         durationSeconds: 42,
         createdAt: Date(timeIntervalSince1970: 100),
-        activityTitle: "Course Schedule"
+        activityTitle: "Course Schedule",
+        retryDestination: .linked(
+            activity: FocusedVoiceActivity(
+                activityId: "activity-1",
+                workbenchId: "workbench-1",
+                questionId: "question-1",
+                specialty: .coding,
+                interviewArcSpecialty: "coding",
+                title: "Course Schedule",
+                prompt: nil,
+                topics: [],
+                tags: [],
+                companies: [],
+                projects: [],
+                vocabularyPackIds: [],
+                speechTerms: []
+            ),
+            startedAt: Date(timeIntervalSince1970: 90)
+        )
     )
     try store.save(reference)
 
@@ -533,6 +647,24 @@ import Testing
     )
     try store.save(unsafe)
     #expect(try store.load(allowedDirectories: [recordings]) == nil)
+}
+
+@Test func recoverableRecordingReferenceDecodesBeforeRetryDestinationWasStored() throws {
+    let json = """
+    {
+      "audioPath":"/tmp/preserved.m4a",
+      "durationSeconds":42,
+      "createdAt":100,
+      "activityTitle":"Course Schedule"
+    }
+    """
+
+    let reference = try JSONDecoder().decode(
+        LocalRecoverableRecordingReference.self,
+        from: Data(json.utf8)
+    )
+
+    #expect(reference.retryDestination == nil)
 }
 
 @Test func recoverableRecordingMigrationUsesTheNewestNonemptyAudioFile() throws {
