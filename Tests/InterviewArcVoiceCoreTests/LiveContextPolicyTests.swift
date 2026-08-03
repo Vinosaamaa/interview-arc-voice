@@ -36,6 +36,12 @@ import Testing
     #expect(cmux.reason == .verifiedCodexCLIProcess)
     #expect(warp.canAttach)
     #expect(warp.kind == .codexCLITerminal)
+    #expect(CaptureTargetApplicationPolicy.requiresCodexDescendantInspection(
+        bundleIdentifier: "com.cmuxterm.app"
+    ))
+    #expect(!CaptureTargetApplicationPolicy.requiresCodexDescendantInspection(
+        bundleIdentifier: "com.google.Chrome"
+    ))
 }
 
 @Test func arbitraryTerminalAndNonTerminalWindowsRemainGeneralDictation() {
@@ -87,6 +93,13 @@ import Testing
     )
     let evaluator = CaptureRouteEvaluationPolicy()
 
+    #expect(evaluator.evaluate(
+        linkEnabled: true,
+        target: target,
+        hasFocusedActivity: true,
+        contextIsFresh: true,
+        phase: .contextRefresh
+    ) == CaptureRouteEvaluation(route: .linked, reason: .linkedAfterContextRefresh))
     #expect(evaluator.evaluate(
         linkEnabled: true,
         target: target,

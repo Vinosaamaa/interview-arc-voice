@@ -73,6 +73,11 @@ public enum CaptureRouteReason: String, Codable, Equatable, Sendable {
     case staleFocusedContext
 }
 
+public enum CaptureRoutePhase: Equatable, Sendable {
+    case recordStart
+    case contextRefresh
+}
+
 public struct CaptureRouteEvaluation: Equatable, Sendable {
     public let route: CaptureRouteKind
     public let reason: CaptureRouteReason
@@ -90,7 +95,8 @@ public struct CaptureRouteEvaluationPolicy: Sendable {
         linkEnabled: Bool,
         target: CaptureTargetDecision,
         hasFocusedActivity: Bool,
-        contextIsFresh: Bool
+        contextIsFresh: Bool,
+        phase: CaptureRoutePhase = .recordStart
     ) -> CaptureRouteEvaluation {
         guard linkEnabled else {
             return CaptureRouteEvaluation(route: .general, reason: .linkDisabled)
@@ -104,7 +110,18 @@ public struct CaptureRouteEvaluationPolicy: Sendable {
         guard contextIsFresh else {
             return CaptureRouteEvaluation(route: .general, reason: .staleFocusedContext)
         }
-        return CaptureRouteEvaluation(route: .linked, reason: .linkedAtRecordStart)
+        return linkedEvaluation(phase: phase)
+    }
+
+    public func linkedEvaluation(
+        phase: CaptureRoutePhase
+    ) -> CaptureRouteEvaluation {
+        CaptureRouteEvaluation(
+            route: .linked,
+            reason: phase == .recordStart
+                ? .linkedAtRecordStart
+                : .linkedAfterContextRefresh
+        )
     }
 }
 
@@ -189,6 +206,13 @@ public enum CaptureTargetApplicationPolicy {
                 windowTitle: nil
             )
         ).canAttach
+    }
+
+    public static func requiresCodexDescendantInspection(
+        bundleIdentifier: String?
+    ) -> Bool {
+        guard let bundleIdentifier else { return false }
+        return codexTerminalBundleIdentifiers.contains(bundleIdentifier)
     }
 
     public static func canReceiveDictation(bundleIdentifier: String?) -> Bool {

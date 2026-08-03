@@ -4492,7 +4492,9 @@ final class VoiceBridgeModel: ObservableObject {
             return
         }
         captureDestination = .linked(activity, startedAt: recordingStartedAt)
-        captureRouteReason = .linkedAfterContextRefresh
+        captureRouteReason = routeEvaluationPolicy.linkedEvaluation(
+            phase: .contextRefresh
+        ).reason
         voiceBridgeLogger.info(
             "Capture late-bound after context refresh: routeReason=\(self.captureRouteReason.rawValue, privacy: .public)"
         )
