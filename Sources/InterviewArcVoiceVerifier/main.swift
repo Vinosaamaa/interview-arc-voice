@@ -81,11 +81,11 @@ private enum InterviewArcVoiceVerifier {
 
         let prompt: String
         if let promptURL = options.promptURL {
-            let promptData = try Data(contentsOf: promptURL)
-            guard promptData.count <= 65_536 else {
+            do {
+                prompt = try loadBoundedLocalWhisperPrompt(from: promptURL)
+            } catch LocalWhisperPromptFileError.oversized {
                 throw VerificationError.oversizedPrompt
             }
-            prompt = String(decoding: promptData, as: UTF8.self)
         } else {
             prompt = ""
         }

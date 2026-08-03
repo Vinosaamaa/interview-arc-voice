@@ -2,6 +2,26 @@ import Foundation
 import Testing
 @testable import InterviewArcVoiceCore
 
+@Test func localWhisperPromptReaderAcceptsTheMaximumAndRejectsOneExtraByte() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let acceptedURL = directory.appendingPathComponent("accepted.txt")
+    let rejectedURL = directory.appendingPathComponent("rejected.txt")
+    try Data(repeating: 65, count: 65_536).write(to: acceptedURL)
+    try Data(repeating: 66, count: 65_537).write(to: rejectedURL)
+
+    #expect(try loadBoundedLocalWhisperPrompt(from: acceptedURL).utf8.count == 65_536)
+    #expect(throws: LocalWhisperPromptFileError.oversized) {
+        try loadBoundedLocalWhisperPrompt(from: rejectedURL)
+    }
+}
+
 @Test func localVerificationReportContainsOnlyAggregateEvidence() throws {
     let result = ArcTranscriptionResult(
         text: "private words stay out of the report",

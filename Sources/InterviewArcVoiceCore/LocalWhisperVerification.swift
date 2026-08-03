@@ -1,6 +1,25 @@
 import Foundation
 @preconcurrency import WhisperKit
 
+public enum LocalWhisperPromptFileError: Error, Equatable, Sendable {
+    case oversized
+}
+
+/// Reads at most one byte beyond the supported prompt limit so an arbitrary
+/// local file cannot be fully allocated before it is rejected.
+public func loadBoundedLocalWhisperPrompt(
+    from url: URL,
+    maximumByteCount: Int = 65_536
+) throws -> String {
+    let handle = try FileHandle(forReadingFrom: url)
+    defer { try? handle.close() }
+    let data = try handle.read(upToCount: maximumByteCount + 1) ?? Data()
+    guard data.count <= maximumByteCount else {
+        throw LocalWhisperPromptFileError.oversized
+    }
+    return String(decoding: data, as: UTF8.self)
+}
+
 /// Stable, content-free categories for native replay failures.
 public enum LocalWhisperVerificationFailureCode: String, Sendable {
     case modelUnavailable = "model-unavailable"
