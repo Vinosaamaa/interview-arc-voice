@@ -3498,6 +3498,11 @@ final class VoiceBridgeModel: ObservableObject {
             )
             phase = .preparingMicrophone
             contextMessage = "Preparing the microphone route…"
+            // Begin the visible collapse immediately. Waiting for Bluetooth or
+            // microphone readiness used to start this resize alongside audio
+            // state publication, producing a brief stall that the explicit
+            // collapse control did not have.
+            beginRecordingPresentation()
             try await recorder.start(
                 at: destination,
                 captureBackendDidStart: { [weak self] in
@@ -3514,27 +3519,6 @@ final class VoiceBridgeModel: ObservableObject {
             case nil:
                 throw VoiceBridgeError.recordingUnavailable
             }
-            if dynamicRecordingInterfaceEnabled {
-                let currentDisclosure = FloatingWidgetDisclosureState(
-                    timerPanelExpanded: timerPanelExpanded,
-                    finishingActivityID: finishingActivityID,
-                    activityPickerExpanded: activityPickerExpanded
-                )
-                disclosureStateBeforeRecording = currentDisclosure
-                dynamicRecordingInterfaceActive = true
-                let recordingDisclosure = FloatingWidgetWindowPolicy
-                    .disclosureStateWhenRecordingStarts(
-                        current: currentDisclosure
-                    )
-                timerPanelExpanded = recordingDisclosure.timerPanelExpanded
-                finishingActivityID = recordingDisclosure.finishingActivityID
-                activityPickerExpanded = recordingDisclosure.activityPickerExpanded
-            } else {
-                disclosureStateBeforeRecording = nil
-                dynamicRecordingInterfaceActive = false
-            }
-            plannerPresentedBeforeRecording = plannerPresented
-            plannerPresented = false
             phase = .recording
             if linkToInterviewArc {
                 Task { await refreshContext(showProgress: false) }
@@ -3553,6 +3537,28 @@ final class VoiceBridgeModel: ObservableObject {
             canRetryLastTranscription = false
             reportFailure(error, stage: .microphone)
         }
+    }
+
+    private func beginRecordingPresentation() {
+        plannerPresentedBeforeRecording = plannerPresented
+        if dynamicRecordingInterfaceEnabled {
+            let currentDisclosure = FloatingWidgetDisclosureState(
+                timerPanelExpanded: timerPanelExpanded,
+                finishingActivityID: finishingActivityID,
+                activityPickerExpanded: activityPickerExpanded
+            )
+            disclosureStateBeforeRecording = currentDisclosure
+            dynamicRecordingInterfaceActive = true
+            let recordingDisclosure = FloatingWidgetWindowPolicy
+                .disclosureStateWhenRecordingStarts(current: currentDisclosure)
+            timerPanelExpanded = recordingDisclosure.timerPanelExpanded
+            finishingActivityID = recordingDisclosure.finishingActivityID
+            activityPickerExpanded = recordingDisclosure.activityPickerExpanded
+        } else {
+            disclosureStateBeforeRecording = nil
+            dynamicRecordingInterfaceActive = false
+        }
+        plannerPresented = false
     }
 
     private func stopAndProcess(unexpectedTermination: Bool = false) {

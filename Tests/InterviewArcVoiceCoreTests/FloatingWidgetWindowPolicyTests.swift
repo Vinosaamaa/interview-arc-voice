@@ -149,6 +149,42 @@ import Foundation
     )
 }
 
+@Test func planToFocusMakesTheVisibleSurfaceFollowEveryShrinkingHostFrame() {
+    #expect(
+        FloatingWidgetUpperSurfaceTransitionPolicy.visibleWidth(
+            for: .focus,
+            hostWidth: FloatingWidgetWindowPolicy.plannerWidth
+        ) == FloatingWidgetWindowPolicy.plannerWidth
+    )
+    #expect(
+        FloatingWidgetUpperSurfaceTransitionPolicy.visibleWidth(
+            for: .focus,
+            hostWidth: 500
+        ) == 500
+    )
+    #expect(
+        FloatingWidgetUpperSurfaceTransitionPolicy.visibleWidth(
+            for: .focus,
+            hostWidth: FloatingWidgetWindowPolicy.expandedWidth
+        ) == FloatingWidgetWindowPolicy.expandedWidth
+    )
+}
+
+@Test func compactToFocusKeepsTheAcceptedClippedRevealGeometry() {
+    #expect(
+        FloatingWidgetUpperSurfaceTransitionPolicy.visibleWidth(
+            for: .focus,
+            hostWidth: FloatingWidgetWindowPolicy.collapsedWidth
+        ) == FloatingWidgetWindowPolicy.expandedWidth
+    )
+    #expect(
+        FloatingWidgetUpperSurfaceTransitionPolicy.visibleWidth(
+            for: .planToday,
+            hostWidth: FloatingWidgetWindowPolicy.expandedWidth
+        ) == FloatingWidgetWindowPolicy.plannerWidth
+    )
+}
+
 @Test func coverageNoticeNeverReplacesAuthoritativeTimerContent() {
     #expect(FloatingWidgetCoverageNoticePolicy.showsInlineNotice(
         noticePresented: true,
