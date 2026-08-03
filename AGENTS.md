@@ -31,8 +31,9 @@ material, or shared geometry rather than for every unrelated visual edit.
 GitHub Actions artifacts use an ad-hoc transport signature because CI must not
 receive the user's private signing key. Before any artifact replaces the local
 installation, run `scripts/bootstrap-local-signing-identity.sh` once on that
-Mac, then run `scripts/sign-app-for-install.sh` against the exact merged-main
-artifact. Verify the resulting certificate-backed requirement and Keychain
+Mac, extract the exact merged-main `Interview-Arc-Voice.app.tar.gz`, then run
+`scripts/sign-app-for-install.sh` against that extracted app. Verify the
+resulting certificate-backed requirement and Keychain
 readiness in the normal GUI context. Never treat the ad-hoc CI signature or a
 credential probe inside a restricted agent shell as installed-app identity
 evidence.

@@ -39,4 +39,8 @@ ruby "$ROOT/scripts/validate-artifact-workflow.rb" \
   "$ROOT/.github/workflows/ci.yml" \
   "$ROOT/.github/actions/package-voice/action.yml"
 
+grep -q 'tar -czf' "$ROOT/scripts/archive-app.sh"
+grep -q 'Archive did not preserve executable mode' "$ROOT/scripts/archive-app.sh"
+grep -q 'rm -rf "$app_path"' "$ROOT/scripts/archive-app.sh"
+
 echo "Artifact promotion policy tests passed."

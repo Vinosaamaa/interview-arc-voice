@@ -30,6 +30,8 @@ jobs:
             --tree '${{ steps.identity.outputs.tree }}' \
             --run-id '${{ github.run_id }}' \
             --event pull_request
+      - name: Preserve executable modes in canonical app archive
+        run: ./scripts/archive-app.sh
       - uses: actions/upload-artifact@v4
         with:
           name: Interview-Arc-Voice-tree-${{ steps.identity.outputs.tree }}
@@ -120,6 +122,9 @@ jobs:
             echo '- Decision: rebuilt merged main (no successful tree-equivalent PR artifact)'
             echo '- Git tree: `${{ steps.identity.outputs.tree }}`'
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve rebuilt executable modes in canonical app archive
+        if: steps.promotion.outputs.available != 'true'
+        run: ./scripts/archive-app.sh
       - uses: actions/upload-artifact@v4
         with:
           name: Interview-Arc-Voice-main-${{ steps.identity.outputs.tree }}

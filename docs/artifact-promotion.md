@@ -16,7 +16,12 @@ test, and package build. It writes `dist/artifact-provenance.json` with:
 - source GitHub Actions run ID; and
 - workflow event.
 
-The uploaded artifact name includes the Git tree and is retained for 14 days.
+Before upload, the workflow places the signed application in
+`Interview-Arc-Voice.app.tar.gz`, verifies that both packaged executables are
+still executable after a clean extraction, and removes the unpacked `.app`
+from `dist`. GitHub Actions normalizes permissions on unpacked files; the
+archive is therefore the canonical install payload. The uploaded artifact name
+includes the Git tree and is retained for 14 days.
 
 ## Merged main
 
@@ -38,8 +43,9 @@ source commit, and merge strategy are never sufficient
 evidence. If no artifact passes every check, the workflow runs the complete
 test and packaging path on merged `main`.
 
-Promotion reuses the exact tested `.app` bytes. The main workflow uploads that
-artifact under a main/tree-derived name and records the decision, tree, source
-commit, and source run in the GitHub step summary. Installation still requires
-the repository's local certificate-backed re-signing and lifecycle smoke test;
-artifact promotion does not weaken installed-app verification.
+Promotion reuses the exact tested app archive bytes. The main workflow uploads
+that archive under a main/tree-derived name and records the decision, tree,
+source commit, and source run in the GitHub step summary. Installation extracts
+the archive and verifies executable modes before the repository's local
+certificate-backed re-signing and lifecycle smoke test; artifact promotion
+does not weaken installed-app verification.

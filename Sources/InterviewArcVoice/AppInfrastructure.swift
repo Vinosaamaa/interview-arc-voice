@@ -882,10 +882,13 @@ final class FloatingPanelController {
                         progress: progress
                     )
                     panel.setFrame(intermediate, display: true)
-                    panel.contentView?.needsLayout = true
-                    panel.contentView?.layoutSubtreeIfNeeded()
                     if progress >= 1 {
                         panel.setFrame(frame, display: true)
+                        // Let AppKit coalesce SwiftUI layout during the resize.
+                        // Forcing a full layout on every nominal 60 Hz frame
+                        // blocks the main actor for the large Plan Today tree,
+                        // leaving only one visible intermediate frame.
+                        panel.contentView?.needsLayout = true
                         return
                     }
                     try? await Task.sleep(
