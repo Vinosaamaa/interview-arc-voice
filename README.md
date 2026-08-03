@@ -254,8 +254,9 @@ connection token.
 CI artifacts carry an ad-hoc transport signature and must not directly replace
 the installed app. On a new Mac, run
 `./scripts/bootstrap-local-signing-identity.sh` once. Before every install, run
+`tar -xzf Interview-Arc-Voice.app.tar.gz`, then run
 `./scripts/sign-app-for-install.sh '/path/to/Interview Arc Voice.app'` against
-the exact merged-main artifact. The install signature is backed by one
+the extracted exact merged-main artifact. The install signature is backed by one
 persistent, non-extractable certificate in the user's Keychain, so later app
 versions share one macOS privacy and Keychain identity. The first transition
 from an older ad-hoc build may still require one macOS Keychain approval or one
@@ -339,9 +340,11 @@ swift run InterviewArcVoice
 
 The packaging script writes `dist/Interview Arc Voice.app` and applies an ad-hoc
 local signature. The complete pull-request workflow records the source commit
-and Git tree in its 14-day artifact. After merge, GitHub Actions promotes that
-exact successful artifact when merged `main` has the same Git tree; otherwise
-it rebuilds and tests merged `main`. See `docs/artifact-promotion.md`,
+and Git tree, seals the app in a mode-preserving
+`Interview-Arc-Voice.app.tar.gz`, and uploads that canonical payload in its
+14-day artifact. After merge, GitHub Actions promotes that exact successful
+archive when merged `main` has the same Git tree; otherwise it rebuilds and
+tests merged `main`. See `docs/artifact-promotion.md`,
 `docs/architecture.md`, and
 `docs/protocol-v2.md` for the current intent-gated data flow and boundary
 decisions. `docs/protocol-v1.md` documents legacy accepted captures.

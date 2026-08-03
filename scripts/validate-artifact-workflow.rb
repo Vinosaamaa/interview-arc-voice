@@ -33,6 +33,11 @@ abort "missing embedded tree verification" unless verify
 uploads = [pr_steps, main_steps].flat_map { |steps| steps.select { |step| step["uses"] == "actions/upload-artifact@v4" } }
 abort "both PR and main artifacts must be retained for 14 days" unless uploads.length == 2 && uploads.all? { |step| step.dig("with", "retention-days") == 14 }
 
+pr_archive = pr_steps.find { |step| step.fetch("run", "").include?("archive-app.sh") }
+abort "PR artifact must archive the app before upload" unless pr_archive
+main_archive = main_steps.find { |step| step.fetch("run", "").include?("archive-app.sh") }
+abort "rebuilt main artifact must archive the app before upload" unless main_archive&.fetch("if", "")&.include?("available != 'true'")
+
 action = YAML.safe_load(File.read(action_path), aliases: true)
 abort "package action must be composite" unless action.dig("runs", "using") == "composite"
 commands = action.dig("runs", "steps").map { |step| step["run"] }.compact.join("\n")
