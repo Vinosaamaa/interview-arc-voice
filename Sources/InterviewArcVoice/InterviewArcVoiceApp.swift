@@ -678,8 +678,8 @@ final class VoiceBridgeModel: ObservableObject {
               let timer = instrument.activities.first(where: { $0.id == id })?.timer else {
             return nil
         }
-        return compactClock(
-            timer.elapsedSeconds(
+        return CompactTimerTextPolicy.activityElapsed(
+            seconds: timer.elapsedSeconds(
                 serverNow: instrument.serverNow,
                 receivedAt: timerInstrumentReceivedAt,
                 now: now
