@@ -267,8 +267,12 @@ activity picker, and finish drawer grow upward. The optional dynamic recording
 interface snapshots that disclosure, hides it behind one shared recording
 capsule, and restores the snapshot immediately on Stop. Hidden clocks continue
 to use authoritative timer state. AppKit owns the single bottom-anchored frame
-animation; child surfaces fade without a competing move transition, preventing
-the capsule from hopping vertically. The visible timer-to-recorder gap remains
+animation. The panel controller drives an explicit 60 Hz eased frame sequence
+for expansion and collapse, cancelling and continuing from the current
+intermediate frame when the user reverses direction. SwiftUI supplies one
+clipped upper surface and never owns window geometry. This prevents a
+transparent borderless panel from settling directly at its target frame and
+making collapse look disabled. The visible timer-to-recorder gap remains
 10 points outside capture. Saving uses
 the native macOS save panel: the user chooses the name and location, the
 `.m4a` suffix remains canonical, and a sibling `.txt` transcript is optional.

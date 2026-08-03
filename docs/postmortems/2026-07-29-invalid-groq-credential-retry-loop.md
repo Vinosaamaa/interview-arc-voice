@@ -69,6 +69,12 @@ Settings presenter.
   rejected** again. The released client had discarded the provider status and
   safe error code after mapping both HTTP 401 and 403 into the same error, so
   the recurrence could not be classified conclusively after the fact.
+- On August 3, the exact artifact containing the 401/403 classification repair
+  again prompted for key replacement. Bounded diagnostics showed subsequent
+  Groq captures succeeding, and current preferences no longer contained a
+  rejection flag. Source inspection found that launch still promoted an older
+  text-only `Request failed (401)` notice into a rejection of whichever key
+  happened to be in Keychain at that later launch.
 
 ## Root cause
 
@@ -99,6 +105,14 @@ instructed the user to rotate a key even when project or model permissions
 could be the required change. Because the response class and safe provider
 error code were not retained in bounded diagnostics, the August 2 event lacked
 the evidence needed to tell those cases apart.
+
+The follow-up classification repair left one backward-migration path coupled
+to human-readable failure text. It did not bind that historical failure to the
+fingerprint of the credential that produced it. A replacement entered through
+another Keychain-aware process, or legacy rejection state without a stored
+fingerprint, could therefore be treated as though Groq had rejected the new
+value. That stale-state promotion explains how the replacement prompt could
+reappear even though later requests with the current credential succeeded.
 
 ## Contributing factors
 
@@ -142,6 +156,10 @@ the evidence needed to tell those cases apart.
 
 - Policy tests cover 401 authentication rejection, 403 permission denial,
   retryable 429/5xx failures, and rejected-key replacement.
+- Rejection reconciliation tests bind a persisted 401 to one credential
+  fingerprint, clear it when Keychain contains a different nonempty value,
+  allow one fresh provider check for legacy state without a fingerprint, and
+  retain the rejection when the exact same key remains installed.
 - Target-selection tests distinguish menu and floating surfaces.
 - Store tests cover ordering, five-record bounds, 24-hour expiry, and file
   permissions.

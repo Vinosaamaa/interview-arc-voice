@@ -355,6 +355,10 @@ least 58 points for the activity title.
   every intermediate host size and pins its content bottom-trailing; it must
   not jump immediately to the final model size while the panel is still
   interpolating.
+- The borderless panel must expose real intermediate frames in both directions.
+  Use one cancellable 60 Hz eased frame sequence so a reversal continues from
+  the current frame; do not rely on a proxy animation that can settle directly
+  at the target and make collapse look disabled.
 - The visible recorder capsule follows the live host width at every
   intermediate AppKit frame. It must not bind directly to the final model
   width, which makes collapse appear to snap even while the panel is animating.

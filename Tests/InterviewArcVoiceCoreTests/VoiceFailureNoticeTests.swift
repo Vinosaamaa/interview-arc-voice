@@ -2,6 +2,50 @@ import XCTest
 @testable import InterviewArcVoiceCore
 
 final class VoiceFailureNoticeTests: XCTestCase {
+    func testChangedKeychainCredentialClearsPersistedRejection() {
+        XCTAssertTrue(
+            CredentialRejectionReconciliationPolicy.shouldClearRejection(
+                rejectionIsPersisted: true,
+                rejectedCredentialFingerprint: "old-fingerprint",
+                currentCredentialFingerprint: "new-fingerprint",
+                currentCredentialIsPresent: true
+            )
+        )
+    }
+
+    func testSameRejectedCredentialRemainsRejected() {
+        XCTAssertFalse(
+            CredentialRejectionReconciliationPolicy.shouldClearRejection(
+                rejectionIsPersisted: true,
+                rejectedCredentialFingerprint: "same-fingerprint",
+                currentCredentialFingerprint: "same-fingerprint",
+                currentCredentialIsPresent: true
+            )
+        )
+    }
+
+    func testLegacyRejectionWithoutFingerprintAllowsOneFreshProviderCheck() {
+        XCTAssertTrue(
+            CredentialRejectionReconciliationPolicy.shouldClearRejection(
+                rejectionIsPersisted: true,
+                rejectedCredentialFingerprint: nil,
+                currentCredentialFingerprint: "current-fingerprint",
+                currentCredentialIsPresent: true
+            )
+        )
+    }
+
+    func testMissingCredentialNeverClearsARejectedState() {
+        XCTAssertFalse(
+            CredentialRejectionReconciliationPolicy.shouldClearRejection(
+                rejectionIsPersisted: true,
+                rejectedCredentialFingerprint: nil,
+                currentCredentialFingerprint: nil,
+                currentCredentialIsPresent: false
+            )
+        )
+    }
+
     func testFailureNoticeRoundTripsForPersistence() throws {
         let occurredAt = Date(timeIntervalSince1970: 1_784_906_000)
         let notice = VoiceFailureNotice(

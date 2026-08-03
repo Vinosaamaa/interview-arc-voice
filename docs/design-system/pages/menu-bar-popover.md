@@ -82,7 +82,10 @@ empty size-probing placeholder.
 - Open Settings activates Voice and raises the native Settings window. Save
   activates Voice and places the native save panel above the menu-bar surface;
   neither action may rely on an internal disclosure flag.
-- A `401` failure clears only after a different key is saved. A `403` failure
+- A `401` failure clears after a different key is saved or the app observes a
+  different nonempty Keychain credential on relaunch. Rejection state is bound
+  to the fingerprint of the credential Groq actually rejected; an older
+  failure notice must never reject a newly stored value. A `403` failure
   clears after a successful transcription or an explicit user recovery.
   Transient provider or network failures keep the ordinary Retry path.
 - Settings Diagnostics presents the complete store-bounded diagnostic history

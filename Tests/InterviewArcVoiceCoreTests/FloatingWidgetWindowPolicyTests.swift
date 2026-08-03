@@ -102,6 +102,53 @@ import Foundation
     )
 }
 
+@Test func floatingPanelResizeProducesVisibleIntermediateFrames() {
+    let start = CGRect(x: 900, y: 120, width: 560, height: 648)
+    let end = CGRect(x: 1_210, y: 120, width: 250, height: 56)
+    let quarter = FloatingWidgetFrameInterpolationPolicy.frame(
+        from: start,
+        to: end,
+        progress: 0.25
+    )
+    let middle = FloatingWidgetFrameInterpolationPolicy.frame(
+        from: start,
+        to: end,
+        progress: 0.5
+    )
+    let threeQuarter = FloatingWidgetFrameInterpolationPolicy.frame(
+        from: start,
+        to: end,
+        progress: 0.75
+    )
+
+    #expect(quarter.width < start.width && quarter.width > middle.width)
+    #expect(middle.width < quarter.width && middle.width > threeQuarter.width)
+    #expect(threeQuarter.width < middle.width && threeQuarter.width > end.width)
+    #expect(quarter.height < start.height && quarter.height > middle.height)
+    #expect(middle.maxX == start.maxX)
+    #expect(middle.minY == start.minY)
+}
+
+@Test func floatingPanelResizeInterpolationKeepsExactEndpoints() {
+    let start = CGRect(x: 900, y: 120, width: 430, height: 340)
+    let end = CGRect(x: 1_080, y: 120, width: 250, height: 56)
+
+    #expect(
+        FloatingWidgetFrameInterpolationPolicy.frame(
+            from: start,
+            to: end,
+            progress: 0
+        ) == start
+    )
+    #expect(
+        FloatingWidgetFrameInterpolationPolicy.frame(
+            from: start,
+            to: end,
+            progress: 1
+        ) == end
+    )
+}
+
 @Test func coverageNoticeNeverReplacesAuthoritativeTimerContent() {
     #expect(FloatingWidgetCoverageNoticePolicy.showsInlineNotice(
         noticePresented: true,

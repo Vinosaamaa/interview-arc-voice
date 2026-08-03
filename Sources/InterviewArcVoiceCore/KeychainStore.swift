@@ -60,6 +60,24 @@ public struct CredentialReadinessPolicy: Sendable {
     }
 }
 
+public enum CredentialRejectionReconciliationPolicy {
+    /// A persisted rejection belongs to one exact credential value. If the
+    /// Keychain now contains a different value, allow one fresh provider
+    /// request instead of resurrecting the old rejection on every launch.
+    /// Legacy rejection state without a fingerprint also gets one fresh check.
+    public static func shouldClearRejection(
+        rejectionIsPersisted: Bool,
+        rejectedCredentialFingerprint: String?,
+        currentCredentialFingerprint: String?,
+        currentCredentialIsPresent: Bool
+    ) -> Bool {
+        guard rejectionIsPersisted, currentCredentialIsPresent,
+              let currentCredentialFingerprint else { return false }
+        guard let rejectedCredentialFingerprint else { return true }
+        return rejectedCredentialFingerprint != currentCredentialFingerprint
+    }
+}
+
 public struct KeychainStore: Sendable {
     private let service: String
 
