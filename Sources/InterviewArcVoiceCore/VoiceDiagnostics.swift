@@ -254,6 +254,12 @@ public enum DiagnosticHistoryPresentationPolicy {
     }
 }
 
+public enum DiagnosticHistoryLayoutPolicy {
+    public static let usesSingleScrollableContainer = true
+    public static let rowsAreCollapsible = true
+    public static let containerHeight: CGFloat = 320
+}
+
 public enum DiagnosticRecoverableRecordingRetryPolicy {
     public static func matches(
         diagnostic: VoiceDiagnosticRecord,

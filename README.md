@@ -230,6 +230,8 @@ tokens rather than discarding the recovery.
   disabled until Interview Arc can supersede the old canonical turn rather
   than creating a duplicate. Reports can be copied, revealed, or cleared and
   never contain transcript text, audio, credentials, tokens, or private URLs.
+  The complete retained history lives in one fixed-height scroll rail, with
+  each record available as an independently collapsible drawer.
 
 ## First-time setup
 
@@ -269,10 +271,11 @@ not.
 
 For privacy-safe packaged-artifact diagnostics, pass a supported terminal PID
 to `InterviewArcVoice --capture-target-status <pid>`. The command reports only
-the target-kind and decision enums. The local Settings diagnostic also records
-the observed host bundle and top-level window title so routing decisions can be
-audited; it never records process arguments, terminal content, transcript text,
-credentials, or private paths.
+the target-kind and decision enums. The local Settings diagnostic persists only
+the classified target kind, routing decision, and capture-route reason; raw host
+bundle identifiers and top-level window titles are used transiently for routing
+and are never written to diagnostics. Diagnostics also exclude process
+arguments, terminal content, transcript text, credentials, and private paths.
 8. Select the microphone or press `Control-Option-Space`. Voice uses the
    continuously refreshed focused activity and immediately starts the local
    capture backend without a network or Bluetooth output-route wait.

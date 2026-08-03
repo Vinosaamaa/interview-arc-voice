@@ -186,9 +186,11 @@ least 58 points for the activity title.
 - The recorder remains the bottom-right anchor. Planner expansion grows left
   and upward, preserves the real ten-point transparent gap, and never moves
   the microphone. The native panel is the only geometry animator. Compact,
-  Focus, and Plan Today render destination-only upper-surface content during
-  that resize; an outgoing surface is never retained underneath its successor.
-  Reduce Motion applies the destination and geometry immediately.
+  Focus, and Plan Today never render two successor surfaces together. A Focus
+  ↔ Plan Today switch renders only its destination while the native frame
+  resizes. A true collapse to compact retains exactly one outgoing surface for
+  the bounded native resize so the host clips it away continuously, then
+  releases it. Reduce Motion applies the destination and geometry immediately.
 - The planner uses native system typography, theme palette tokens, compact
   cards, and one persistent review tray. Selected cards use a tinted border
   and fill; they do not add a checkbox before the title or copy their title

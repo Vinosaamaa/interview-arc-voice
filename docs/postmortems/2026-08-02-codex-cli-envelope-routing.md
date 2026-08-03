@@ -119,8 +119,9 @@ to promise linked behavior that the capture path would not perform.
 6. Feed the same target decision into widget presentation and capture routing.
 7. Preserve stale-context late binding only for a verified specialist target
    and an activity already running at recording start.
-8. Persist the locally observed host bundle, top-level window title, bounded
-   target kind, decision reason, and route reason in local diagnostics.
+8. Persist only the bounded target kind, decision reason, and route reason in
+   local diagnostics. Use the observed host bundle and top-level window title
+   transiently for routing without writing either raw value to disk.
 9. Prefer the Accessibility focused-window title, then fall back to the visible
    layer-zero window title metadata for the same terminal PID. The fallback
    captures no pixels and reads no terminal content.
@@ -141,11 +142,20 @@ to promise linked behavior that the capture path would not perform.
 
 ## Verification status
 
-PR #156 passed its first complete macOS CI run, but exact-artifact staging
-correctly kept the issue open after exposing the Accessibility-only title
-lookup defect. A hardened artifact and signed installed-app verification are
-still in progress. This document will be finalized with the final PR head,
-merge commit, packaged artifact, and exact test evidence before issue closure.
+PR #164 merged as `8b54e93e21f581691966829df01b26a3f253b6cd`.
+Canonical macOS run 30801061950 passed in 4m09s, and protected-main run
+30801556050 promoted its tree-equivalent artifact without rebuilding. The
+promoted artifact was package-verified with 21 vocabulary packs, signed with
+the existing stable local identity, installed at the canonical per-user
+location, launched, and verified against the live Warp **Interview Arc**
+workspace. Both staged and installed privacy-safe target verifiers returned
+`codexCLITerminal` / `verifiedCodexWorkspace`.
+
+The retained automated matrix covers detached tmux routing, arbitrary terminal
+titles, unsupported applications, stale activity context, and diagnostic
+redaction. One organic installed linked recording is still required to prove
+the editor receives exactly one Voice v2 envelope and pending lifecycle before
+the routing issue closes; no user recording is manufactured for that evidence.
 
 ## Glossary
 

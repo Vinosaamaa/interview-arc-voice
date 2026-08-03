@@ -4910,12 +4910,16 @@ private struct VoiceSettingsWindow: View {
                     Text("Timing details will appear after the next transcription.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(
-                        DiagnosticHistoryPresentationPolicy.visibleRecords(
-                            model.diagnosticRecords
-                        )
-                    ) { record in
-                        DisclosureGroup {
+                    let records = DiagnosticHistoryPresentationPolicy
+                        .visibleRecords(model.diagnosticRecords)
+                    GroupBox {
+                        ScrollView {
+                            LazyVStack(spacing: 0) {
+                                ForEach(
+                                    Array(records.enumerated()),
+                                    id: \.element.id
+                                ) { index, record in
+                                    DisclosureGroup {
                             LabeledContent(
                                 "Recording",
                                 value: diagnosticDuration(record.recordingDurationSeconds)
@@ -5006,16 +5010,33 @@ private struct VoiceSettingsWindow: View {
                             }
                             .disabled(!model.canRetryDiagnostic(record))
                             .help(model.diagnosticRetryHelp(record))
-                        } label: {
-                            HStack {
-                                Text(record.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                Spacer()
-                                Text(record.outcome.rawValue.capitalized)
-                                    .foregroundStyle(.secondary)
-                                Text(diagnosticDuration(record.totalSeconds))
-                                    .monospacedDigit()
+                                    } label: {
+                                        HStack {
+                                            Text(
+                                                record.createdAt.formatted(
+                                                    date: .abbreviated,
+                                                    time: .shortened
+                                                )
+                                            )
+                                            Spacer()
+                                            Text(record.outcome.rawValue.capitalized)
+                                                .foregroundStyle(.secondary)
+                                            Text(diagnosticDuration(record.totalSeconds))
+                                                .monospacedDigit()
+                                        }
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 9)
+                                    if index < records.count - 1 {
+                                        Divider()
+                                            .padding(.leading, 10)
+                                    }
+                                }
                             }
                         }
+                        .frame(
+                            height: DiagnosticHistoryLayoutPolicy.containerHeight
+                        )
                     }
                 }
                 HStack {
