@@ -678,8 +678,8 @@ final class VoiceBridgeModel: ObservableObject {
               let timer = instrument.activities.first(where: { $0.id == id })?.timer else {
             return nil
         }
-        return compactClock(
-            timer.elapsedSeconds(
+        return CompactTimerTextPolicy.activityElapsed(
+            seconds: timer.elapsedSeconds(
                 serverNow: instrument.serverNow,
                 receivedAt: timerInstrumentReceivedAt,
                 now: now
@@ -704,16 +704,16 @@ final class VoiceBridgeModel: ObservableObject {
 
     func compactActivityTime(at now: Date) -> String? {
         guard let timer = timerInstrument?.activity?.timer else { return nil }
-        return compactClock(elapsedSeconds(for: timer, now: now))
+        return CompactTimerTextPolicy.activityElapsed(
+            seconds: elapsedSeconds(for: timer, now: now)
+        )
     }
 
     func compactSessionTime(at now: Date) -> String? {
         guard let session = timerInstrument?.session else { return nil }
         let elapsed = elapsedSeconds(for: session.timer, now: now)
         let remaining = session.allocatedSeconds - elapsed
-        return remaining >= 0
-            ? compactClock(remaining)
-            : "+\(compactClock(abs(remaining)))"
+        return CompactTimerTextPolicy.sessionRemaining(seconds: remaining)
     }
 
     func miniTimerText(at now: Date) -> String? {
@@ -743,19 +743,6 @@ final class VoiceBridgeModel: ObservableObject {
             hasOpenSession: timerInstrument?.session != nil,
             sessionIsRunning: timerInstrument?.session?.timer.isRunning == true
         )
-    }
-
-    private func compactClock(_ seconds: Int) -> String {
-        let safe = max(0, seconds)
-        if safe >= 3_600 {
-            return String(
-                format: "%02d:%02d:%02d",
-                safe / 3_600,
-                (safe % 3_600) / 60,
-                safe % 60
-            )
-        }
-        return String(format: "%02d:%02d", safe / 60, safe % 60)
     }
 
     init() {
@@ -930,10 +917,9 @@ final class VoiceBridgeModel: ObservableObject {
         guard hasTimerInstrument, !isRecording else { return }
         withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
             if plannerPresented {
-                plannerPresented = false
                 timerPanelExpanded = true
+                plannerPresented = false
                 timerPanelExpandedBeforePlanner = nil
-                synchronizeFloatingPanelSize()
                 return
             }
             timerPanelExpanded.toggle()
@@ -942,15 +928,14 @@ final class VoiceBridgeModel: ObservableObject {
                 activityPickerExpanded = false
             }
         }
-        synchronizeFloatingPanelSize()
     }
 
     func togglePlanner() {
         guard linkToInterviewArc, !isRecording, !isStartingRecording else { return }
         withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
             if plannerPresented {
-                plannerPresented = false
                 timerPanelExpanded = timerPanelExpandedBeforePlanner ?? false
+                plannerPresented = false
                 timerPanelExpandedBeforePlanner = nil
             } else {
                 timerPanelExpandedBeforePlanner = timerPanelExpanded
@@ -961,7 +946,6 @@ final class VoiceBridgeModel: ObservableObject {
                 sessionFinishResolutionRequested = false
             }
         }
-        synchronizeFloatingPanelSize()
         if plannerPresented {
             Task { await refreshPlanning() }
         }
@@ -974,11 +958,10 @@ final class VoiceBridgeModel: ObservableObject {
     func showFocusSurface() {
         guard hasTimerInstrument else { return }
         withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
-            plannerPresented = false
             timerPanelExpanded = true
+            plannerPresented = false
             timerPanelExpandedBeforePlanner = nil
         }
-        synchronizeFloatingPanelSize()
     }
 
     func setPlanningSurface(_ surface: VoicePlanningSurface) {
