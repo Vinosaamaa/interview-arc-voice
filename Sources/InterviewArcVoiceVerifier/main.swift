@@ -1,0 +1,157 @@
+@preconcurrency import AVFoundation
+import Darwin
+import Foundation
+import InterviewArcVoiceCore
+
+private enum VerificationError: Error {
+    case invalidArguments
+    case unreadableAudio
+    case oversizedPrompt
+    case unavailableModel
+    case runtime(stage: RuntimeStage, code: LocalWhisperVerificationFailureCode)
+}
+
+private enum RuntimeStage: String {
+    case recordingStore = "recording-store"
+    case modelManager = "model-manager"
+    case audioDuration = "audio-duration"
+    case transcription
+}
+
+@main
+private enum InterviewArcVoiceVerifier {
+    static func main() async {
+        do {
+            let options = try parseArguments(Array(CommandLine.arguments.dropFirst()))
+            let report = try await run(options: options)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(report)
+            FileHandle.standardOutput.write(data)
+            FileHandle.standardOutput.write(Data("\n".utf8))
+        } catch {
+            let code = safeErrorCode(error)
+            FileHandle.standardError.write(Data("local-verification-failed: \(code)\n".utf8))
+            exit(EXIT_FAILURE)
+        }
+    }
+
+    private struct Options {
+        let audioURL: URL
+        let promptURL: URL?
+    }
+
+    private static func parseArguments(_ arguments: [String]) throws -> Options {
+        guard arguments.count == 2 || arguments.count == 4,
+              arguments.first == "--audio" else {
+            throw VerificationError.invalidArguments
+        }
+        let audioURL = URL(fileURLWithPath: arguments[1]).standardizedFileURL
+        let promptURL: URL?
+        if arguments.count == 4 {
+            guard arguments[2] == "--prompt-file" else {
+                throw VerificationError.invalidArguments
+            }
+            promptURL = URL(fileURLWithPath: arguments[3]).standardizedFileURL
+        } else {
+            promptURL = nil
+        }
+        return Options(audioURL: audioURL, promptURL: promptURL)
+    }
+
+    private static func run(
+        options: Options
+    ) async throws -> LocalWhisperVerificationReport {
+        var isDirectory: ObjCBool = false
+        let fileManager = FileManager.default
+        let exists = fileManager.fileExists(
+            atPath: options.audioURL.path,
+            isDirectory: &isDirectory
+        )
+        let fileSize = (
+            try? fileManager.attributesOfItem(atPath: options.audioURL.path)[.size]
+                as? NSNumber
+        )?.int64Value ?? 0
+        guard exists,
+              !isDirectory.boolValue,
+              fileManager.isReadableFile(atPath: options.audioURL.path),
+              fileSize > 0 else {
+            throw VerificationError.unreadableAudio
+        }
+
+        let prompt: String
+        if let promptURL = options.promptURL {
+            do {
+                prompt = try loadBoundedLocalWhisperPrompt(from: promptURL)
+            } catch LocalWhisperPromptFileError.oversized {
+                throw VerificationError.oversizedPrompt
+            }
+        } else {
+            prompt = ""
+        }
+
+        let recordingStore: RecordingStore
+        do {
+            recordingStore = try RecordingStore()
+        } catch {
+            throw VerificationError.runtime(
+                stage: .recordingStore,
+                code: localWhisperVerificationFailureCode(for: error)
+            )
+        }
+        let manager: LocalWhisperModelManager
+        do {
+            manager = try LocalWhisperModelManager(
+                rootDirectory: recordingStore.localModelsDirectory
+            )
+        } catch {
+            throw VerificationError.runtime(
+                stage: .modelManager,
+                code: localWhisperVerificationFailureCode(for: error)
+            )
+        }
+        let snapshot = await manager.snapshot()
+        guard snapshot.state == .available else {
+            throw VerificationError.unavailableModel
+        }
+
+        let duration: Double
+        do {
+            duration = try await AVURLAsset(url: options.audioURL)
+                .load(.duration).seconds
+        } catch {
+            throw VerificationError.runtime(
+                stage: .audioDuration,
+                code: localWhisperVerificationFailureCode(for: error)
+            )
+        }
+        let result: ArcTranscriptionResult
+        do {
+            result = try await manager.transcribe(
+                fileURL: options.audioURL,
+                prompt: prompt
+            )
+        } catch {
+            throw VerificationError.runtime(
+                stage: .transcription,
+                code: localWhisperVerificationFailureCode(for: error)
+            )
+        }
+        return LocalWhisperVerificationReport(
+            result: result,
+            audioDurationSeconds: duration.isFinite ? duration : 0
+        )
+    }
+
+    private static func safeErrorCode(_ error: Error) -> String {
+        switch error {
+        case VerificationError.invalidArguments: "invalid-arguments"
+        case VerificationError.unreadableAudio: "unreadable-audio"
+        case VerificationError.oversizedPrompt: "oversized-prompt"
+        case VerificationError.unavailableModel: "model-unavailable"
+        case let VerificationError.runtime(stage, code):
+            "\(stage.rawValue)-\(code.rawValue)"
+        default: "transcription-failed"
+        }
+    }
+}

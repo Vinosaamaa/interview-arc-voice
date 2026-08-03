@@ -28,4 +28,16 @@ if /usr/bin/grep -q -- '--deep \\' "$repo_root/scripts/sign-app-for-install.sh";
   exit 1
 fi
 
+if ! /usr/bin/grep -Fq \
+  'codesign --force --sign - "$contents_dir/MacOS/InterviewArcVoiceVerifier"' \
+  "$repo_root/scripts/package-app.sh"; then
+  echo "The package builder must explicitly sign the nested verifier first." >&2
+  exit 1
+fi
+
+if /usr/bin/grep -q -- '--deep --sign' "$repo_root/scripts/package-app.sh"; then
+  echo "The package builder must sign nested code from the inside out." >&2
+  exit 1
+fi
+
 echo "Signing policy tests passed."

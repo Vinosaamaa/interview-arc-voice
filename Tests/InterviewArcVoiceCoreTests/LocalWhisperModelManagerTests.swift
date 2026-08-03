@@ -28,6 +28,27 @@ import Testing
     #expect(!encoderCalled)
 }
 
+@Test func emptyConditionedLocalWhisperResultRetriesWithoutConditioning() {
+    #expect(
+        LocalWhisperPromptPolicy.shouldRetryWithoutConditioning(
+            transcript: " \n ",
+            forPromptTokens: [42]
+        )
+    )
+    #expect(
+        !LocalWhisperPromptPolicy.shouldRetryWithoutConditioning(
+            transcript: "complete answer",
+            forPromptTokens: [42]
+        )
+    )
+    #expect(
+        !LocalWhisperPromptPolicy.shouldRetryWithoutConditioning(
+            transcript: "",
+            forPromptTokens: []
+        )
+    )
+}
+
 @Test func localWhisperModelLifecycleSurvivesRelaunchAndDetectsCorruption() async throws {
     let root = FileManager.default.temporaryDirectory.appending(
         path: "InterviewArcVoice-LocalWhisper-\(UUID().uuidString)",

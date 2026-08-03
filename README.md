@@ -63,6 +63,26 @@ window as Recent Transcripts. If capture or transcription integrity fails, the
 original remains recoverable through Play, Save, and Retry instead of being
 discarded.
 
+### Native fallback verification
+
+The packaged app includes an aggregate-only verifier for release acceptance of
+the explicitly installed WhisperKit model. It runs the same native model
+manager as Voice and emits numeric JSON evidence only; transcript text, prompt
+text, audio bytes, and filesystem paths are never printed.
+
+```sh
+"/Applications/Interview Arc Voice.app/Contents/MacOS/InterviewArcVoiceVerifier" \
+  --audio /path/to/retained-recording.m4a \
+  --prompt-file /path/to/private-vocabulary.txt
+```
+
+`--prompt-file` is optional. The verifier requires a model already installed
+through Settings and never downloads one automatically. Verification recordings
+and prompt files remain local and must not be committed or attached to issues.
+If the pinned engine returns no conditioned text, the native path immediately
+retries the retained audio without conditioning and reports zero applied prompt
+tokens rather than discarding the recovery.
+
 ## Product decisions
 
 - Groq `whisper-large-v3` is the primary transcription engine.

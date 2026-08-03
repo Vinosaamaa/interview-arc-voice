@@ -7,6 +7,10 @@ let package = Package(
     products: [
         .library(name: "InterviewArcVoiceCore", targets: ["InterviewArcVoiceCore"]),
         .executable(name: "InterviewArcVoice", targets: ["InterviewArcVoice"]),
+        .executable(
+            name: "InterviewArcVoiceVerifier",
+            targets: ["InterviewArcVoiceVerifier"]
+        ),
     ],
     dependencies: [
         .package(
@@ -29,6 +33,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "InterviewArcVoice",
+            dependencies: ["InterviewArcVoiceCore"]
+        ),
+        .executableTarget(
+            name: "InterviewArcVoiceVerifier",
             dependencies: ["InterviewArcVoiceCore"]
         ),
         .testTarget(
