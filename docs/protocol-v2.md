@@ -8,11 +8,23 @@ classifies the capture.
 ## Destination boundary
 
 - The recording-start destination is resolved locally.
-- `com.openai.codex` plus a fresh focused activity enters the linked flow.
-- Every other app uses general dictation and never calls the Interview Arc
+- The desktop Codex application plus a fresh focused activity enters the
+  linked flow.
+- Codex CLI may enter the same flow only inside an approved terminal host when
+  Voice verifies both an Interview Arc/Codex workspace title and a live
+  descendant `codex` executable. Voice reads neither terminal contents nor
+  command arguments to make this decision.
+- An approved terminal without both signals remains General Dictation. A title
+  alone is never sufficient evidence.
+- Every other app uses General Dictation and never calls the Interview Arc
   capture, audio, or delivery endpoints.
-- A recording that started outside Codex cannot be rebound to an activity by a
-  later focus refresh.
+- A verified Codex target that starts from stale cached context may late-bind
+  only after refresh proves the same activity was already running when the
+  recording began. A recording from an unsupported target cannot be rebound.
+- The visible linked/general state uses the same target decision as capture
+  routing. Voice records only the bounded target kind and route-reason enums in
+  local diagnostics; it never records a window title, process path, terminal
+  content, or command argument.
 
 ## Pending capture lifecycle
 

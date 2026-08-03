@@ -34,7 +34,24 @@ struct InterviewArcVoiceApp: App {
     @Environment(\.openSettings) private var openSettings
 
     init() {
-        if ProcessInfo.processInfo.arguments.contains("--verify-package") {
+        let arguments = ProcessInfo.processInfo.arguments
+        if let optionIndex = arguments.firstIndex(of: "--capture-target-status") {
+            guard arguments.indices.contains(optionIndex + 1),
+                  let processIdentifier = pid_t(arguments[optionIndex + 1]),
+                  let application = NSRunningApplication(
+                      processIdentifier: processIdentifier
+                  ) else {
+                fputs("Expected a running application PID after --capture-target-status.\n", stderr)
+                exit(64)
+            }
+            let decision = CaptureTargetApplicationPolicy.decision(
+                for: CaptureTargetInspector.descriptor(for: application)
+            )
+            print("capture-target-kind: \(decision.kind.rawValue)")
+            print("capture-target-decision: \(decision.reason.rawValue)")
+            exit(decision.canAttach ? EXIT_SUCCESS : 2)
+        }
+        if arguments.contains("--verify-package") {
             do {
                 let catalog = try VocabularyCatalog.bundled()
                 print("Interview Arc Voice package verified with \(catalog.packs.count) vocabulary packs.")
@@ -44,7 +61,7 @@ struct InterviewArcVoiceApp: App {
                 exit(EXIT_FAILURE)
             }
         }
-        if ProcessInfo.processInfo.arguments.contains("--credential-status") {
+        if arguments.contains("--credential-status") {
             let keychain = KeychainStore()
             do {
                 let groqKey = try keychain.value(for: .groqAPIKey) ?? ""
@@ -162,6 +179,9 @@ final class VoiceBridgeModel: ObservableObject {
         let microphoneRecoveryCount: Int
         let vadSpeechFrameCount: Int?
         let vadLongestSpeechRunFrames: Int?
+        var captureTargetKind: CaptureTargetKind? = nil
+        var captureTargetDecisionReason: CaptureTargetDecisionReason? = nil
+        var captureRouteReason: CaptureRouteReason? = nil
     }
 
     private struct TranscriptionDiagnosticMetadata {
@@ -277,6 +297,8 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var showProcessingIndicator = false
     @Published private(set) var failureNotice: VoiceFailureNotice?
     @Published private(set) var groqCredentialRejected = false
+    @Published private(set) var currentTargetDecision =
+        CaptureTargetApplicationPolicy.decision(for: nil)
     @Published var failureDetailsPresented = false
     private var pendingFailurePopoverActionTask: Task<Void, Never>?
     private var pendingFailurePopoverCloseObserver: NSObjectProtocol?
@@ -288,7 +310,7 @@ final class VoiceBridgeModel: ObservableObject {
     let recorder = AnswerRecorder()
 
     private let keychain = KeychainStore()
-    private let routingPolicy = CaptureRoutingPolicy()
+    private let routeEvaluationPolicy = CaptureRouteEvaluationPolicy()
     private let contextRetentionPolicy = VoiceContextRetentionPolicy()
     private let contextFreshnessPolicy = CaptureContextFreshnessPolicy()
     private let lateBindingPolicy = LateCaptureBindingPolicy()
@@ -309,6 +331,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var pipeline: VoicePipeline?
     private var captureDestination: CaptureDestination?
     private var captureStartedInCodex = false
+    private var captureRouteReason = CaptureRouteReason.linkDisabled
     private var captureGeneration = UUID()
     private var targetApplicationPID: pid_t?
     private var lastInsertionText = ""
@@ -655,8 +678,8 @@ final class VoiceBridgeModel: ObservableObject {
               let timer = instrument.activities.first(where: { $0.id == id })?.timer else {
             return nil
         }
-        return compactClock(
-            timer.elapsedSeconds(
+        return CompactTimerTextPolicy.activityElapsed(
+            seconds: timer.elapsedSeconds(
                 serverNow: instrument.serverNow,
                 receivedAt: timerInstrumentReceivedAt,
                 now: now
@@ -681,16 +704,16 @@ final class VoiceBridgeModel: ObservableObject {
 
     func compactActivityTime(at now: Date) -> String? {
         guard let timer = timerInstrument?.activity?.timer else { return nil }
-        return compactClock(elapsedSeconds(for: timer, now: now))
+        return CompactTimerTextPolicy.activityElapsed(
+            seconds: elapsedSeconds(for: timer, now: now)
+        )
     }
 
     func compactSessionTime(at now: Date) -> String? {
         guard let session = timerInstrument?.session else { return nil }
         let elapsed = elapsedSeconds(for: session.timer, now: now)
         let remaining = session.allocatedSeconds - elapsed
-        return remaining >= 0
-            ? compactClock(remaining)
-            : "+\(compactClock(abs(remaining)))"
+        return CompactTimerTextPolicy.sessionRemaining(seconds: remaining)
     }
 
     func miniTimerText(at now: Date) -> String? {
@@ -714,23 +737,12 @@ final class VoiceBridgeModel: ObservableObject {
     private var compactLinkPresentation: CompactVoicePresentation {
         compactPresentationPolicy.presentation(
             linkEnabled: linkToInterviewArc,
-            activeActivityTitle: context?.focusedActivity?.title,
+            activeActivityTitle: currentTargetDecision.canAttach
+                ? context?.focusedActivity?.title
+                : nil,
             hasOpenSession: timerInstrument?.session != nil,
             sessionIsRunning: timerInstrument?.session?.timer.isRunning == true
         )
-    }
-
-    private func compactClock(_ seconds: Int) -> String {
-        let safe = max(0, seconds)
-        if safe >= 3_600 {
-            return String(
-                format: "%02d:%02d:%02d",
-                safe / 3_600,
-                (safe % 3_600) / 60,
-                safe % 60
-            )
-        }
-        return String(format: "%02d:%02d", safe / 60, safe % 60)
     }
 
     init() {
@@ -838,7 +850,7 @@ final class VoiceBridgeModel: ObservableObject {
            CaptureTargetApplicationPolicy.canReceiveDictation(
                bundleIdentifier: frontmost.bundleIdentifier
            ) {
-            lastExternalApplicationPID = frontmost.processIdentifier
+            rememberExternalApplication(frontmost)
         }
         recorder.onUnexpectedTermination = { [weak self] in
             self?.handleUnexpectedRecorderTermination()
@@ -883,7 +895,7 @@ final class VoiceBridgeModel: ObservableObject {
                 return
             }
             Task { @MainActor in
-                self?.lastExternalApplicationPID = application.processIdentifier
+                self?.rememberExternalApplication(application)
             }
         }
         terminationObserver = NotificationCenter.default.addObserver(
@@ -905,10 +917,9 @@ final class VoiceBridgeModel: ObservableObject {
         guard hasTimerInstrument, !isRecording else { return }
         withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
             if plannerPresented {
-                plannerPresented = false
                 timerPanelExpanded = true
+                plannerPresented = false
                 timerPanelExpandedBeforePlanner = nil
-                synchronizeFloatingPanelSize()
                 return
             }
             timerPanelExpanded.toggle()
@@ -917,15 +928,14 @@ final class VoiceBridgeModel: ObservableObject {
                 activityPickerExpanded = false
             }
         }
-        synchronizeFloatingPanelSize()
     }
 
     func togglePlanner() {
         guard linkToInterviewArc, !isRecording, !isStartingRecording else { return }
         withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
             if plannerPresented {
-                plannerPresented = false
                 timerPanelExpanded = timerPanelExpandedBeforePlanner ?? false
+                plannerPresented = false
                 timerPanelExpandedBeforePlanner = nil
             } else {
                 timerPanelExpandedBeforePlanner = timerPanelExpanded
@@ -936,7 +946,6 @@ final class VoiceBridgeModel: ObservableObject {
                 sessionFinishResolutionRequested = false
             }
         }
-        synchronizeFloatingPanelSize()
         if plannerPresented {
             Task { await refreshPlanning() }
         }
@@ -949,11 +958,10 @@ final class VoiceBridgeModel: ObservableObject {
     func showFocusSurface() {
         guard hasTimerInstrument else { return }
         withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
-            plannerPresented = false
             timerPanelExpanded = true
+            plannerPresented = false
             timerPanelExpandedBeforePlanner = nil
         }
-        synchronizeFloatingPanelSize()
     }
 
     func setPlanningSurface(_ surface: VoicePlanningSurface) {
@@ -2465,6 +2473,9 @@ final class VoiceBridgeModel: ObservableObject {
             localPromptTokenCount: transcription.localPromptTokenCount,
             localFallbackAttempted: transcription.localFallbackAttempted,
             localValidationReasons: transcription.localValidationReasons,
+            captureTargetKind: seed.captureTargetKind,
+            captureTargetDecisionReason: seed.captureTargetDecisionReason,
+            captureRouteReason: seed.captureRouteReason,
             outcome: outcome
         )
         try? await diagnosticsStore?.append(record)
@@ -3183,7 +3194,11 @@ final class VoiceBridgeModel: ObservableObject {
             contextLastVerifiedAt = Date()
             applyLateCaptureBinding(from: loaded)
             if let activity = loaded.focusedActivity {
-                if !isRecording && !isBusy { contextMessage = "Linked to \(activity.title)" }
+                if !isRecording && !isBusy {
+                    contextMessage = currentTargetDecision.canAttach
+                        ? "Linked to \(activity.title)"
+                        : "Activity ready · current app uses general dictation."
+                }
             } else {
                 if !isRecording && !isBusy { contextMessage = "No focused activity — using general dictation." }
             }
@@ -3334,10 +3349,10 @@ final class VoiceBridgeModel: ObservableObject {
         targetApplicationPID = currentInsertionTargetPID()
         if let targetApplicationPID,
            let targetApplication = NSRunningApplication(processIdentifier: targetApplicationPID) {
-            captureStartedInCodex = CaptureTargetApplicationPolicy.canAttachToInterviewArc(
-                bundleIdentifier: targetApplication.bundleIdentifier
-            )
+            rememberExternalApplication(targetApplication)
+            captureStartedInCodex = currentTargetDecision.canAttach
         } else {
+            currentTargetDecision = CaptureTargetApplicationPolicy.decision(for: nil)
             captureStartedInCodex = false
         }
         deliveryStates = [:]
@@ -3348,11 +3363,17 @@ final class VoiceBridgeModel: ObservableObject {
         // microphone must not wait for a network round trip because that
         // loses the first words of an answer.
         let recordingStartedAt = Date()
-        let route = routingPolicy.route(
-            linkToInterviewArc: linkToInterviewArc && captureStartedInCodex,
-            hasFocusedActivity: context?.focusedActivity != nil && contextIsFreshForCapture
+        let routeEvaluation = routeEvaluationPolicy.evaluate(
+            linkEnabled: linkToInterviewArc,
+            target: currentTargetDecision,
+            hasFocusedActivity: context?.focusedActivity != nil,
+            contextIsFresh: contextIsFreshForCapture
         )
-        switch route {
+        captureRouteReason = routeEvaluation.reason
+        voiceBridgeLogger.info(
+            "Capture route evaluated: target=\(self.currentTargetDecision.kind.rawValue, privacy: .public) targetReason=\(self.currentTargetDecision.reason.rawValue, privacy: .public) route=\(String(describing: routeEvaluation.route), privacy: .public) routeReason=\(routeEvaluation.reason.rawValue, privacy: .public)"
+        )
+        switch routeEvaluation.route {
         case .linked:
             guard let activity = context?.focusedActivity else { return }
             captureDestination = .linked(activity, startedAt: recordingStartedAt)
@@ -3519,7 +3540,10 @@ final class VoiceBridgeModel: ObservableObject {
                 microphoneRecoveryCount: recorder.automaticRecoveryCount,
                 vadSpeechFrameCount: speechEvidence?.vadSpeechFrameCount,
                 vadLongestSpeechRunFrames:
-                    speechEvidence?.vadLongestSpeechRunFrames
+                    speechEvidence?.vadLongestSpeechRunFrames,
+                captureTargetKind: currentTargetDecision.kind,
+                captureTargetDecisionReason: currentTargetDecision.reason,
+                captureRouteReason: captureRouteReason
             )
 
             switch recovery {
@@ -4090,10 +4114,19 @@ final class VoiceBridgeModel: ObservableObject {
 
     private func currentInsertionTargetPID() -> pid_t? {
         if let frontmost = eligibleFrontmostApplication {
-            lastExternalApplicationPID = frontmost.processIdentifier
+            rememberExternalApplication(frontmost)
             return frontmost.processIdentifier
         }
         return eligibleRememberedApplication?.processIdentifier
+    }
+
+    private func rememberExternalApplication(
+        _ application: NSRunningApplication
+    ) {
+        lastExternalApplicationPID = application.processIdentifier
+        currentTargetDecision = CaptureTargetApplicationPolicy.decision(
+            for: CaptureTargetInspector.descriptor(for: application)
+        )
     }
 
     private func manualInsertionTargetPID(
@@ -4442,6 +4475,12 @@ final class VoiceBridgeModel: ObservableObject {
             return
         }
         captureDestination = .linked(activity, startedAt: recordingStartedAt)
+        captureRouteReason = routeEvaluationPolicy.linkedEvaluation(
+            phase: .contextRefresh
+        ).reason
+        voiceBridgeLogger.info(
+            "Capture late-bound after context refresh: routeReason=\(self.captureRouteReason.rawValue, privacy: .public)"
+        )
     }
 }
 

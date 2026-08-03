@@ -863,7 +863,6 @@ final class FloatingPanelController {
                 || abs(panel.frame.height - frame.height) > 0.5
                 || abs(panel.frame.minX - frame.minX) > 0.5
                 || abs(panel.frame.minY - frame.minY) > 0.5 else { return }
-        panel.contentView?.layer?.removeAllAnimations()
         if reduceMotion {
             panel.setFrame(frame, display: true)
         } else {
@@ -1241,13 +1240,7 @@ struct FloatingRecorderView: View {
                                 height: upperSurfaceContentHeight
                             )
                             .padding(.bottom, FloatingWidgetWindowPolicy.timerGap)
-                            .transition(
-                                .asymmetric(
-                                    insertion: .move(edge: .bottom)
-                                        .combined(with: .opacity),
-                                    removal: .move(edge: .bottom)
-                                )
-                            )
+                            .transition(.opacity)
                     } else if model.widgetSizeMode == .standard,
                               !model.dynamicRecordingInterfaceActive,
                               model.timerPanelExpanded,
@@ -1270,6 +1263,7 @@ struct FloatingRecorderView: View {
                     height: upperSurfaceViewportHeight,
                     alignment: .bottomTrailing
                 )
+                .compositingGroup()
                 // The stable viewport ends at the recorder capsule's top edge.
                 // During removal it clips planner pixels before they can show
                 // through the translucent microphone control.
@@ -1760,7 +1754,8 @@ struct FloatingRecorderView: View {
                 compactClock(
                     activityTime,
                     width: FloatingWidgetCompactTimerLayoutPolicy.activityClockWidth,
-                    label: "Activity time"
+                    label: "Activity time",
+                    role: .activity
                 )
             }
             if activityTime != nil, sessionTime != nil {
@@ -1774,8 +1769,11 @@ struct FloatingRecorderView: View {
             if let sessionTime {
                 compactClock(
                     sessionTime,
-                    width: FloatingWidgetCompactTimerLayoutPolicy.sessionClockWidth,
-                    label: "Session time"
+                    width: FloatingWidgetCompactTimerLayoutPolicy.sessionClockWidth(
+                        for: sessionTime
+                    ),
+                    label: "Session time",
+                    role: .session
                 )
             }
         }
@@ -1785,16 +1783,31 @@ struct FloatingRecorderView: View {
     private func compactClock(
         _ value: String,
         width: CGFloat,
-        label: String
+        label: String,
+        role: CompactClockRole
     ) -> some View {
         Text(value)
-            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .font(
+                .system(
+                    size: role == .activity ? 9.5 : 8.5,
+                    weight: role == .activity ? .bold : .regular,
+                    design: .monospaced
+                )
+            )
             .monospacedDigit()
-            .foregroundStyle(palette.tealDark)
+            .foregroundStyle(
+                role == .activity ? palette.tealDark : palette.secondaryInk
+            )
             .lineLimit(1)
-            .minimumScaleFactor(0.82)
+            .minimumScaleFactor(0.92)
             .frame(width: width, height: 24, alignment: .center)
-            .accessibilityLabel("\(label), \(value)")
+            .accessibilityLabel(label)
+            .accessibilityValue(value)
+    }
+
+    private enum CompactClockRole {
+        case activity
+        case session
     }
 
     private var processingLabel: some View {

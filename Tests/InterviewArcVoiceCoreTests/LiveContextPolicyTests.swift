@@ -2,10 +2,126 @@ import Foundation
 import Testing
 @testable import InterviewArcVoiceCore
 
-@Test func onlyCodexCapturesMayAttachToInterviewArc() {
-    #expect(CaptureTargetApplicationPolicy.canAttachToInterviewArc(bundleIdentifier: "com.openai.codex"))
-    #expect(!CaptureTargetApplicationPolicy.canAttachToInterviewArc(bundleIdentifier: "com.google.Chrome"))
-    #expect(!CaptureTargetApplicationPolicy.canAttachToInterviewArc(bundleIdentifier: nil))
+@Test func desktopCodexCapturesMayAttachToInterviewArc() {
+    let decision = CaptureTargetApplicationPolicy.decision(
+        for: CaptureTargetDescriptor(
+            bundleIdentifier: "com.openai.codex",
+            windowTitle: nil
+        )
+    )
+
+    #expect(decision.canAttach)
+    #expect(decision.kind == .desktopCodex)
+    #expect(decision.reason == .desktopCodex)
+}
+
+@Test func codexCLIInsideApprovedTerminalWorkspacesMayAttach() {
+    let cmux = CaptureTargetApplicationPolicy.decision(
+        for: CaptureTargetDescriptor(
+            bundleIdentifier: "com.cmuxterm.app",
+            windowTitle: "Interview Arc — Native cmux",
+            hasCodexDescendant: true
+        )
+    )
+    let warp = CaptureTargetApplicationPolicy.decision(
+        for: CaptureTargetDescriptor(
+            bundleIdentifier: "dev.warp.Warp-Stable",
+            windowTitle: "Interview Arc — LeetCode | codex",
+            hasCodexDescendant: true
+        )
+    )
+
+    #expect(cmux.canAttach)
+    #expect(cmux.kind == .codexCLITerminal)
+    #expect(cmux.reason == .verifiedCodexCLIProcess)
+    #expect(warp.canAttach)
+    #expect(warp.kind == .codexCLITerminal)
+    #expect(CaptureTargetApplicationPolicy.requiresCodexDescendantInspection(
+        bundleIdentifier: "com.cmuxterm.app"
+    ))
+    #expect(!CaptureTargetApplicationPolicy.requiresCodexDescendantInspection(
+        bundleIdentifier: "com.google.Chrome"
+    ))
+}
+
+@Test func arbitraryTerminalAndNonTerminalWindowsRemainGeneralDictation() {
+    let shell = CaptureTargetApplicationPolicy.decision(
+        for: CaptureTargetDescriptor(
+            bundleIdentifier: "com.cmuxterm.app",
+            windowTitle: "Personal shell"
+        )
+    )
+    let titledShellWithoutCodex = CaptureTargetApplicationPolicy.decision(
+        for: CaptureTargetDescriptor(
+            bundleIdentifier: "com.cmuxterm.app",
+            windowTitle: "Interview Arc — shell",
+            hasCodexDescendant: false
+        )
+    )
+    let codexProcessOutsideWorkspace = CaptureTargetApplicationPolicy.decision(
+        for: CaptureTargetDescriptor(
+            bundleIdentifier: "com.cmuxterm.app",
+            windowTitle: "Personal shell",
+            hasCodexDescendant: true
+        )
+    )
+    let browser = CaptureTargetApplicationPolicy.decision(
+        for: CaptureTargetDescriptor(
+            bundleIdentifier: "com.google.Chrome",
+            windowTitle: "Interview Arc Codex"
+        )
+    )
+    let missing = CaptureTargetApplicationPolicy.decision(for: nil)
+
+    #expect(!shell.canAttach)
+    #expect(shell.reason == .terminalWithoutCodexProcess)
+    #expect(!titledShellWithoutCodex.canAttach)
+    #expect(titledShellWithoutCodex.reason == .terminalWithoutCodexProcess)
+    #expect(!codexProcessOutsideWorkspace.canAttach)
+    #expect(codexProcessOutsideWorkspace.reason == .terminalWithoutWorkspaceEvidence)
+    #expect(!browser.canAttach)
+    #expect(browser.reason == .unsupportedApplication)
+    #expect(!missing.canAttach)
+    #expect(missing.reason == .missingApplication)
+}
+
+@Test func routeEvaluationExplainsEverySilentDowngradeGate() {
+    let target = CaptureTargetDecision(
+        canAttach: true,
+        kind: .codexCLITerminal,
+        reason: .verifiedCodexCLIProcess
+    )
+    let evaluator = CaptureRouteEvaluationPolicy()
+
+    #expect(evaluator.evaluate(
+        linkEnabled: true,
+        target: target,
+        hasFocusedActivity: true,
+        contextIsFresh: true,
+        phase: .contextRefresh
+    ) == CaptureRouteEvaluation(route: .linked, reason: .linkedAfterContextRefresh))
+    #expect(evaluator.evaluate(
+        linkEnabled: true,
+        target: target,
+        hasFocusedActivity: true,
+        contextIsFresh: true
+    ) == CaptureRouteEvaluation(route: .linked, reason: .linkedAtRecordStart))
+    #expect(evaluator.evaluate(
+        linkEnabled: true,
+        target: target,
+        hasFocusedActivity: true,
+        contextIsFresh: false
+    ) == CaptureRouteEvaluation(route: .general, reason: .staleFocusedContext))
+    #expect(evaluator.evaluate(
+        linkEnabled: true,
+        target: CaptureTargetDecision(
+            canAttach: false,
+            kind: .other,
+            reason: .unsupportedApplication
+        ),
+        hasFocusedActivity: true,
+        contextIsFresh: true
+    ) == CaptureRouteEvaluation(route: .general, reason: .unsupportedTarget))
 }
 
 @Test func staleContextRefreshCannotReplaceTheLatestActivity() {

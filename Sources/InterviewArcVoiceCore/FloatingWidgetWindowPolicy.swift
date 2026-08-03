@@ -181,6 +181,40 @@ public enum FloatingWidgetMotionPolicy {
     public static let durationSeconds: TimeInterval = 0.30
 }
 
+public enum FloatingWidgetUpperSurfaceTransitionStyle: Equatable, Sendable {
+    case clippedCrossfade
+}
+
+public enum FloatingWidgetUpperSurfaceTransitionPolicy {
+    public static let style: FloatingWidgetUpperSurfaceTransitionStyle =
+        .clippedCrossfade
+    public static let keepsBottomAnchor = true
+    public static let usesSingleHostResize = true
+    public static let primesDestinationBeforeDismissal = true
+}
+
+public enum CompactTimerTextPolicy {
+    public static func activityElapsed(seconds: Int) -> String {
+        let safe = max(0, seconds)
+        return String(
+            format: "%02d:%02d:%02d",
+            safe / 3_600,
+            (safe % 3_600) / 60,
+            safe % 60
+        )
+    }
+
+    public static func sessionRemaining(seconds: Int) -> String {
+        let magnitude = seconds == Int.min ? Int.max : abs(seconds)
+        let value = String(
+            format: "%02d:%02d",
+            magnitude / 3_600,
+            (magnitude % 3_600) / 60
+        )
+        return seconds < 0 ? "+\(value)" : value
+    }
+}
+
 public enum MiniWidgetPointerPolicy {
     public static let dragThreshold: CGFloat = 5
 
@@ -235,15 +269,20 @@ public enum FloatingWidgetCompactTimerLayoutPolicy {
     public static let showsPreviousMemoActionsWhenExpanded = true
     public static let minimumTitleWidth: CGFloat = 58
     public static let titleFillsAvailableHeight = true
-    public static let activityClockWidth: CGFloat = 36
-    public static let sessionClockWidth: CGFloat = 42
+    public static let activityClockWidth: CGFloat = 52
+    public static let sessionClockWidth: CGFloat = 31
+    public static let expandedSessionClockWidth: CGFloat = 42
     public static let clusterSpacing: CGFloat = 2
     public static let dividerWidth: CGFloat = 1
     public static let maximumClusterWidth =
         activityClockWidth
-        + sessionClockWidth
+        + expandedSessionClockWidth
         + dividerWidth
         + (clusterSpacing * 2)
+
+    public static func sessionClockWidth(for value: String) -> CGFloat {
+        value.count > 5 ? expandedSessionClockWidth : sessionClockWidth
+    }
 }
 
 public enum FloatingWidgetMemoAction: Equatable, Hashable, Sendable {
