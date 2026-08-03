@@ -51,6 +51,8 @@ All times are Pacific Daylight Time on 2026-08-02.
 | 17:29 | The first complete macOS CI run passed and produced a tree-addressed artifact. |
 | 17:34 | Staging found that the old installed process had not exited, so it was terminated before repeating the artifact test. |
 | 17:41 | The exact staged artifact exposed a second boundary defect: cmux still failed closed even though separate process inspection proved live `codex` descendants. The first diagnostic did not preserve the exact target-decision reason. |
+| 2026-08-03 02:00 | Process-topology inspection confirmed that tmux detaches pane shells and Codex from the focused terminal application's descendant tree. |
+| 2026-08-03 02:14 | The user explicitly approved the bounded fallback: Link enabled, fresh focused activity, supported cmux/Warp host, and Interview Arc/Codex top-level window title. |
 
 ## Architecture and failure sequence
 
@@ -95,32 +97,41 @@ to promise linked behavior that the capture path would not perform.
    application cannot rely on every supported terminal exposing that attribute
    consistently, and the missing decision reason made the installed failure
    unnecessarily ambiguous.
+6. The second CLI repair required Codex to be a descendant of the focused
+   terminal application. That assumption is false under tmux: the pane shell
+   and Codex are descendants of the long-lived tmux server, not the focused
+   Warp/cmux process.
 
 ## Resolution design
 
 1. Resolve a privacy-safe target descriptor at recording start.
 2. Keep desktop Codex intrinsically eligible.
-3. Admit a CLI terminal only when all three signals agree:
+3. Admit a CLI terminal when all four user-approved signals agree:
+   - Link mode is explicitly enabled;
+   - the focused activity context is fresh;
    - the host is an explicitly supported terminal application;
-   - the focused window identifies an Interview Arc/Codex workspace;
-   - the host owns a live descendant executable named `codex`.
-4. Do not inspect terminal text, arguments, environment variables, or private
-   paths.
-5. Feed the same target decision into widget presentation and capture routing.
-6. Preserve stale-context late binding only for a verified specialist target
+   - the focused top-level window identifies an Interview Arc/Codex workspace.
+4. Do not make process ancestry a requirement. tmux intentionally breaks that
+   ancestry, and a global “any Codex process exists” fallback cannot identify
+   the focused pane.
+5. Do not inspect terminal text, arguments, environment variables, tmux pane
+   contents, or private paths.
+6. Feed the same target decision into widget presentation and capture routing.
+7. Preserve stale-context late binding only for a verified specialist target
    and an activity already running at recording start.
-7. Persist bounded target-kind and route-reason enums in local diagnostics.
-8. Prefer the Accessibility focused-window title, then fall back to the visible
+8. Persist the locally observed host bundle, top-level window title, bounded
+   target kind, decision reason, and route reason in local diagnostics.
+9. Prefer the Accessibility focused-window title, then fall back to the visible
    layer-zero window title metadata for the same terminal PID. The fallback
    captures no pixels and reads no terminal content.
-9. Ship a privacy-safe `--capture-target-status <pid>` package verifier that
+10. Ship a privacy-safe `--capture-target-status <pid>` package verifier that
    reports only target-kind and decision enums for installed-artifact testing.
 
 ## Regression prevention
 
-- Core tests cover desktop Codex, verified cmux/Warp CLI workspaces, arbitrary
-  terminal windows, spoofed non-terminal titles, missing process evidence,
-  stale context, and explicit downgrade reasons.
+- Core tests cover desktop Codex, tmux-detached cmux/Warp Interview Arc
+  workspaces, arbitrary terminal windows, spoofed non-terminal titles, stale
+  context, and explicit downgrade reasons.
 - Packaged-app verification must exercise the exact signed installed app in a
   real active coding activity and verify one envelope/local pending record per
   recording.

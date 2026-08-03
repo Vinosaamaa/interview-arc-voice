@@ -346,22 +346,82 @@ public actor LocalTranscriptHistoryStore {
             return nil
         }
         let previous = current[index]
-        let replacement = LocalTranscriptRecord(
+        let replacement = copyRecord(
+            previous,
+            transcript: transcript,
+            editorText: editorText,
+            captureID: captureID ?? previous.captureID,
+            recoveryStatus: nil,
+            lifecycleProtected: lifecycleProtected
+                ?? previous.lifecycleProtected
+                ?? (previous.isLifecycleProtected
+                    || (captureID != nil && previous.audioReference != nil))
+        )
+        return try persistReplacement(
+            replacement,
+            in: &current,
+            at: index,
+            now: now
+        )
+    }
+
+    @discardableResult
+    public func markCoverageUncertain(
+        captureID: String,
+        now: Date = Date()
+    ) throws -> LocalTranscriptRecord? {
+        var current = try readRecords()
+        guard let index = current.firstIndex(where: {
+            $0.captureID == captureID
+        }) else {
+            return nil
+        }
+        let previous = current[index]
+        let replacement = copyRecord(
+            previous,
+            transcript: previous.transcript,
+            editorText: previous.editorText,
+            captureID: previous.captureID,
+            recoveryStatus: .coverageUncertain,
+            lifecycleProtected: previous.lifecycleProtected
+        )
+        return try persistReplacement(
+            replacement,
+            in: &current,
+            at: index,
+            now: now
+        )
+    }
+
+    private func copyRecord(
+        _ previous: LocalTranscriptRecord,
+        transcript: String,
+        editorText: String,
+        captureID: String?,
+        recoveryStatus: LocalTranscriptRecoveryStatus?,
+        lifecycleProtected: Bool?
+    ) -> LocalTranscriptRecord {
+        LocalTranscriptRecord(
             id: previous.id,
             createdAt: previous.createdAt,
             transcript: transcript,
             editorText: editorText,
             durationSeconds: previous.durationSeconds,
             activityTitle: previous.activityTitle,
-            captureID: captureID ?? previous.captureID,
-            recoveryStatus: nil,
+            captureID: captureID,
+            recoveryStatus: recoveryStatus,
             linkedRecoveryContext: previous.linkedRecoveryContext,
-            lifecycleProtected: lifecycleProtected
-                ?? previous.lifecycleProtected
-                ?? (previous.isLifecycleProtected
-                    || (captureID != nil && previous.audioReference != nil)),
+            lifecycleProtected: lifecycleProtected,
             audioReference: previous.audioReference
         )
+    }
+
+    private func persistReplacement(
+        _ replacement: LocalTranscriptRecord,
+        in current: inout [LocalTranscriptRecord],
+        at index: Int,
+        now: Date
+    ) throws -> LocalTranscriptRecord {
         current[index] = replacement
         try write(pruned(current, now: now))
         return replacement

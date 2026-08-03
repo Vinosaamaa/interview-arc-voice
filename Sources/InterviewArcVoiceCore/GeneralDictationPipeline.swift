@@ -8,15 +8,15 @@ public actor GeneralDictationPipeline {
 
     public init(
         transcriber: any SpeechTranscribing,
-        localFallback: (any SpeechTranscribing)? = nil,
         temporaryDirectory: URL,
         vocabularyPrompt: String = "",
         fileManager: FileManager = .default
     ) {
-        reliableTranscriber = ReliableSpeechTranscriber(
-            base: transcriber,
-            localFallback: localFallback
-        )
+        // Product policy intentionally gives General Dictation the same
+        // bounded provider-only coverage recovery as linked dictation. An
+        // eligible nonempty candidate remains usable and is returned with the
+        // coverageUncertain marker instead of entering a blocking failure path.
+        reliableTranscriber = ReliableSpeechTranscriber(base: transcriber)
         self.temporaryDirectory = temporaryDirectory
         self.vocabularyPrompt = vocabularyPrompt
         self.fileManager = fileManager

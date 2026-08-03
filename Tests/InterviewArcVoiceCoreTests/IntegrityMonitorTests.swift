@@ -360,100 +360,56 @@ import Testing
     #expect(await transcriber.callCount == 1)
 }
 
-@Test func repeatedMalformedWordTimestampPartialFailsInsteadOfDelivering() async {
+@Test func repeatedMalformedWordTimestampPartialDeliversWithWarning() async throws {
     let partial = malformedFullLengthSegmentPartial()
     let transcriber = CountingTranscriber(results: [partial, partial])
     let reliable = ReliableSpeechTranscriber(base: transcriber)
-
-    do {
-        _ = try await reliable.transcribe(
-            fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
-            prompt: "Context vocabulary",
-            temporaryDirectory: URL(fileURLWithPath: "/tmp"),
-            audioDurationSeconds: 80.88,
-            expectedChunkCount: 1,
-            speechEvidence: sustainedSpeechEvidence(durationSeconds: 80.88),
-            protectionMode: .enhanced
-        )
-        Issue.record("Expected a recoverable missing-speech failure")
-    } catch let failure as TranscriptionIntegrityFailure {
-        #expect(failure.reasons.contains(.missingSpeechCoverage))
-        #expect(failure.providerRetryOccurred)
-        #expect(failure.lexicalCoverageEndSeconds == 72)
-        #expect(failure.trailingSpeechLikeFrameCount != nil)
-        #expect(failure.recoveryCandidate?.text == partial.text)
-    } catch {
-        Issue.record("Unexpected error: \(error)")
-    }
-
-    #expect(await transcriber.callCount == 2)
-}
-
-@Test func localFallbackCanRecoverAfterWholeAndChunkedCoverageFailures() async throws {
-    let partial = malformedFullLengthSegmentPartial()
-    let completeText = "The local fallback preserved the complete spoken answer through the ending."
-    let localResult = TranscriptionResult(
-        text: completeText,
-        words: [],
-        durationSeconds: 12,
-        chunkCount: 1,
-        engine: "whisperkit",
-        model: "base.en",
-        localInferenceSeconds: 1.25,
-        localPromptTokenCount: 17
-    )
-    let provider = CountingTranscriber(results: [partial, partial])
-    let local = CountingTranscriber(results: [localResult])
-    let reliable = ReliableSpeechTranscriber(
-        base: provider,
-        localFallback: local
-    )
 
     let result = try await reliable.transcribe(
         fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
         prompt: "Context vocabulary",
         temporaryDirectory: URL(fileURLWithPath: "/tmp"),
         audioDurationSeconds: 80.88,
-        expectedChunkCount: 3,
+        expectedChunkCount: 1,
         speechEvidence: sustainedSpeechEvidence(durationSeconds: 80.88),
         protectionMode: .enhanced
     )
 
-    #expect(result.transcription.text == completeText)
-    #expect(result.wasRetried)
-    #expect(result.engine == "whisperkit")
-    #expect(result.model == "base.en")
-    #expect(result.localInferenceSeconds == 1.25)
-    #expect(result.localPromptTokenCount == 17)
-    #expect(result.transcription.durationSeconds == 80.88)
-    #expect(result.transcription.chunkCount == 3)
-    #expect(await provider.callCount == 2)
-    #expect(await provider.coverageRecoveryCallCount == 1)
-    #expect(await local.callCount == 1)
-    #expect(await local.prompts == ["Context vocabulary"])
+    #expect(result.coverageUncertain)
+    #expect(result.transcription.text == partial.text)
+    #expect(result.providerLexicalCoverageEndSeconds == 72)
+    #expect(result.trailingSpeechLikeFrameCount != nil)
+
+    #expect(await transcriber.callCount == 2)
 }
 
-@Test func initialProviderFailureStillUsesLocalCoverageRecovery() async throws {
+@Test func generalDictationReturnsUsableCoverageCandidateInsteadOfFailing() async throws {
     let partial = malformedFullLengthSegmentPartial()
-    let completeText = "Local recovery remains available after the initial provider request fails."
+    let transcriber = CountingTranscriber(results: [partial, partial])
+    let pipeline = GeneralDictationPipeline(
+        transcriber: transcriber,
+        temporaryDirectory: URL(fileURLWithPath: "/tmp")
+    )
+
+    let result = try await pipeline.process(
+        recordingURL: URL(fileURLWithPath: "/tmp/general.m4a"),
+        durationSeconds: 80.88,
+        speechEvidence: sustainedSpeechEvidence(durationSeconds: 80.88),
+        protectionMode: .enhanced
+    )
+
+    #expect(result.transcription.text == partial.text)
+    #expect(result.coverageUncertain)
+    #expect(await transcriber.callCount == 2)
+}
+
+@Test func initialProviderFailureDeliversTheRetryCandidateWithWarning() async throws {
+    let partial = malformedFullLengthSegmentPartial()
     let provider = CountingTranscriber(
         results: [partial],
         failuresBeforeResults: 1
     )
-    let local = CountingTranscriber(
-        results: [TranscriptionResult(
-            text: completeText,
-            words: [],
-            durationSeconds: 5,
-            chunkCount: 1,
-            engine: "whisperkit",
-            model: "base.en"
-        )]
-    )
-    let reliable = ReliableSpeechTranscriber(
-        base: provider,
-        localFallback: local
-    )
+    let reliable = ReliableSpeechTranscriber(base: provider)
 
     let result = try await reliable.transcribe(
         fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
@@ -465,34 +421,18 @@ import Testing
         protectionMode: .enhanced
     )
 
-    #expect(result.transcription.text == completeText)
-    #expect(result.transcription.durationSeconds == 80.88)
-    #expect(result.transcription.chunkCount == 2)
+    #expect(result.coverageUncertain)
+    #expect(result.transcription.text == partial.text)
     #expect(await provider.callCount == 2)
-    #expect(await local.callCount == 1)
 }
 
-@Test func timedOutChunkRecoveryStillUsesAlreadyWarmLocalFallback() async throws {
+@Test func timedOutChunkRecoveryDeliversTheWholeFileCandidateWithWarning() async throws {
     let partial = malformedFullLengthSegmentPartial()
-    let completeText = "Warm local recovery remains available after the alternate provider request times out."
     // The only provider result is consumed by the primary request. The
     // alternate coverage request therefore throws from the fixture, matching
     // a bounded transport timeout without making the test wait on a clock.
     let provider = CountingTranscriber(results: [partial])
-    let local = CountingTranscriber(
-        results: [TranscriptionResult(
-            text: completeText,
-            words: [],
-            durationSeconds: 5,
-            chunkCount: 1,
-            engine: "whisperkit",
-            model: "base.en"
-        )]
-    )
-    let reliable = ReliableSpeechTranscriber(
-        base: provider,
-        localFallback: local
-    )
+    let reliable = ReliableSpeechTranscriber(base: provider)
 
     let result = try await reliable.transcribe(
         fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
@@ -504,14 +444,12 @@ import Testing
         protectionMode: .enhanced
     )
 
-    #expect(result.transcription.text == completeText)
-    #expect(result.transcription.durationSeconds == 80.88)
-    #expect(result.transcription.chunkCount == 3)
+    #expect(result.coverageUncertain)
+    #expect(result.transcription.text == partial.text)
     #expect(await provider.coverageRecoveryCallCount == 1)
-    #expect(await local.callCount == 1)
 }
 
-@Test func twoPartialProviderResultsFailRecoverablyInsteadOfDeliveringEitherOne() async {
+@Test func twoPartialProviderResultsDeliverTheBestCandidateWithAnUncertaintyMarker() async throws {
     let partial = TranscriptionResult(
         text: "Only the beginning is present.",
         words: timestampedWords("Only the beginning is present.", endingAt: 21),
@@ -530,103 +468,68 @@ import Testing
     let transcriber = CountingTranscriber(results: [partial, partial])
     let reliable = ReliableSpeechTranscriber(base: transcriber)
 
-    do {
-        _ = try await reliable.transcribe(
-            fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
-            prompt: "Context vocabulary",
-            temporaryDirectory: URL(fileURLWithPath: "/tmp"),
-            audioDurationSeconds: 53,
-            expectedChunkCount: 1,
-            speechEvidence: sustainedSpeechEvidence(durationSeconds: 53),
-            protectionMode: .enhanced
-        )
-        Issue.record("Expected a recoverable suspicious-transcript failure")
-    } catch let failure as TranscriptionIntegrityFailure {
-        #expect(failure.reasons.contains(.missingSpeechCoverage))
-        #expect(failure.providerRetryOccurred)
-        #expect(failure.lexicalCoverageEndSeconds == 21)
-        #expect(failure.trailingSpeechLikeFrameCount != nil)
-        #expect(failure.trailingSpeechLikeFraction != nil)
-        #expect(failure.timing?.providerWaitSeconds == 1.20)
-    } catch {
-        Issue.record("Unexpected error: \(error)")
-    }
+    let result = try await reliable.transcribe(
+        fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+        prompt: "Context vocabulary",
+        temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+        audioDurationSeconds: 53,
+        expectedChunkCount: 1,
+        speechEvidence: sustainedSpeechEvidence(durationSeconds: 53),
+        protectionMode: .enhanced
+    )
+
+    #expect(result.transcription.text == partial.text)
+    #expect(result.coverageUncertain)
+    #expect(result.wasRetried)
+    #expect(result.providerLexicalCoverageEndSeconds == 21)
+    #expect(result.trailingSpeechLikeFrameCount != nil)
+    #expect(result.trailingSpeechLikeFraction != nil)
+    #expect(result.transcription.timing?.providerWaitSeconds == 1.20)
 
     let callCount = await transcriber.callCount
     #expect(callCount == 2)
     #expect(await transcriber.coverageRecoveryCallCount == 1)
 }
 
-@Test func uncertainLocalFallbackRemainsPreservedAndDiagnosable() async {
-    let partial = malformedFullLengthSegmentPartial()
-    let provider = CountingTranscriber(results: [partial, partial])
-    let local = CountingTranscriber(
-        results: [partial],
-        engine: "whisperkit",
-        model: "base.en"
+@Test func longerOverlapProviderCandidateWinsWhenBothRemainUncertain() async throws {
+    let wholeText = "The provider kept only the beginning."
+    let whole = TranscriptionResult(
+        text: wholeText,
+        words: timestampedWords(wholeText, endingAt: 21),
+        durationSeconds: 80.88,
+        chunkCount: 1,
+        engine: "groq",
+        model: "whisper-large-v3"
     )
-    let reliable = ReliableSpeechTranscriber(
-        base: provider,
-        localFallback: local
+    let overlapText = "The overlap candidate kept the beginning and more of the spoken ending."
+    let overlap = TranscriptionResult(
+        text: overlapText,
+        words: timestampedWords(overlapText, endingAt: 30),
+        durationSeconds: 80.88,
+        chunkCount: 3,
+        engine: "groq",
+        model: "whisper-large-v3"
+    )
+    let provider = CountingTranscriber(results: [whole, overlap])
+    let reliable = ReliableSpeechTranscriber(base: provider)
+
+    let result = try await reliable.transcribe(
+        fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+        prompt: "Context vocabulary",
+        temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+        audioDurationSeconds: 80.88,
+        speechEvidence: sustainedSpeechEvidence(durationSeconds: 80.88),
+        protectionMode: .enhanced
     )
 
-    do {
-        _ = try await reliable.transcribe(
-            fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
-            prompt: "Context vocabulary",
-            temporaryDirectory: URL(fileURLWithPath: "/tmp"),
-            audioDurationSeconds: 80.88,
-            speechEvidence: sustainedSpeechEvidence(durationSeconds: 80.88),
-            protectionMode: .enhanced
-        )
-        Issue.record("Expected local fallback to remain uncertain")
-    } catch let failure as TranscriptionIntegrityFailure {
-        #expect(failure.localFallbackAttempted)
-        #expect(failure.localFallbackEngine == "whisperkit")
-        #expect(failure.localFallbackModel == "base.en")
-        #expect(failure.localValidationReasons?.contains(.missingSpeechCoverage) == true)
-        #expect(failure.recoveryCandidate != nil)
-    } catch {
-        Issue.record("Unexpected error: \(error)")
-    }
+    #expect(result.coverageUncertain)
+    #expect(result.transcription.text == overlapText)
+    #expect(result.engine == "groq")
+    #expect(result.transcription.chunkCount == 3)
+    #expect(await provider.coverageRecoveryCallCount == 1)
 }
 
-@Test func coldLocalFallbackNeverBlocksCoverageRecovery() async {
-    let partial = malformedFullLengthSegmentPartial()
-    let provider = CountingTranscriber(results: [partial, partial])
-    let coldLocal = CountingTranscriber(
-        results: [partial],
-        engine: "whisperkit",
-        model: "base.en",
-        isReadyForImmediateTranscription: false
-    )
-    let reliable = ReliableSpeechTranscriber(
-        base: provider,
-        localFallback: coldLocal
-    )
-
-    do {
-        _ = try await reliable.transcribe(
-            fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
-            prompt: "Context vocabulary",
-            temporaryDirectory: URL(fileURLWithPath: "/tmp"),
-            audioDurationSeconds: 80.88,
-            speechEvidence: sustainedSpeechEvidence(durationSeconds: 80.88),
-            protectionMode: .enhanced
-        )
-        Issue.record("Expected the provider candidate to remain uncertain")
-    } catch let failure as TranscriptionIntegrityFailure {
-        #expect(failure.recoveryCandidate?.text == partial.text)
-        #expect(!failure.localFallbackAttempted)
-        #expect(failure.localFallbackSkippedBecauseNotReady)
-    } catch {
-        Issue.record("Unexpected error: \(error)")
-    }
-
-    #expect(await coldLocal.callCount == 0)
-}
-
-@Test func combinedCoverageAndDurationFailureStillPreservesReviewableText() async {
+@Test func combinedCoverageAndDurationFailureStillDeliversReviewableText() async throws {
     let partial = TranscriptionResult(
         text: "The usable beginning remains available for manual review.",
         words: timestampedWords(
@@ -639,23 +542,17 @@ import Testing
     let transcriber = CountingTranscriber(results: [partial, partial])
     let reliable = ReliableSpeechTranscriber(base: transcriber)
 
-    do {
-        _ = try await reliable.transcribe(
-            fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
-            prompt: "Context vocabulary",
-            temporaryDirectory: URL(fileURLWithPath: "/tmp"),
-            audioDurationSeconds: 53,
-            speechEvidence: sustainedSpeechEvidence(durationSeconds: 53),
-            protectionMode: .enhanced
-        )
-        Issue.record("Expected an uncertain recovery candidate")
-    } catch let failure as TranscriptionIntegrityFailure {
-        #expect(failure.reasons.contains(.missingSpeechCoverage))
-        #expect(failure.reasons.contains(.providerDurationMismatch))
-        #expect(failure.recoveryCandidate?.text == partial.text)
-    } catch {
-        Issue.record("Unexpected error: \(error)")
-    }
+    let result = try await reliable.transcribe(
+        fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+        prompt: "Context vocabulary",
+        temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+        audioDurationSeconds: 53,
+        speechEvidence: sustainedSpeechEvidence(durationSeconds: 53),
+        protectionMode: .enhanced
+    )
+
+    #expect(result.coverageUncertain)
+    #expect(result.transcription.text == partial.text)
 }
 
 @Test func promptLeakageIsTreatedAsSuspicious() {

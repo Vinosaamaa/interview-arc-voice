@@ -80,6 +80,7 @@ public struct VoicePipelineUpdate: Equatable, Sendable {
 }
 
 public struct VoicePipelineResult: Equatable, Sendable {
+    public let captureID: String
     public let turnID: String
     public let transcript: String
     public let clipID: String?
@@ -102,6 +103,7 @@ public struct VoicePipelineResult: Equatable, Sendable {
     public let transcriptionModel: String?
     public let localInferenceSeconds: Double?
     public let localPromptTokenCount: Int?
+    public let coverageUncertain: Bool
 
     public var hasQueuedRetry: Bool {
         !capturePersisted || !audioUploaded || !deliveryCoachQueued
@@ -124,7 +126,6 @@ public actor VoicePipeline {
     public init(
         api: InterviewArcAPIClient,
         transcriber: any SpeechTranscribing,
-        localFallback: (any SpeechTranscribing)? = nil,
         codex: CodexBridge,
         vocabularyResolver: VocabularyResolver,
         retryQueue: VoiceRetryQueue,
@@ -136,10 +137,7 @@ public actor VoicePipeline {
     ) {
         self.api = api
         self.transcriber = transcriber
-        reliableTranscriber = ReliableSpeechTranscriber(
-            base: transcriber,
-            localFallback: localFallback
-        )
+        reliableTranscriber = ReliableSpeechTranscriber(base: transcriber)
         self.codex = codex
         self.vocabularyResolver = vocabularyResolver
         self.retryQueue = retryQueue
@@ -209,6 +207,7 @@ public actor VoicePipeline {
         await progress(.init(component: .audio, state: .queued))
         await progress(.init(component: .coach, state: .queued))
         return VoicePipelineResult(
+            captureID: captureID,
             turnID: turnID,
             transcript: transcription.text,
             clipID: nil,
@@ -233,7 +232,8 @@ public actor VoicePipeline {
             transcriptionEngine: reliable.engine,
             transcriptionModel: reliable.model,
             localInferenceSeconds: reliable.localInferenceSeconds,
-            localPromptTokenCount: reliable.localPromptTokenCount
+            localPromptTokenCount: reliable.localPromptTokenCount,
+            coverageUncertain: reliable.coverageUncertain
         )
     }
 

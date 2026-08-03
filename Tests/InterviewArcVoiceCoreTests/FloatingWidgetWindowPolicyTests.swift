@@ -64,11 +64,26 @@ import Foundation
     #expect(CompactTimerTextPolicy.sessionRemaining(seconds: -3_661) == "+01:01")
 }
 
-@Test func focusPlannerTransitionUsesOneBottomAnchoredResize() {
-    #expect(FloatingWidgetUpperSurfaceTransitionPolicy.style == .clippedCrossfade)
-    #expect(FloatingWidgetUpperSurfaceTransitionPolicy.keepsBottomAnchor)
-    #expect(FloatingWidgetUpperSurfaceTransitionPolicy.usesSingleHostResize)
-    #expect(FloatingWidgetUpperSurfaceTransitionPolicy.primesDestinationBeforeDismissal)
+@Test func focusPlannerTransitionRendersOnlyItsDestination() {
+    #expect(FloatingWidgetUpperSurfaceTransitionPolicy.style == .destinationOnly)
+}
+
+@Test func coverageNoticeNeverReplacesAuthoritativeTimerContent() {
+    #expect(FloatingWidgetCoverageNoticePolicy.showsInlineNotice(
+        noticePresented: true,
+        hasTimerInstrument: false,
+        isBusy: false
+    ))
+    #expect(!FloatingWidgetCoverageNoticePolicy.showsInlineNotice(
+        noticePresented: true,
+        hasTimerInstrument: true,
+        isBusy: false
+    ))
+    #expect(!FloatingWidgetCoverageNoticePolicy.showsInlineNotice(
+        noticePresented: true,
+        hasTimerInstrument: false,
+        isBusy: true
+    ))
 }
 
 @Test func animatedHostOwnsGeometryWhileSwiftUIStaysBottomTrailing() {

@@ -4,11 +4,12 @@
 
 Before a capture may enter this flow, Voice verifies its insertion target. The
 desktop Codex app is an intrinsic specialist surface. A CLI terminal is a
-specialist surface only when its approved host, focused workspace title, and
-live descendant `codex` process all agree. This avoids treating an arbitrary
-shell or a spoofed window title as practice evidence. Target inspection reads
-only process names and the focused window title; it does not inspect terminal
-contents, arguments, environment variables, or transcript text. The widget
+specialist surface when Link is enabled, the focused activity context is fresh,
+the host is approved, and the focused top-level window identifies an Interview
+Arc/Codex workspace. Process ancestry is deliberately not required because tmux
+runs pane processes under its detached server. Target inspection reads only the
+host bundle and focused window title; it does not inspect terminal contents,
+arguments, environment variables, or transcript text. The widget
 uses the same target decision, so it cannot advertise a linked activity while
 the next capture silently takes the General Dictation route.
 
@@ -207,30 +208,30 @@ uses one prompt-free provider recovery made from approximately 30-second,
 1.5-second-overlap derivatives with a concurrency ceiling of four; it does not
 wait 30 seconds. Every expected piece must return before top-level text is
 overlap-deduplicated and timestamp evidence is offset. An explicitly installed
-`base.en` WhisperKit engine may be tried through the fallback interface if that
-assembled candidate remains uncertain. The model lives in private app-owned
+`base.en` WhisperKit engine remains available for explicit diagnostics and
+release comparison, but the foreground pipeline does not invoke it
+automatically when the assembled provider candidate remains uncertain. The
+model lives in private app-owned
 storage with a permission-0600 SHA-256 manifest; Settings owns installation,
 integrity status, and deletion. It is never downloaded automatically and never
-runs on the healthy Groq path. An explicitly installed model prewarms
+runs on the foreground Groq path. An explicitly installed model prewarms
 asynchronously at utility priority only after Voice has presented its local UI,
 restored local state, and loaded secure settings. This is an intentional opt-in
 latency/memory tradeoff: users who do not install the model pay no model I/O or
-memory cost, while users who install it avoid the known tens-of-seconds cold
-recovery penalty. The loaded engine is released when the model is deleted or
-replaced. The foreground recovery path checks lock-protected readiness without
-waiting on the model actor; when prewarm is incomplete, it preserves the best
-provider candidate immediately instead of synchronously cold-loading the
-model. Local decoding receives the same resolved
+memory cost. The loaded engine is released when the model is deleted or
+replaced. Explicit local verification receives the same resolved
 activity or General Dictation vocabulary context as the primary request. Voice
 normalizes whitespace, tokenizes with the installed WhisperKit tokenizer, and
 passes at most 180 trailing prompt tokens as decoder conditioning. If the
 pinned engine returns an empty conditioned result, Voice immediately retries
 the retained audio without conditioning instead of losing the recovery; the
 aggregate diagnostic then reports zero applied prompt tokens. The prompt text
-is never persisted in diagnostics. Without a trustworthy result, Voice
-stores the best usable text and original M4A as a coverage-uncertain Recent
-Transcript and does not insert it or create a linked D1 turn. Recovery
-derivatives are disposable.
+is never persisted in diagnostics. If provider recovery remains
+coverage-uncertain but contains usable text, Voice immediately inserts the best
+candidate, preserves the original M4A, labels the Recent Transcript, and shows
+a quiet warning. A linked candidate creates its ordinary stable Voice v2
+envelope and follows specialist classification; uncertainty never silently
+removes the turn. Recovery derivatives are disposable.
 
 Release acceptance can replay a retained recording through the exact native
 WhisperKit implementation packaged with the signed app by invoking
@@ -241,12 +242,9 @@ lexical coverage end, inference time, engine and model, and conditioning
 counts. It cannot serialize transcript text, prompt text, audio bytes, or
 filesystem paths.
 
-The user may explicitly confirm **Use this transcript** for that visible
-coverage-uncertain candidate. General Dictation inserts exactly the reviewed
-text locally. A linked candidate atomically creates and persists one stable
-capture/turn/clip envelope from the activity context frozen at recording start,
-then follows the ordinary specialist decision and D1/R2 flow. Confirmation is
-idempotent and does not itself classify the capture as related.
+The legacy **Use this transcript** action remains available only for older
+preserved recovery records that were rejected before this policy changed. It is
+idempotent and does not itself classify a linked capture as related.
 
 Every completed attempt appends one bounded, permission-0600 diagnostic record
 containing only numeric stage timings, the selected protection mode, omission

@@ -179,9 +179,7 @@ final class VoiceBridgeModel: ObservableObject {
         let microphoneRecoveryCount: Int
         let vadSpeechFrameCount: Int?
         let vadLongestSpeechRunFrames: Int?
-        var captureTargetKind: CaptureTargetKind? = nil
-        var captureTargetDecisionReason: CaptureTargetDecisionReason? = nil
-        var captureRouteReason: CaptureRouteReason? = nil
+        var captureTarget: CaptureTargetDiagnosticMetadata? = nil
     }
 
     private struct TranscriptionDiagnosticMetadata {
@@ -237,6 +235,7 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var finishOutcome: VoicePracticeOutcome?
     @Published var finishStarred = false
     @Published var contextMessage = "Loading secure settings…"
+    @Published private(set) var coverageUncertainNoticePresented = false
     @Published var lastTranscript = ""
     @Published private(set) var transcriptHistory: [LocalTranscriptRecord] = []
     @Published private(set) var selectedTranscriptIndex = 0
@@ -303,6 +302,7 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var groqCredentialRejected = false
     @Published private(set) var currentTargetDecision =
         CaptureTargetApplicationPolicy.decision(for: nil)
+    private var currentTargetDescriptor: CaptureTargetDescriptor?
     @Published var failureDetailsPresented = false
     private var pendingFailurePopoverActionTask: Task<Void, Never>?
     private var pendingFailurePopoverCloseObserver: NSObjectProtocol?
@@ -922,36 +922,32 @@ final class VoiceBridgeModel: ObservableObject {
 
     func toggleTimerPanel() {
         guard hasTimerInstrument, !isRecording else { return }
-        withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
-            if plannerPresented {
-                timerPanelExpanded = true
-                plannerPresented = false
-                timerPanelExpandedBeforePlanner = nil
-                return
-            }
-            timerPanelExpanded.toggle()
-            if !timerPanelExpanded {
-                cancelFinishDrawer()
-                activityPickerExpanded = false
-            }
+        if plannerPresented {
+            timerPanelExpanded = true
+            plannerPresented = false
+            timerPanelExpandedBeforePlanner = nil
+            return
+        }
+        timerPanelExpanded.toggle()
+        if !timerPanelExpanded {
+            cancelFinishDrawer()
+            activityPickerExpanded = false
         }
     }
 
     func togglePlanner() {
         guard linkToInterviewArc, !isRecording, !isStartingRecording else { return }
-        withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
-            if plannerPresented {
-                timerPanelExpanded = timerPanelExpandedBeforePlanner ?? false
-                plannerPresented = false
-                timerPanelExpandedBeforePlanner = nil
-            } else {
-                timerPanelExpandedBeforePlanner = timerPanelExpanded
-                plannerPresented = true
-                timerPanelExpanded = false
-                finishingActivityID = nil
-                activityPickerExpanded = false
-                sessionFinishResolutionRequested = false
-            }
+        if plannerPresented {
+            timerPanelExpanded = timerPanelExpandedBeforePlanner ?? false
+            plannerPresented = false
+            timerPanelExpandedBeforePlanner = nil
+        } else {
+            timerPanelExpandedBeforePlanner = timerPanelExpanded
+            plannerPresented = true
+            timerPanelExpanded = false
+            finishingActivityID = nil
+            activityPickerExpanded = false
+            sessionFinishResolutionRequested = false
         }
         if plannerPresented {
             Task { await refreshPlanning() }
@@ -964,11 +960,9 @@ final class VoiceBridgeModel: ObservableObject {
 
     func showFocusSurface() {
         guard hasTimerInstrument else { return }
-        withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
-            timerPanelExpanded = true
-            plannerPresented = false
-            timerPanelExpandedBeforePlanner = nil
-        }
+        timerPanelExpanded = true
+        plannerPresented = false
+        timerPanelExpandedBeforePlanner = nil
     }
 
     func setPlanningSurface(_ surface: VoicePlanningSurface) {
@@ -2418,7 +2412,6 @@ final class VoiceBridgeModel: ObservableObject {
             )
             let pipeline = GeneralDictationPipeline(
                 transcriber: GroqTranscriber(apiKey: groqKeyDraft),
-                localFallback: localWhisperTranscriber,
                 temporaryDirectory: recordingStore.temporaryDirectory,
                 vocabularyPrompt: generalDictationPrompt
             )
@@ -2549,9 +2542,7 @@ final class VoiceBridgeModel: ObservableObject {
             localValidationReasons: transcription.localValidationReasons,
             providerHTTPStatus: transcription.providerHTTPStatus,
             providerErrorCode: transcription.providerErrorCode,
-            captureTargetKind: seed.captureTargetKind,
-            captureTargetDecisionReason: seed.captureTargetDecisionReason,
-            captureRouteReason: seed.captureRouteReason,
+            captureTarget: seed.captureTarget,
             outcome: outcome
         )
         try? await diagnosticsStore?.append(record)
@@ -3451,11 +3442,13 @@ final class VoiceBridgeModel: ObservableObject {
             rememberExternalApplication(targetApplication)
             captureStartedInCodex = currentTargetDecision.canAttach
         } else {
+            currentTargetDescriptor = nil
             currentTargetDecision = CaptureTargetApplicationPolicy.decision(for: nil)
             captureStartedInCodex = false
         }
         deliveryStates = [:]
         canRetryLastTranscription = false
+        coverageUncertainNoticePresented = false
         captureGeneration = UUID()
 
         // Context is refreshed continuously while idle. Opening the
@@ -3640,9 +3633,11 @@ final class VoiceBridgeModel: ObservableObject {
                 vadSpeechFrameCount: speechEvidence?.vadSpeechFrameCount,
                 vadLongestSpeechRunFrames:
                     speechEvidence?.vadLongestSpeechRunFrames,
-                captureTargetKind: currentTargetDecision.kind,
-                captureTargetDecisionReason: currentTargetDecision.reason,
-                captureRouteReason: captureRouteReason
+                captureTarget: CaptureTargetDiagnosticMetadata(
+                    kind: currentTargetDecision.kind,
+                    decisionReason: currentTargetDecision.reason,
+                    routeReason: captureRouteReason
+                )
             )
 
             switch recovery {
@@ -3780,7 +3775,6 @@ final class VoiceBridgeModel: ObservableObject {
         do {
             let generalPipeline = GeneralDictationPipeline(
                 transcriber: GroqTranscriber(apiKey: groqKeyDraft),
-                localFallback: localWhisperTranscriber,
                 temporaryDirectory: recordingStore.temporaryDirectory,
                 vocabularyPrompt: generalDictationPrompt
             )
@@ -3813,6 +3807,9 @@ final class VoiceBridgeModel: ObservableObject {
                     editorText: transcript,
                     durationSeconds: recording.duration,
                     activityTitle: nil,
+                    recoveryStatus: result.coverageUncertain
+                        ? .coverageUncertain
+                        : nil,
                     recordingURL: recording.url
                 )
             }
@@ -3824,7 +3821,10 @@ final class VoiceBridgeModel: ObservableObject {
             if inserted {
                 clearFailureAfterSuccess()
                 phase = .delivered
-                contextMessage = "Dictation inserted at the cursor. Press Send when ready."
+                coverageUncertainNoticePresented = result.coverageUncertain
+                contextMessage = result.coverageUncertain
+                    ? "Best available transcript inserted · may be incomplete"
+                    : "Dictation inserted at the cursor. Press Send when ready."
             } else {
                 reportFailure(
                     VoiceBridgeError.codexUnavailable("No editable cursor was available."),
@@ -3854,6 +3854,9 @@ final class VoiceBridgeModel: ObservableObject {
                             result.trailingSpeechLikeFrameCount,
                         trailingSpeechLikeFraction:
                             result.trailingSpeechLikeFraction,
+                        integrityReasons: result.coverageUncertain
+                            ? [.missingSpeechCoverage]
+                            : nil,
                         engine: result.engine,
                         model: result.model,
                         localInferenceSeconds:
@@ -3922,6 +3925,13 @@ final class VoiceBridgeModel: ObservableObject {
                     await self.applyDeliveryUpdate(update, generation: generation)
                 }
             )
+            if result.coverageUncertain,
+               let transcriptHistoryStore {
+                _ = try? await transcriptHistoryStore.markCoverageUncertain(
+                    captureID: result.captureID
+                )
+                await refreshTranscriptHistory()
+            }
             await updateRetryCount()
             guard generation == captureGeneration else { return }
             endProcessing()
@@ -3934,7 +3944,10 @@ final class VoiceBridgeModel: ObservableObject {
             } else {
                 clearFailureAfterSuccess()
                 phase = .delivered
-                contextMessage = "Inserted at the cursor · waiting for specialist permission."
+                coverageUncertainNoticePresented = result.coverageUncertain
+                contextMessage = result.coverageUncertain
+                    ? "Best available transcript inserted · may be incomplete"
+                    : "Inserted at the cursor · waiting for specialist permission."
             }
             if let diagnosticSeed {
                 await recordDiagnostic(
@@ -3959,6 +3972,9 @@ final class VoiceBridgeModel: ObservableObject {
                             result.trailingSpeechLikeFrameCount,
                         trailingSpeechLikeFraction:
                             result.trailingSpeechLikeFraction,
+                        integrityReasons: result.coverageUncertain
+                            ? [.missingSpeechCoverage]
+                            : nil,
                         engine: result.transcriptionEngine,
                         model: result.transcriptionModel,
                         localInferenceSeconds:
@@ -4187,7 +4203,6 @@ final class VoiceBridgeModel: ObservableObject {
         return VoicePipeline(
             api: InterviewArcAPIClient(baseURL: baseURL, token: token),
             transcriber: GroqTranscriber(apiKey: groqKeyDraft),
-            localFallback: localWhisperTranscriber,
             codex: CodexBridge(executableURL: URL(fileURLWithPath: codexPath)),
             vocabularyResolver: VocabularyResolver(catalog: try .bundled()),
             retryQueue: VoiceRetryQueue(directory: recordingStore.queueDirectory),
@@ -4224,8 +4239,10 @@ final class VoiceBridgeModel: ObservableObject {
         _ application: NSRunningApplication
     ) {
         lastExternalApplicationPID = application.processIdentifier
+        let descriptor = CaptureTargetInspector.descriptor(for: application)
+        currentTargetDescriptor = descriptor
         currentTargetDecision = CaptureTargetApplicationPolicy.decision(
-            for: CaptureTargetInspector.descriptor(for: application)
+            for: descriptor
         )
     }
 
@@ -5625,19 +5642,24 @@ private struct VoiceBridgeMenu: View {
                         if selectedTranscript.recoveryStatus == .coverageUncertain {
                             HStack(spacing: 6) {
                                 Label(
-                                    "Coverage uncertain · review first",
+                                    "May be incomplete",
                                     systemImage: "exclamationmark.triangle"
                                 )
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(Color.orange)
                                 .lineLimit(1)
                                 Spacer(minLength: 4)
-                                Button("Use this transcript") {
-                                    confirmingRecoveryPromotion = true
+                                if selectedTranscript.linkedRecoveryContext
+                                    != nil {
+                                    Button("Use this transcript") {
+                                        confirmingRecoveryPromotion = true
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .controlSize(.mini)
+                                    .disabled(
+                                        !model.selectedTranscriptCanUseRecovery
+                                    )
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.mini)
-                                .disabled(!model.selectedTranscriptCanUseRecovery)
                             }
                             .accessibilityElement(children: .contain)
                         }
@@ -5939,11 +5961,14 @@ private struct VoiceBridgeMenu: View {
     }
 
     private var statusColor: Color {
+        if model.coverageUncertainNoticePresented {
+            return .orange
+        }
         switch model.phase {
-        case .recording, .failed: .red
-        case .queued, .setup: .orange
-        case .delivered, .idle: .green
-        default: .blue
+        case .recording, .failed: return .red
+        case .queued, .setup: return .orange
+        case .delivered, .idle: return .green
+        default: return .blue
         }
     }
 }

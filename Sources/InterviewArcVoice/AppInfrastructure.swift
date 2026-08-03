@@ -1219,6 +1219,13 @@ struct FloatingRecorderView: View {
 
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
+    private var upperSurfaceTransition: AnyTransition {
+        switch FloatingWidgetUpperSurfaceTransitionPolicy.style {
+        case .destinationOnly:
+            return .identity
+        }
+    }
+
     var body: some View {
         GeometryReader { host in
             let upperSurfaceViewportHeight =
@@ -1240,7 +1247,10 @@ struct FloatingRecorderView: View {
                                 height: upperSurfaceContentHeight
                             )
                             .padding(.bottom, FloatingWidgetWindowPolicy.timerGap)
-                            .transition(.opacity)
+                            // The native panel owns the complete resize. Keeping
+                            // the outgoing Focus tree alive here produces a
+                            // translucent duplicate while the host changes size.
+                            .transition(upperSurfaceTransition)
                     } else if model.widgetSizeMode == .standard,
                               !model.dynamicRecordingInterfaceActive,
                               model.timerPanelExpanded,
@@ -1253,9 +1263,9 @@ struct FloatingRecorderView: View {
                         .frame(width: FloatingWidgetWindowPolicy.expandedWidth)
                         .padding(.bottom, FloatingWidgetWindowPolicy.timerGap)
                         // The AppKit panel already animates the bottom-anchored frame.
-                        // A second SwiftUI move transition made the capsule hop
-                        // vertically while the host was resizing.
-                        .transition(.opacity)
+                        // Destination-only content makes expansion and collapse
+                        // exact reverses without an overlapping planner snapshot.
+                        .transition(upperSurfaceTransition)
                     }
                 }
                 .frame(
@@ -1263,7 +1273,6 @@ struct FloatingRecorderView: View {
                     height: upperSurfaceViewportHeight,
                     alignment: .bottomTrailing
                 )
-                .compositingGroup()
                 // The stable viewport ends at the recorder capsule's top edge.
                 // During removal it clips planner pixels before they can show
                 // through the translucent microphone control.
@@ -1661,7 +1670,28 @@ struct FloatingRecorderView: View {
 
     private var activityLabel: some View {
         Group {
-            if model.hasTimerInstrument, !model.isBusy {
+            if FloatingWidgetCoverageNoticePolicy.showsInlineNotice(
+                noticePresented: model.coverageUncertainNoticePresented,
+                hasTimerInstrument: model.hasTimerInstrument,
+                isBusy: model.isBusy
+            ) {
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(palette.warning)
+                    Text("Best available transcript inserted · may be incomplete")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(palette.warning)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, minHeight: 24)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(
+                    "Best available transcript inserted. It may be incomplete."
+                )
+            } else if model.hasTimerInstrument, !model.isBusy {
                 if (model.timerPanelExpanded || model.plannerPresented),
                    FloatingWidgetCompactTimerLayoutPolicy.showsPreviousMemoActionsWhenExpanded {
                     Button {

@@ -64,6 +64,7 @@ public enum SegmentLocalTranscriptValidator {
     private static let maximumUnsupportedWordGapSeconds = 0.30
     private static let maximumTerminalSpeechFraction = 0.10
     private static let minimumTerminalTimestampOverrunSeconds = 0.20
+    private static let maximumTerminalEvidenceWindowSeconds = 3.0
     private static let terminalHallucinationPhrases = [
         ["thank", "you"],
     ]
@@ -435,6 +436,8 @@ public enum SegmentLocalTranscriptValidator {
         let lastWord = words[lastIndex]
         let audioEnd = speechEvidence.analyzedDurationSeconds
         guard lastWord.end >= audioEnd - 0.75 else { return nil }
+        let timestampOverrunsAudio =
+            lastWord.end - audioEnd >= minimumTerminalTimestampOverrunSeconds
         guard terminalProviderCorroboratesRejection(
             wordIndices: wordIndices,
             words: words,
@@ -443,7 +446,19 @@ public enum SegmentLocalTranscriptValidator {
         ) else {
             return nil
         }
-        let evidenceStart = max(0, firstWord.start - segmentPaddingSeconds)
+        let evidenceStart: Double
+        if timestampOverrunsAudio {
+            let phraseDuration = max(
+                minimumWordEvidenceSeconds,
+                min(
+                    maximumTerminalEvidenceWindowSeconds,
+                    lastWord.end - firstWord.start + segmentPaddingSeconds
+                )
+            )
+            evidenceStart = max(0, audioEnd - phraseDuration)
+        } else {
+            evidenceStart = max(0, firstWord.start - segmentPaddingSeconds)
+        }
         let local = speechEvidence.evidence(
             from: evidenceStart,
             to: audioEnd
