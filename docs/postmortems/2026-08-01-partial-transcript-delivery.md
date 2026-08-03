@@ -441,6 +441,12 @@ The follow-up repair changes the ownership of model preparation and latency:
 5. privacy-safe diagnostics explicitly report when local recovery was skipped
    because the model was not warm.
 
+Settings exposes this runtime distinction directly. An installed model reports
+**Preparing local recovery…** until prewarm finishes, then **Ready for immediate
+recovery**. A failed preparation remains visibly installed but not ready and
+offers an explicit **Prepare** retry, so model presence can no longer be
+mistaken for foreground readiness.
+
 This does not weaken the trust boundary. A coverage-uncertain candidate is not
 inserted, registered, sent to D1, or uploaded to R2 unless the user explicitly
 chooses **Use this transcript**. Exact merged-main package and installed-app
