@@ -48,6 +48,9 @@ All times are Pacific Daylight Time on 2026-08-02.
 | 17:03 | Investigation confirmed the installed widget showed the activity as linked while local history showed General Dictation metadata. |
 | 17:06 | Source inspection isolated the hard-coded desktop-only destination gate. |
 | 17:08 | A dedicated Reliability worktree was created for regression coverage and repair. |
+| 17:29 | The first complete macOS CI run passed and produced a tree-addressed artifact. |
+| 17:34 | Staging found that the old installed process had not exited, so it was terminated before repeating the artifact test. |
+| 17:41 | The exact staged artifact exposed a second boundary defect: cmux still failed closed even though separate process inspection proved live `codex` descendants. The first diagnostic did not preserve the exact target-decision reason. |
 
 ## Architecture and failure sequence
 
@@ -87,6 +90,11 @@ to promise linked behavior that the capture path would not perform.
    late-binding repair was guarded by the same desktop-only target decision.
 4. Diagnostics captured transcription timing but not the target kind or capture
    route reason.
+5. The first CLI repair depended only on the Accessibility focused-window-title
+   attribute and recorded only the coarse target kind. A background menu-bar
+   application cannot rely on every supported terminal exposing that attribute
+   consistently, and the missing decision reason made the installed failure
+   unnecessarily ambiguous.
 
 ## Resolution design
 
@@ -102,6 +110,11 @@ to promise linked behavior that the capture path would not perform.
 6. Preserve stale-context late binding only for a verified specialist target
    and an activity already running at recording start.
 7. Persist bounded target-kind and route-reason enums in local diagnostics.
+8. Prefer the Accessibility focused-window title, then fall back to the visible
+   layer-zero window title metadata for the same terminal PID. The fallback
+   captures no pixels and reads no terminal content.
+9. Ship a privacy-safe `--capture-target-status <pid>` package verifier that
+   reports only target-kind and decision enums for installed-artifact testing.
 
 ## Regression prevention
 
@@ -117,9 +130,11 @@ to promise linked behavior that the capture path would not perform.
 
 ## Verification status
 
-Implementation and signed installed-app verification are still in progress.
-This document will be finalized with the PR, merge commit, packaged artifact,
-and exact test evidence before issue closure.
+PR #156 passed its first complete macOS CI run, but exact-artifact staging
+correctly kept the issue open after exposing the Accessibility-only title
+lookup defect. A hardened artifact and signed installed-app verification are
+still in progress. This document will be finalized with the final PR head,
+merge commit, packaged artifact, and exact test evidence before issue closure.
 
 ## Glossary
 

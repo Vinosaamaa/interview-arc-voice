@@ -91,6 +91,7 @@ import Testing
         localInferenceSeconds: 1.25,
         localPromptTokenCount: 17,
         captureTargetKind: .codexCLITerminal,
+        captureTargetDecisionReason: .verifiedCodexCLIProcess,
         captureRouteReason: .linkedAfterContextRefresh,
         outcome: .failed
     )
@@ -110,6 +111,7 @@ import Testing
     #expect(record.report.contains("Local vocabulary conditioning: true"))
     #expect(record.report.contains("Local vocabulary prompt tokens: 17"))
     #expect(record.report.contains("Capture target: codexCLITerminal"))
+    #expect(record.report.contains("Capture target decision: verifiedCodexCLIProcess"))
     #expect(record.report.contains("Capture route: linkedAfterContextRefresh"))
 }
 

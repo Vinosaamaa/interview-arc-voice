@@ -39,6 +39,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
     public let localFallbackAttempted: Bool?
     public let localValidationReasons: [TranscriptionIntegrityReason]?
     public let captureTargetKind: CaptureTargetKind?
+    public let captureTargetDecisionReason: CaptureTargetDecisionReason?
     public let captureRouteReason: CaptureRouteReason?
     public let outcome: VoiceDiagnosticOutcome
 
@@ -75,6 +76,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         localFallbackAttempted: Bool? = nil,
         localValidationReasons: [TranscriptionIntegrityReason]? = nil,
         captureTargetKind: CaptureTargetKind? = nil,
+        captureTargetDecisionReason: CaptureTargetDecisionReason? = nil,
         captureRouteReason: CaptureRouteReason? = nil,
         outcome: VoiceDiagnosticOutcome
     ) {
@@ -110,6 +112,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         self.localFallbackAttempted = localFallbackAttempted
         self.localValidationReasons = localValidationReasons
         self.captureTargetKind = captureTargetKind
+        self.captureTargetDecisionReason = captureTargetDecisionReason
         self.captureRouteReason = captureRouteReason
         self.outcome = outcome
     }
@@ -148,6 +151,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
             "Local fallback attempted: \(localFallbackAttempted.map { String($0) } ?? "Unavailable")",
             "Local validation reasons: \(localValidationReasons?.map(\.rawValue).joined(separator: ", ") ?? "None")",
             "Capture target: \(captureTargetKind?.rawValue ?? "Unavailable")",
+            "Capture target decision: \(captureTargetDecisionReason?.rawValue ?? "Unavailable")",
             "Capture route: \(captureRouteReason?.rawValue ?? "Unavailable")",
             "Outcome: \(outcome.rawValue)",
         ].joined(separator: "\n")

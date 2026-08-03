@@ -34,7 +34,24 @@ struct InterviewArcVoiceApp: App {
     @Environment(\.openSettings) private var openSettings
 
     init() {
-        if ProcessInfo.processInfo.arguments.contains("--verify-package") {
+        let arguments = ProcessInfo.processInfo.arguments
+        if let optionIndex = arguments.firstIndex(of: "--capture-target-status") {
+            guard arguments.indices.contains(optionIndex + 1),
+                  let processIdentifier = pid_t(arguments[optionIndex + 1]),
+                  let application = NSRunningApplication(
+                      processIdentifier: processIdentifier
+                  ) else {
+                fputs("Expected a running application PID after --capture-target-status.\n", stderr)
+                exit(64)
+            }
+            let decision = CaptureTargetApplicationPolicy.decision(
+                for: CaptureTargetInspector.descriptor(for: application)
+            )
+            print("capture-target-kind: \(decision.kind.rawValue)")
+            print("capture-target-decision: \(decision.reason.rawValue)")
+            exit(decision.canAttach ? EXIT_SUCCESS : 2)
+        }
+        if arguments.contains("--verify-package") {
             do {
                 let catalog = try VocabularyCatalog.bundled()
                 print("Interview Arc Voice package verified with \(catalog.packs.count) vocabulary packs.")
@@ -44,7 +61,7 @@ struct InterviewArcVoiceApp: App {
                 exit(EXIT_FAILURE)
             }
         }
-        if ProcessInfo.processInfo.arguments.contains("--credential-status") {
+        if arguments.contains("--credential-status") {
             let keychain = KeychainStore()
             do {
                 let groqKey = try keychain.value(for: .groqAPIKey) ?? ""
@@ -163,6 +180,7 @@ final class VoiceBridgeModel: ObservableObject {
         let vadSpeechFrameCount: Int?
         let vadLongestSpeechRunFrames: Int?
         var captureTargetKind: CaptureTargetKind? = nil
+        var captureTargetDecisionReason: CaptureTargetDecisionReason? = nil
         var captureRouteReason: CaptureRouteReason? = nil
     }
 
@@ -2473,6 +2491,7 @@ final class VoiceBridgeModel: ObservableObject {
             localFallbackAttempted: transcription.localFallbackAttempted,
             localValidationReasons: transcription.localValidationReasons,
             captureTargetKind: seed.captureTargetKind,
+            captureTargetDecisionReason: seed.captureTargetDecisionReason,
             captureRouteReason: seed.captureRouteReason,
             outcome: outcome
         )
@@ -3540,6 +3559,7 @@ final class VoiceBridgeModel: ObservableObject {
                 vadLongestSpeechRunFrames:
                     speechEvidence?.vadLongestSpeechRunFrames,
                 captureTargetKind: currentTargetDecision.kind,
+                captureTargetDecisionReason: currentTargetDecision.reason,
                 captureRouteReason: captureRouteReason
             )
 

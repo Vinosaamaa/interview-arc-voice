@@ -237,6 +237,11 @@ not.
    workspace. Voice also verifies a live descendant `codex` process before it
    treats that terminal as a specialist destination; ordinary terminal windows
    remain General Dictation.
+
+For privacy-safe packaged-artifact diagnostics, pass a supported terminal PID
+to `InterviewArcVoice --capture-target-status <pid>`. The command reports only
+the target-kind and decision enums; it never prints the window title, process
+arguments, terminal content, transcript, or private paths.
 8. Select the microphone or press `Control-Option-Space`. Voice uses the
    continuously refreshed focused activity and immediately starts the local
    capture backend without a network or Bluetooth output-route wait.
