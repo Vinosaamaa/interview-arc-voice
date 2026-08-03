@@ -214,8 +214,11 @@ integrity status, and deletion. It is never downloaded automatically and never
 runs on the healthy Groq path. Local decoding receives the same resolved
 activity or General Dictation vocabulary context as the primary request. Voice
 normalizes whitespace, tokenizes with the installed WhisperKit tokenizer, and
-passes at most 180 trailing prompt tokens as decoder conditioning. The prompt
-text is never persisted in diagnostics. Without a trustworthy result, Voice
+passes at most 180 trailing prompt tokens as decoder conditioning. If the
+pinned engine returns an empty conditioned result, Voice immediately retries
+the retained audio without conditioning instead of losing the recovery; the
+aggregate diagnostic then reports zero applied prompt tokens. The prompt text
+is never persisted in diagnostics. Without a trustworthy result, Voice
 stores the best usable text and original M4A as a coverage-uncertain Recent
 Transcript and does not insert it or create a linked D1 turn. Recovery
 derivatives are disposable.

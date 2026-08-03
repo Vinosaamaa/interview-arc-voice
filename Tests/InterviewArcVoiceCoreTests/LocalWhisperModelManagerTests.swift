@@ -28,12 +28,24 @@ import Testing
     #expect(!encoderCalled)
 }
 
-@Test func conditionedLocalWhisperUsesSequentialWindowsInsteadOfVADChunks() {
+@Test func emptyConditionedLocalWhisperResultRetriesWithoutConditioning() {
     #expect(
-        !LocalWhisperPromptPolicy.usesVADChunking(forPromptTokens: [42])
+        LocalWhisperPromptPolicy.shouldRetryWithoutConditioning(
+            transcript: " \n ",
+            forPromptTokens: [42]
+        )
     )
     #expect(
-        LocalWhisperPromptPolicy.usesVADChunking(forPromptTokens: [])
+        !LocalWhisperPromptPolicy.shouldRetryWithoutConditioning(
+            transcript: "complete answer",
+            forPromptTokens: [42]
+        )
+    )
+    #expect(
+        !LocalWhisperPromptPolicy.shouldRetryWithoutConditioning(
+            transcript: "",
+            forPromptTokens: []
+        )
     )
 }
 

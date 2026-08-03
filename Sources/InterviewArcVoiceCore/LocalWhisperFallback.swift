@@ -56,13 +56,12 @@ public enum LocalWhisperModelError: LocalizedError, Sendable, Equatable {
 public enum LocalWhisperPromptPolicy {
     public static let maximumTokenCount = 180
 
-    /// WhisperKit 1.0's VAD-chunk path returns an empty result when custom
-    /// decoder prompt tokens are present. Conditioned recovery therefore uses
-    /// WhisperKit's ordinary sequential-window path instead.
-    public static func usesVADChunking(
+    public static func shouldRetryWithoutConditioning(
+        transcript: String,
         forPromptTokens promptTokens: [Int]
     ) -> Bool {
-        promptTokens.isEmpty
+        !promptTokens.isEmpty
+            && transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     public static func normalizedPrompt(_ prompt: String) -> String {
@@ -265,29 +264,43 @@ public actor LocalWhisperModelManager {
                 encode: $0.encode(text:)
             )
         } ?? []
-        let startedAt = Date()
-        let localResults = try await whisper.transcribe(
-            audioPath: fileURL.path,
-            decodeOptions: DecodingOptions(
+        func decodingOptions(for tokens: [Int]) -> DecodingOptions {
+            DecodingOptions(
                 verbose: false,
                 task: .transcribe,
                 language: "en",
                 temperature: 0,
                 usePrefillPrompt: true,
                 wordTimestamps: true,
-                promptTokens: promptTokens.isEmpty ? nil : promptTokens,
-                chunkingStrategy:
-                    LocalWhisperPromptPolicy.usesVADChunking(
-                        forPromptTokens: promptTokens
-                    ) ? .vad : nil
+                promptTokens: tokens.isEmpty ? nil : tokens,
+                chunkingStrategy: .vad
             )
+        }
+        let startedAt = Date()
+        var effectivePromptTokens = promptTokens
+        var localResults = try await whisper.transcribe(
+            audioPath: fileURL.path,
+            decodeOptions: decodingOptions(for: effectivePromptTokens)
         )
+        var text = localResults.map(\.text)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if LocalWhisperPromptPolicy.shouldRetryWithoutConditioning(
+            transcript: text,
+            forPromptTokens: effectivePromptTokens
+        ) {
+            effectivePromptTokens = []
+            localResults = try await whisper.transcribe(
+                audioPath: fileURL.path,
+                decodeOptions: decodingOptions(for: effectivePromptTokens)
+            )
+            text = localResults.map(\.text)
+                .joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         let inferenceSeconds = Date().timeIntervalSince(startedAt)
         try Task.checkCancellation()
         let whisperSegments = localResults.flatMap(\.segments)
-        let text = localResults.map(\.text)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw LocalWhisperModelError.emptyTranscript }
         let words = whisperSegments
             .flatMap { $0.words ?? [] }
@@ -324,7 +337,7 @@ public actor LocalWhisperModelManager {
             engine: "whisperkit",
             model: manifest.model,
             localInferenceSeconds: inferenceSeconds,
-            localPromptTokenCount: promptTokens.count
+            localPromptTokenCount: effectivePromptTokens.count
         )
     }
 

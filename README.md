@@ -79,6 +79,9 @@ text, audio bytes, and filesystem paths are never printed.
 `--prompt-file` is optional. The verifier requires a model already installed
 through Settings and never downloads one automatically. Verification recordings
 and prompt files remain local and must not be committed or attached to issues.
+If the pinned engine returns no conditioned text, the native path immediately
+retries the retained audio without conditioning and reports zero applied prompt
+tokens rather than discarding the recovery.
 
 ## Product decisions
 
