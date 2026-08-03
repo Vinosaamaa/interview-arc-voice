@@ -59,6 +59,7 @@ import Foundation
     #expect(FloatingWidgetUpperSurfaceTransitionPolicy.style == .clippedCrossfade)
     #expect(FloatingWidgetUpperSurfaceTransitionPolicy.keepsBottomAnchor)
     #expect(FloatingWidgetUpperSurfaceTransitionPolicy.usesSingleHostResize)
+    #expect(FloatingWidgetUpperSurfaceTransitionPolicy.primesDestinationBeforeDismissal)
 }
 
 @Test func animatedHostOwnsGeometryWhileSwiftUIStaysBottomTrailing() {

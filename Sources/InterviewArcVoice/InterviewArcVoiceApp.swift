@@ -917,10 +917,9 @@ final class VoiceBridgeModel: ObservableObject {
         guard hasTimerInstrument, !isRecording else { return }
         withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
             if plannerPresented {
-                plannerPresented = false
                 timerPanelExpanded = true
+                plannerPresented = false
                 timerPanelExpandedBeforePlanner = nil
-                synchronizeFloatingPanelSize()
                 return
             }
             timerPanelExpanded.toggle()
@@ -929,15 +928,14 @@ final class VoiceBridgeModel: ObservableObject {
                 activityPickerExpanded = false
             }
         }
-        synchronizeFloatingPanelSize()
     }
 
     func togglePlanner() {
         guard linkToInterviewArc, !isRecording, !isStartingRecording else { return }
         withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
             if plannerPresented {
-                plannerPresented = false
                 timerPanelExpanded = timerPanelExpandedBeforePlanner ?? false
+                plannerPresented = false
                 timerPanelExpandedBeforePlanner = nil
             } else {
                 timerPanelExpandedBeforePlanner = timerPanelExpanded
@@ -960,8 +958,8 @@ final class VoiceBridgeModel: ObservableObject {
     func showFocusSurface() {
         guard hasTimerInstrument else { return }
         withAnimation(.easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)) {
-            plannerPresented = false
             timerPanelExpanded = true
+            plannerPresented = false
             timerPanelExpandedBeforePlanner = nil
         }
     }

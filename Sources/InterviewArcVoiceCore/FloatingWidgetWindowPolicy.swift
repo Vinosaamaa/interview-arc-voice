@@ -190,6 +190,7 @@ public enum FloatingWidgetUpperSurfaceTransitionPolicy {
         .clippedCrossfade
     public static let keepsBottomAnchor = true
     public static let usesSingleHostResize = true
+    public static let primesDestinationBeforeDismissal = true
 }
 
 public enum CompactTimerTextPolicy {
