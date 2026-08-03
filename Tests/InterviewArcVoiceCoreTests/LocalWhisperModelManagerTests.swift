@@ -28,14 +28,12 @@ import Testing
     #expect(!encoderCalled)
 }
 
-@Test func conditionedLocalWhisperChunksUseOneWorker() {
+@Test func conditionedLocalWhisperUsesSequentialWindowsInsteadOfVADChunks() {
     #expect(
-        LocalWhisperPromptPolicy.concurrentWorkerCount(forPromptTokens: [42])
-            == 1
+        !LocalWhisperPromptPolicy.usesVADChunking(forPromptTokens: [42])
     )
     #expect(
-        LocalWhisperPromptPolicy.concurrentWorkerCount(forPromptTokens: [])
-            == nil
+        LocalWhisperPromptPolicy.usesVADChunking(forPromptTokens: [])
     )
 }
 

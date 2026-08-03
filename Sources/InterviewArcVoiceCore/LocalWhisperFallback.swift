@@ -56,13 +56,13 @@ public enum LocalWhisperModelError: LocalizedError, Sendable, Equatable {
 public enum LocalWhisperPromptPolicy {
     public static let maximumTokenCount = 180
 
-    /// WhisperKit VAD chunks share decoder infrastructure. Conditioned chunks
-    /// must run serially so concurrent prompt-prefill mutations cannot erase
-    /// one another's decoder state.
-    public static func concurrentWorkerCount(
+    /// WhisperKit 1.0's VAD-chunk path returns an empty result when custom
+    /// decoder prompt tokens are present. Conditioned recovery therefore uses
+    /// WhisperKit's ordinary sequential-window path instead.
+    public static func usesVADChunking(
         forPromptTokens promptTokens: [Int]
-    ) -> Int? {
-        promptTokens.isEmpty ? nil : 1
+    ) -> Bool {
+        promptTokens.isEmpty
     }
 
     public static func normalizedPrompt(_ prompt: String) -> String {
@@ -276,11 +276,10 @@ public actor LocalWhisperModelManager {
                 usePrefillPrompt: true,
                 wordTimestamps: true,
                 promptTokens: promptTokens.isEmpty ? nil : promptTokens,
-                concurrentWorkerCount:
-                    LocalWhisperPromptPolicy.concurrentWorkerCount(
+                chunkingStrategy:
+                    LocalWhisperPromptPolicy.usesVADChunking(
                         forPromptTokens: promptTokens
-                    ),
-                chunkingStrategy: .vad
+                    ) ? .vad : nil
             )
         )
         let inferenceSeconds = Date().timeIntervalSince(startedAt)
