@@ -255,9 +255,7 @@ public enum DiagnosticHistoryPresentationPolicy {
 }
 
 public enum DiagnosticHistoryLayoutPolicy {
-    public static let usesSingleScrollableContainer = true
-    public static let rowsAreCollapsible = true
-    public static let containerHeight: CGFloat = 320
+    public static let settingsWindowHeight: CGFloat = 680
 }
 
 public enum DiagnosticRecoverableRecordingRetryPolicy {

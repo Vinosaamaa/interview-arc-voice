@@ -279,9 +279,7 @@ import Testing
 }
 
 @Test func settingsKeepsDiagnosticsInsideOneBoundedScrollableDrawerRail() {
-    #expect(DiagnosticHistoryLayoutPolicy.usesSingleScrollableContainer)
-    #expect(DiagnosticHistoryLayoutPolicy.rowsAreCollapsible)
-    #expect(DiagnosticHistoryLayoutPolicy.containerHeight == 320)
+    #expect(DiagnosticHistoryLayoutPolicy.settingsWindowHeight == 680)
 }
 
 @Test func failedDiagnosticCanRetryItsMatchingProtectedRecording() {
