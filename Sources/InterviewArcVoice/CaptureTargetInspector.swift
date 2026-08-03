@@ -19,7 +19,7 @@ enum CaptureTargetInspector {
                 processTreeContainsCodex(rootPID: application.processIdentifier)
             }
             : false
-        CaptureTargetDescriptor(
+        return CaptureTargetDescriptor(
             bundleIdentifier: bundleIdentifier,
             windowTitle: focusedWindowTitle(
                 applicationPID: application.processIdentifier
@@ -133,7 +133,10 @@ enum CaptureTargetInspector {
             UInt32(buffer.count)
         )
         guard length > 0 else { return nil }
-        return String(cString: buffer).lowercased()
+        let bytes = buffer.prefix(Int(length)).map {
+            UInt8(bitPattern: $0)
+        }
+        return String(decoding: bytes, as: UTF8.self).lowercased()
     }
 }
 
