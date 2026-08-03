@@ -301,6 +301,7 @@ public enum VoiceBridgeError: LocalizedError, Sendable {
     case noSpecialist(String)
     case invalidProviderCredential
     case providerPermissionDenied(String?)
+    case providerResponseFailure(Int, String?)
     case invalidResponse(Int, String)
     case protocolMismatch(Int)
     case microphoneDenied
@@ -316,7 +317,7 @@ public enum VoiceBridgeError: LocalizedError, Sendable {
             return 401
         case .providerPermissionDenied:
             return 403
-        case .invalidResponse(let status, _):
+        case .providerResponseFailure(let status, _):
             return status
         default:
             return nil
@@ -329,6 +330,8 @@ public enum VoiceBridgeError: LocalizedError, Sendable {
             return "invalid_authentication"
         case .providerPermissionDenied(let code):
             return code ?? "permission_denied"
+        case .providerResponseFailure(_, let code):
+            return code
         default:
             return nil
         }
@@ -343,6 +346,8 @@ public enum VoiceBridgeError: LocalizedError, Sendable {
             return "Groq rejected the saved API key. Replace it in Voice settings."
         case .providerPermissionDenied:
             return "Groq denied this project's transcription access. Review its model and project permissions."
+        case .providerResponseFailure(let status, _):
+            return "Groq transcription failed (\(status))."
         case .invalidResponse(let status, let body): return "Request failed (\(status)): \(body)"
         case .protocolMismatch(let version): return "Interview Arc Voice protocol \(version) is not supported by this app."
         case .microphoneDenied: return "Microphone access is required to record an answer."

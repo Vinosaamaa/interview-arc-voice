@@ -118,19 +118,18 @@ public enum GroqProviderFailurePolicy {
         statusCode: Int,
         responseData: Data
     ) -> VoiceBridgeError {
+        let failure = try? JSONDecoder().decode(
+            FailureEnvelope.self,
+            from: responseData
+        ).error
+        let safeCode = safeIdentifier(failure?.code ?? failure?.type)
         if statusCode == 401 {
             return .invalidProviderCredential
         }
         if statusCode == 403 {
-            let failure = try? JSONDecoder().decode(
-                FailureEnvelope.self,
-                from: responseData
-            ).error
-            return .providerPermissionDenied(
-                safeIdentifier(failure?.code ?? failure?.type)
-            )
+            return .providerPermissionDenied(safeCode)
         }
-        return .invalidResponse(statusCode, "Groq transcription failed")
+        return .providerResponseFailure(statusCode, safeCode)
     }
 
     private static func safeIdentifier(_ rawValue: String?) -> String? {

@@ -72,8 +72,16 @@ import Testing
             TranscriptionFailurePolicy.disposition(for: error)
                 == .retryTranscription
         )
+        #expect(error.providerHTTPStatus == statusCode)
         #expect(!error.localizedDescription.contains("secret provider detail"))
     }
+}
+
+@Test func genericHTTPFailuresAreNotReportedAsGroqFailures() {
+    let error = VoiceBridgeError.invalidResponse(503, "Interview Arc failed")
+
+    #expect(error.providerHTTPStatus == nil)
+    #expect(error.providerErrorCode == nil)
 }
 
 @Test func aRejectedCredentialMustChangeBeforeRetry() {
