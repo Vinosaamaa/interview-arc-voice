@@ -64,8 +64,42 @@ import Foundation
     #expect(CompactTimerTextPolicy.sessionRemaining(seconds: -3_661) == "+01:01")
 }
 
-@Test func focusPlannerTransitionRendersOnlyItsDestination() {
-    #expect(FloatingWidgetUpperSurfaceTransitionPolicy.style == .destinationOnly)
+@Test func upperSurfaceMotionUsesOneClippedSurfaceAndRetainsOnlyARealCollapse() {
+    #expect(
+        FloatingWidgetUpperSurfaceTransitionPolicy.style
+            == .singleSurfaceClippedResize
+    )
+    #expect(
+        FloatingWidgetUpperSurfaceTransitionPolicy.renderedSurface(
+            desired: .focus,
+            retained: .planToday
+        ) == .focus
+    )
+    #expect(
+        FloatingWidgetUpperSurfaceTransitionPolicy.shouldRetainOutgoing(
+            from: .focus,
+            to: nil,
+            reduceMotion: false
+        )
+    )
+    #expect(
+        !FloatingWidgetUpperSurfaceTransitionPolicy.shouldRetainOutgoing(
+            from: .planToday,
+            to: .focus,
+            reduceMotion: false
+        )
+    )
+    #expect(
+        !FloatingWidgetUpperSurfaceTransitionPolicy.shouldRetainOutgoing(
+            from: .focus,
+            to: nil,
+            reduceMotion: true
+        )
+    )
+    #expect(
+        FloatingWidgetUpperSurfaceTransitionPolicy.collapseRetentionSeconds
+            > FloatingWidgetMotionPolicy.durationSeconds
+    )
 }
 
 @Test func coverageNoticeNeverReplacesAuthoritativeTimerContent() {

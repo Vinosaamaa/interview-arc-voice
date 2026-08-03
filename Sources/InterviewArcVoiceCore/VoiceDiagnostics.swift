@@ -254,6 +254,10 @@ public enum DiagnosticHistoryPresentationPolicy {
     }
 }
 
+public enum DiagnosticHistoryLayoutPolicy {
+    public static let settingsWindowHeight: CGFloat = 680
+}
+
 public enum DiagnosticRecoverableRecordingRetryPolicy {
     public static func matches(
         diagnostic: VoiceDiagnosticRecord,

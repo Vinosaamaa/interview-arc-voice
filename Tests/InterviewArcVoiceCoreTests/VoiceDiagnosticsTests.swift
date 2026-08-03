@@ -278,6 +278,10 @@ import Testing
     )
 }
 
+@Test func settingsKeepsDiagnosticsInsideOneBoundedScrollableDrawerRail() {
+    #expect(DiagnosticHistoryLayoutPolicy.settingsWindowHeight == 680)
+}
+
 @Test func failedDiagnosticCanRetryItsMatchingProtectedRecording() {
     let createdAt = Date(timeIntervalSince1970: 500)
     let diagnostic = VoiceDiagnosticRecord.fixture(

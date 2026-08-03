@@ -7,9 +7,10 @@ desktop Codex app is an intrinsic specialist surface. A CLI terminal is a
 specialist surface when Link is enabled, the focused activity context is fresh,
 the host is approved, and the focused top-level window identifies an Interview
 Arc/Codex workspace. Process ancestry is deliberately not required because tmux
-runs pane processes under its detached server. Target inspection reads only the
-host bundle and focused window title; it does not inspect terminal contents,
-arguments, environment variables, or transcript text. The widget
+runs pane processes under its detached server. Target inspection transiently
+reads only the host bundle and focused window title; it does not persist those
+raw values or inspect terminal contents, arguments, environment variables, or
+transcript text. The widget
 uses the same target decision, so it cannot advertise a linked activity while
 the next capture silently takes the General Dictation route.
 

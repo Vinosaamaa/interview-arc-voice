@@ -23,9 +23,11 @@ classifies the capture.
   only after refresh proves the same activity was already running when the
   recording began. A recording from an unsupported target cannot be rebound.
 - The visible linked/general state uses the same target decision as capture
-  routing. Voice records the host bundle, top-level window title, bounded target
-  kind, and route-reason enums in local diagnostics; it never records process
-  arguments, terminal content, transcript text, or credentials.
+  routing. Voice persists only the bounded target kind, decision, and
+  route-reason enums in local diagnostics. Host bundle identifiers and
+  top-level window titles are evaluated transiently and are never persisted.
+  Diagnostics also exclude process arguments, terminal content, transcript
+  text, and credentials.
 
 ## Pending capture lifecycle
 

@@ -446,3 +446,18 @@ speech and remains below the existing speech-like fraction threshold. A
 paired regression supplies genuine tail speech with the same malformed
 provider timeline and requires the phrase to remain. This is not a global text
 blacklist and remains limited to Enhanced protection.
+
+## 2026-08-03 recurrence release verification
+
+PR #164 merged as `8b54e93e21f581691966829df01b26a3f253b6cd`.
+Canonical macOS run 30801061950 passed in 4m09s, and protected-main run
+30801556050 promoted the exact tree-equivalent artifact without rebuilding.
+The promoted package passed its 21-pack self-check, was signed with the stable
+local identity, installed, launched, and matched the staged signed executable.
+
+The regression pair exercises the exact malformed-overrun shape: a silent real
+audio tail removes the unsupported terminal phrase, while sustained terminal
+speech preserves the same phrase even under the malformed provider timeline.
+An additional extreme-overrun fixture prevents an empty evidence window from
+failing open again. A naturally occurring installed recurrence remains the
+final product-level observation; no literal phrase is globally blacklisted.

@@ -1216,14 +1216,29 @@ struct FloatingRecorderView: View {
     @ObservedObject var model: VoiceBridgeModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var miniSmoothedLevel = 0.0
+    @State private var retainedUpperSurface: FloatingWidgetUpperSurface?
+    @State private var upperSurfaceRetentionGeneration = 0
 
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
-    private var upperSurfaceTransition: AnyTransition {
-        switch FloatingWidgetUpperSurfaceTransitionPolicy.style {
-        case .destinationOnly:
-            return .identity
+    private var desiredUpperSurface: FloatingWidgetUpperSurface? {
+        if model.plannerPresented, !model.isRecording {
+            return .planToday
         }
+        if model.widgetSizeMode == .standard,
+           !model.dynamicRecordingInterfaceActive,
+           model.timerPanelExpanded,
+           model.hasTimerInstrument {
+            return .focus
+        }
+        return nil
+    }
+
+    private var renderedUpperSurface: FloatingWidgetUpperSurface? {
+        FloatingWidgetUpperSurfaceTransitionPolicy.renderedSurface(
+            desired: desiredUpperSurface,
+            retained: retainedUpperSurface
+        )
     }
 
     var body: some View {
@@ -1239,33 +1254,24 @@ struct FloatingRecorderView: View {
 
             VStack(alignment: .trailing, spacing: 0) {
                 ZStack(alignment: .bottomTrailing) {
-                    if model.plannerPresented,
-                       !model.isRecording {
+                    if renderedUpperSurface == .planToday {
                         FloatingTodayPlannerPanel(model: model)
                             .frame(
                                 width: FloatingWidgetWindowPolicy.plannerWidth,
                                 height: upperSurfaceContentHeight
                             )
                             .padding(.bottom, FloatingWidgetWindowPolicy.timerGap)
-                            // The native panel owns the complete resize. Keeping
-                            // the outgoing Focus tree alive here produces a
-                            // translucent duplicate while the host changes size.
-                            .transition(upperSurfaceTransition)
-                    } else if model.widgetSizeMode == .standard,
-                              !model.dynamicRecordingInterfaceActive,
-                              model.timerPanelExpanded,
-                              model.hasTimerInstrument,
+                            .transition(.identity)
+                    } else if renderedUpperSurface == .focus,
                               let instrument = model.timerInstrument {
                         FloatingTimerInstrumentPanel(
                             model: model,
-                            instrument: instrument
+                            instrument: instrument,
+                            contentHeight: upperSurfaceContentHeight
                         )
                         .frame(width: FloatingWidgetWindowPolicy.expandedWidth)
                         .padding(.bottom, FloatingWidgetWindowPolicy.timerGap)
-                        // The AppKit panel already animates the bottom-anchored frame.
-                        // Destination-only content makes expansion and collapse
-                        // exact reverses without an overlapping planner snapshot.
-                        .transition(upperSurfaceTransition)
+                        .transition(.identity)
                     }
                 }
                 .frame(
@@ -1289,6 +1295,12 @@ struct FloatingRecorderView: View {
                 height: host.size.height,
                 alignment: .bottomTrailing
             )
+        }
+        .onAppear {
+            retainedUpperSurface = desiredUpperSurface
+        }
+        .onChange(of: desiredUpperSurface) { previous, desired in
+            updateRetainedUpperSurface(from: previous, to: desired)
         }
         .onChange(of: model.floatingSize) { _, _ in resizeWindow() }
         .onChange(of: model.widgetSizeMode) { _, mode in
@@ -1643,6 +1655,39 @@ struct FloatingRecorderView: View {
             height: model.floatingHeight,
             reduceMotion: reduceMotion
         )
+    }
+
+    private func updateRetainedUpperSurface(
+        from previous: FloatingWidgetUpperSurface?,
+        to desired: FloatingWidgetUpperSurface?
+    ) {
+        upperSurfaceRetentionGeneration += 1
+        let generation = upperSurfaceRetentionGeneration
+        if let desired {
+            // Switching Focus ↔ Plan Today renders only the destination. AppKit
+            // remains the sole owner of the bottom-anchored frame animation.
+            retainedUpperSurface = desired
+            return
+        }
+        guard FloatingWidgetUpperSurfaceTransitionPolicy.shouldRetainOutgoing(
+            from: retainedUpperSurface ?? previous,
+            to: desired,
+            reduceMotion: reduceMotion
+        ) else {
+            retainedUpperSurface = nil
+            return
+        }
+        Task { @MainActor in
+            try? await Task.sleep(
+                for: .seconds(
+                    FloatingWidgetUpperSurfaceTransitionPolicy
+                        .collapseRetentionSeconds
+                )
+            )
+            guard generation == upperSurfaceRetentionGeneration,
+                  desiredUpperSurface == nil else { return }
+            retainedUpperSurface = nil
+        }
     }
 
     private var linkButton: some View {
@@ -4071,6 +4116,7 @@ private struct FloatingTimerInstrumentPanel: View {
     @ObservedObject var model: VoiceBridgeModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let instrument: VoiceTimerInstrument
+    let contentHeight: CGFloat
 
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
@@ -4233,10 +4279,7 @@ private struct FloatingTimerInstrumentPanel: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
         .frame(
-            height: model.floatingHeight
-                - FloatingWidgetWindowPolicy.capsuleHeight
-                - FloatingWidgetWindowPolicy.timerGap
-                - 16,
+            height: contentHeight,
             alignment: .bottom
         )
         .accessibilityElement(children: .contain)

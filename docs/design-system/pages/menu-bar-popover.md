@@ -86,8 +86,10 @@ empty size-probing placeholder.
   clears after a successful transcription or an explicit user recovery.
   Transient provider or network failures keep the ordinary Retry path.
 - Settings Diagnostics presents the complete store-bounded diagnostic history
-  in its existing scrolling window rather than hiding records after the newest
-  five. A matching failed diagnostic may retry the same protected recording;
+  in one fixed-height inner scroll rail rather than expanding the outer Settings
+  form or hiding records after the newest five. Each record is a collapsible
+  drawer; only its compact date/outcome/duration summary is always visible. A
+  matching failed diagnostic may retry the same protected recording;
   linked/general routing is persisted and reused instead of guessing.
 
 ## Floating timer integration

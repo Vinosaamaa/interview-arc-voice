@@ -182,12 +182,36 @@ public enum FloatingWidgetMotionPolicy {
 }
 
 public enum FloatingWidgetUpperSurfaceTransitionStyle: Equatable, Sendable {
-    case destinationOnly
+    case singleSurfaceClippedResize
+}
+
+public enum FloatingWidgetUpperSurface: Equatable, Sendable {
+    case focus
+    case planToday
 }
 
 public enum FloatingWidgetUpperSurfaceTransitionPolicy {
     public static let style: FloatingWidgetUpperSurfaceTransitionStyle =
-        .destinationOnly
+        .singleSurfaceClippedResize
+    /// Keep the outgoing surface through the final native resize frame. The
+    /// extra margin avoids releasing it on the same run-loop turn as AppKit.
+    public static let collapseRetentionSeconds: TimeInterval =
+        FloatingWidgetMotionPolicy.durationSeconds + 0.04
+
+    public static func renderedSurface(
+        desired: FloatingWidgetUpperSurface?,
+        retained: FloatingWidgetUpperSurface?
+    ) -> FloatingWidgetUpperSurface? {
+        desired ?? retained
+    }
+
+    public static func shouldRetainOutgoing(
+        from: FloatingWidgetUpperSurface?,
+        to: FloatingWidgetUpperSurface?,
+        reduceMotion: Bool
+    ) -> Bool {
+        !reduceMotion && from != nil && to == nil
+    }
 }
 
 public enum FloatingWidgetCoverageNoticePolicy {

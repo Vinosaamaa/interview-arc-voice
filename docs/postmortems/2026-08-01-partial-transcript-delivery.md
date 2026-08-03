@@ -489,3 +489,20 @@ blocking states.
 Provider processing duration, timestamp coverage, and lexical coverage are
 different signals. Integrity checks must tie timing evidence to actual
 canonical text before using it to prove completeness.
+
+## 2026-08-03 merged release verification
+
+PR #164 merged as `8b54e93e21f581691966829df01b26a3f253b6cd`.
+Canonical macOS run 30801061950 passed in 4m09s, and protected-main run
+30801556050 promoted the exact tree-equivalent artifact without rebuilding.
+The promoted package passed its 21-pack self-check, was signed with the stable
+local identity, installed, launched, and matched the staged signed executable.
+
+Regression coverage proves deterministic longest-candidate selection, bounded
+overlapping provider recovery, immediate General Dictation delivery, one
+stable linked Voice envelope, retained uncertainty state/audio, and unchanged
+blocking behavior for empty, no-speech, and authentication failures. The
+installed app is recording-ready and its approved Warp/tmux target is verified.
+A naturally occurring installed coverage-uncertain capture remains the final
+product-level evidence for the quiet warning and linked envelope path; no
+private recording is rewritten to manufacture that state.

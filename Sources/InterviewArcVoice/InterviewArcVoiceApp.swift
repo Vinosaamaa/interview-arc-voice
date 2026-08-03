@@ -4643,7 +4643,8 @@ private struct VoiceSettingsWindow: View {
     @ObservedObject var model: VoiceBridgeModel
 
     var body: some View {
-        Form {
+        TabView {
+            Form {
             Section("Appearance") {
                 VStack(alignment: .leading, spacing: 7) {
                     Picker(
@@ -4905,147 +4906,198 @@ private struct VoiceSettingsWindow: View {
                     .textFieldStyle(.roundedBorder)
             }
 
-            Section("Diagnostics") {
-                if model.diagnosticRecords.isEmpty {
-                    Text("Timing details will appear after the next transcription.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(
-                        DiagnosticHistoryPresentationPolicy.visibleRecords(
-                            model.diagnosticRecords
-                        )
-                    ) { record in
-                        DisclosureGroup {
-                            LabeledContent(
-                                "Recording",
-                                value: diagnosticDuration(record.recordingDurationSeconds)
-                            )
-                            LabeledContent(
-                                "File finalization",
-                                value: diagnosticDuration(record.fileFinalizationSeconds)
-                            )
-                            LabeledContent(
-                                "Integrity inspection",
-                                value: diagnosticDuration(record.integrityInspectionSeconds)
-                            )
-                            LabeledContent(
-                                "Local speech scan",
-                                value: diagnosticDuration(record.localSpeechScanSeconds)
-                            )
-                            LabeledContent(
-                                "Upload and Groq",
-                                value: diagnosticDuration(record.providerWaitSeconds)
-                            )
-                            LabeledContent(
-                                "Response processing",
-                                value: diagnosticDuration(record.responseProcessingSeconds)
-                            )
-                            LabeledContent(
-                                "Segment validation",
-                                value: diagnosticDuration(
-                                    record.segmentValidationSeconds ?? 0
-                                )
-                            )
-                            LabeledContent(
-                                "Cursor insertion",
-                                value: diagnosticDuration(record.insertionSeconds)
-                            )
-                            LabeledContent(
-                                "Total",
-                                value: diagnosticDuration(record.totalSeconds)
-                            )
-                            LabeledContent(
-                                "Protection",
-                                value: record.protectionMode.displayName
-                            )
-                            LabeledContent(
-                                "Unsupported segments omitted",
-                                value: "\(record.omittedUnsupportedSegmentCount)"
-                            )
-                            if let count = record.omittedUnsupportedWordCount {
-                                LabeledContent(
-                                    "Unsupported words omitted",
-                                    value: "\(count)"
-                                )
-                            }
-                            if let complete = record.wordAlignmentComplete {
-                                LabeledContent(
-                                    "Word alignment complete",
-                                    value: complete ? "Yes" : "No"
-                                )
-                            }
-                            if let count = record.evaluatedSegmentCount {
-                                LabeledContent(
-                                    "Segments evaluated",
-                                    value: "\(count)"
-                                )
-                            }
-                            if let count = record.wordTimestampCount {
-                                LabeledContent(
-                                    "Word timestamps",
-                                    value: "\(count)"
-                                )
-                            }
-                            Button("Copy diagnostic report") {
-                                model.copyDiagnostic(record)
-                            }
-                            Button {
-                                model.retryDiagnostic(record)
-                            } label: {
-                                if model.diagnosticRetryInFlightID == record.id {
-                                    Label(
-                                        "Retrying transcription…",
-                                        systemImage: "arrow.clockwise"
-                                    )
-                                } else {
-                                    Label(
-                                        "Retry transcription",
-                                        systemImage: "arrow.clockwise"
-                                    )
-                                }
-                            }
-                            .disabled(!model.canRetryDiagnostic(record))
-                            .help(model.diagnosticRetryHelp(record))
-                        } label: {
-                            HStack {
-                                Text(record.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                Spacer()
-                                Text(record.outcome.rawValue.capitalized)
-                                    .foregroundStyle(.secondary)
-                                Text(diagnosticDuration(record.totalSeconds))
-                                    .monospacedDigit()
-                            }
-                        }
-                    }
-                }
-                HStack {
-                    Button("Reveal diagnostic file", action: model.revealDiagnosticsFile)
-                    Button("Clear diagnostics", role: .destructive, action: model.clearDiagnostics)
-                        .disabled(model.diagnosticRecords.isEmpty)
-                }
-                if let diagnosticRetryMessage = model.diagnosticRetryMessage {
-                    Text(diagnosticRetryMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Text("Stored locally with bounded retention. Diagnostics never include transcript text, audio, credentials, tokens, or private URLs.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
             HStack {
                 Spacer()
                 Button("Save secure settings", action: model.saveSettings)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
             }
+            }
+            .formStyle(.grouped)
+            .padding(16)
+            .tabItem {
+                Label("Settings", systemImage: "gearshape")
+            }
+
+            diagnosticsPane
+                .tabItem {
+                    Label("Diagnostics", systemImage: "waveform.path.ecg")
+                }
         }
-        .formStyle(.grouped)
-        .padding(16)
-        .frame(width: 620)
+        .frame(
+            width: 620,
+            height: DiagnosticHistoryLayoutPolicy.settingsWindowHeight
+        )
         .task {
             await model.refreshDiagnostics()
             await model.refreshLocalWhisperModel()
+        }
+    }
+
+    private var diagnosticsPane: some View {
+        let records = DiagnosticHistoryPresentationPolicy.visibleRecords(
+            model.diagnosticRecords
+        )
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Transcription diagnostics")
+                        .font(.title3.weight(.semibold))
+                    Text("\(records.count) retained capture\(records.count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Reveal file", action: model.revealDiagnosticsFile)
+                Button("Clear", role: .destructive, action: model.clearDiagnostics)
+                    .disabled(records.isEmpty)
+            }
+
+            if records.isEmpty {
+                ContentUnavailableView(
+                    "No diagnostics yet",
+                    systemImage: "waveform.path.ecg",
+                    description: Text(
+                        "Timing details will appear after the next transcription."
+                    )
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(records.enumerated()), id: \.element.id) {
+                            indexedRecord in
+                            let index = indexedRecord.offset
+                            let record = indexedRecord.element
+                            diagnosticDrawer(record)
+                            if index < records.count - 1 {
+                                Divider().padding(.leading, 12)
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(
+                    Color(nsColor: .controlBackgroundColor).opacity(0.55)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(
+                            Color(nsColor: .separatorColor).opacity(0.55),
+                            lineWidth: 0.7
+                        )
+                }
+            }
+
+            if let diagnosticRetryMessage = model.diagnosticRetryMessage {
+                Text(diagnosticRetryMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(
+                "Stored locally with bounded retention. Diagnostics never include transcript text, audio, credentials, tokens, or private URLs."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(16)
+    }
+
+    private func diagnosticDrawer(
+        _ record: VoiceDiagnosticRecord
+    ) -> some View {
+        DisclosureGroup {
+            diagnosticDetails(record)
+                .padding(.top, 8)
+        } label: {
+            HStack {
+                Text(
+                    record.createdAt.formatted(
+                        date: .abbreviated,
+                        time: .shortened
+                    )
+                )
+                Spacer()
+                Text(record.outcome.rawValue.capitalized)
+                    .foregroundStyle(.secondary)
+                Text(diagnosticDuration(record.totalSeconds))
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private func diagnosticDetails(_ record: VoiceDiagnosticRecord) -> some View {
+        LabeledContent(
+            "Recording",
+            value: diagnosticDuration(record.recordingDurationSeconds)
+        )
+        LabeledContent(
+            "File finalization",
+            value: diagnosticDuration(record.fileFinalizationSeconds)
+        )
+        LabeledContent(
+            "Integrity inspection",
+            value: diagnosticDuration(record.integrityInspectionSeconds)
+        )
+        LabeledContent(
+            "Local speech scan",
+            value: diagnosticDuration(record.localSpeechScanSeconds)
+        )
+        LabeledContent(
+            "Upload and Groq",
+            value: diagnosticDuration(record.providerWaitSeconds)
+        )
+        LabeledContent(
+            "Response processing",
+            value: diagnosticDuration(record.responseProcessingSeconds)
+        )
+        LabeledContent(
+            "Segment validation",
+            value: diagnosticDuration(record.segmentValidationSeconds ?? 0)
+        )
+        LabeledContent(
+            "Cursor insertion",
+            value: diagnosticDuration(record.insertionSeconds)
+        )
+        LabeledContent("Total", value: diagnosticDuration(record.totalSeconds))
+        LabeledContent("Protection", value: record.protectionMode.displayName)
+        LabeledContent(
+            "Unsupported segments omitted",
+            value: "\(record.omittedUnsupportedSegmentCount)"
+        )
+        if let count = record.omittedUnsupportedWordCount {
+            LabeledContent("Unsupported words omitted", value: "\(count)")
+        }
+        if let complete = record.wordAlignmentComplete {
+            LabeledContent(
+                "Word alignment complete",
+                value: complete ? "Yes" : "No"
+            )
+        }
+        if let count = record.evaluatedSegmentCount {
+            LabeledContent("Segments evaluated", value: "\(count)")
+        }
+        if let count = record.wordTimestampCount {
+            LabeledContent("Word timestamps", value: "\(count)")
+        }
+        HStack {
+            Button("Copy report") { model.copyDiagnostic(record) }
+            Button {
+                model.retryDiagnostic(record)
+            } label: {
+                Label(
+                    model.diagnosticRetryInFlightID == record.id
+                        ? "Retrying transcription…"
+                        : "Retry transcription",
+                    systemImage: "arrow.clockwise"
+                )
+            }
+            .disabled(!model.canRetryDiagnostic(record))
+            .help(model.diagnosticRetryHelp(record))
         }
     }
 
