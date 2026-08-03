@@ -240,6 +240,22 @@ public enum FloatingWidgetUpperSurfaceTransitionPolicy {
     ) -> Bool {
         !reduceMotion && from != nil && to == nil
     }
+
+    /// Focus normally keeps its settled width and is revealed by the host
+    /// while expanding from the compact capsule. When Focus replaces the
+    /// wider planner, it must instead follow the shrinking host so the visible
+    /// upper surface—not only the transparent NSPanel—has intermediate frames.
+    public static func visibleWidth(
+        for surface: FloatingWidgetUpperSurface,
+        hostWidth: CGFloat
+    ) -> CGFloat {
+        switch surface {
+        case .focus:
+            max(FloatingWidgetWindowPolicy.expandedWidth, hostWidth)
+        case .planToday:
+            FloatingWidgetWindowPolicy.plannerWidth
+        }
+    }
 }
 
 public enum FloatingWidgetCoverageNoticePolicy {

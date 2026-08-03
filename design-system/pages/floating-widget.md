@@ -355,6 +355,12 @@ least 58 points for the activity title.
   every intermediate host size and pins its content bottom-trailing; it must
   not jump immediately to the final model size while the panel is still
   interpolating.
+- When the wider Plan Today surface changes to Focus, the visible Focus surface
+  follows every intermediate host width until it reaches the settled Focus
+  width. Animating only transparent host area is a snap, not a transition.
+- Record-triggered collapse begins before microphone readiness work and uses
+  the same native geometry sequence as the explicit collapse control. Audio
+  startup must not delay or compete with visible panel motion.
 - The borderless panel must expose real intermediate frames in both directions.
   Use one cancellable 60 Hz eased frame sequence so a reversal continues from
   the current frame; do not rely on a proxy animation that can settle directly

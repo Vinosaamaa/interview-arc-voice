@@ -1293,7 +1293,13 @@ struct FloatingRecorderView: View {
                             instrument: instrument,
                             contentHeight: upperSurfaceContentHeight
                         )
-                        .frame(width: FloatingWidgetWindowPolicy.expandedWidth)
+                        .frame(
+                            width: FloatingWidgetUpperSurfaceTransitionPolicy
+                                .visibleWidth(
+                                    for: .focus,
+                                    hostWidth: host.size.width
+                                )
+                        )
                         .padding(.bottom, FloatingWidgetWindowPolicy.timerGap)
                         .transition(.identity)
                     }
