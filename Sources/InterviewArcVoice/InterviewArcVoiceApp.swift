@@ -5976,10 +5976,10 @@ private struct VoiceBridgeMenu: View {
             return .orange
         }
         switch model.phase {
-        case .recording, .failed: .red
-        case .queued, .setup: .orange
-        case .delivered, .idle: .green
-        default: .blue
+        case .recording, .failed: return .red
+        case .queued, .setup: return .orange
+        case .delivered, .idle: return .green
+        default: return .blue
         }
     }
 }
