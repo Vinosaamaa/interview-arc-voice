@@ -87,6 +87,9 @@ tokens rather than discarding the recovery.
 
 - Groq `whisper-large-v3` is the primary transcription engine.
 - Local WhisperKit is a later offline/failure fallback, not the primary path.
+  An installed model prewarms quietly after launch. Foreground recovery uses
+  it only after prewarming completes, so first-use model loading never blocks
+  the user's transcript UI for tens of seconds.
 - The original recording remains one continuous file and one website player.
 - Internal transcription chunks are temporary and never appear in the UI.
 - Delivery coaching is enabled for coding, system-design, and behavioral work.
@@ -174,7 +177,9 @@ tokens rather than discarding the recovery.
   prompt-free whole-file retry. In Enhanced mode, a concrete local/provider
   speech-coverage conflict instead spends that retry allowance on immediate,
   bounded parallel, overlapping approximately 30-second derivatives. It never
-  waits 30 seconds and never changes the canonical M4A.
+  waits 30 seconds and never changes the canonical M4A. Individual primary
+  requests are capped at 20 seconds and coverage-recovery requests at 8
+  seconds; the preserved original remains actionable after a timeout.
 - The finalized AAC payload must contain a plausible amount of encoded audio
   for its duration. A timed but near-silent container is rejected before Groq
   so ambient noise cannot become a guessed one-word transcript.

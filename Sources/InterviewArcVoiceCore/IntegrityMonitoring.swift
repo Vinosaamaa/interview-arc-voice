@@ -305,6 +305,7 @@ public struct TranscriptionIntegrityFailure: LocalizedError, Sendable {
     public let localInferenceSeconds: Double?
     public let localPromptTokenCount: Int?
     public let localValidationReasons: [TranscriptionIntegrityReason]?
+    public let localFallbackSkippedBecauseNotReady: Bool
 
     public init(
         reasons: [TranscriptionIntegrityReason],
@@ -319,7 +320,8 @@ public struct TranscriptionIntegrityFailure: LocalizedError, Sendable {
         localFallbackModel: String? = nil,
         localInferenceSeconds: Double? = nil,
         localPromptTokenCount: Int? = nil,
-        localValidationReasons: [TranscriptionIntegrityReason]? = nil
+        localValidationReasons: [TranscriptionIntegrityReason]? = nil,
+        localFallbackSkippedBecauseNotReady: Bool = false
     ) {
         self.reasons = reasons
         self.timing = timing
@@ -334,6 +336,8 @@ public struct TranscriptionIntegrityFailure: LocalizedError, Sendable {
         self.localInferenceSeconds = localInferenceSeconds
         self.localPromptTokenCount = localPromptTokenCount
         self.localValidationReasons = localValidationReasons
+        self.localFallbackSkippedBecauseNotReady =
+            localFallbackSkippedBecauseNotReady
     }
 
     public var errorDescription: String? {
@@ -506,44 +510,51 @@ public actor ReliableSpeechTranscriber {
         var localInferenceSeconds: Double?
         var localPromptTokenCount: Int?
         var localValidationReasons: [TranscriptionIntegrityReason]?
+        var localFallbackSkippedBecauseNotReady = false
         if retryCheck.result.reasons.contains(.missingSpeechCoverage),
            let localFallback {
-            localFallbackAttempted = true
-            do {
-                let rawLocal = try await localFallback.transcribe(
-                    fileURL: fileURL,
-                    prompt: prompt,
-                    temporaryDirectory: temporaryDirectory
-                )
-                let local = normalizedLocalFallback(
-                    rawLocal,
-                    audioDurationSeconds: audioDurationSeconds,
-                    expectedChunkCount: expectedChunkCount
-                )
-                let localCheck = check(
-                    local,
-                    prompt: prompt,
-                    audioDurationSeconds: audioDurationSeconds,
-                    expectedChunkCount: expectedChunkCount,
-                    speechEvidence: speechEvidence,
-                    protectionMode: protectionMode
-                )
-                localInferenceSeconds = local.localInferenceSeconds
-                localPromptTokenCount = local.localPromptTokenCount
-                localValidationReasons = localCheck.result.reasons
-                guard localCheck.result.isSuspicious else {
-                    return try protectedResult(
-                        local,
-                        wasRetried: true,
-                        speechEvidence: speechEvidence,
-                        protectionMode: protectionMode,
-                        integrityCheck: localCheck
+            if localFallback.isReadyForImmediateTranscription {
+                localFallbackAttempted = true
+                do {
+                    let rawLocal = try await localFallback.transcribe(
+                        fileURL: fileURL,
+                        prompt: prompt,
+                        temporaryDirectory: temporaryDirectory
                     )
+                    let local = normalizedLocalFallback(
+                        rawLocal,
+                        audioDurationSeconds: audioDurationSeconds,
+                        expectedChunkCount: expectedChunkCount
+                    )
+                    let localCheck = check(
+                        local,
+                        prompt: prompt,
+                        audioDurationSeconds: audioDurationSeconds,
+                        expectedChunkCount: expectedChunkCount,
+                        speechEvidence: speechEvidence,
+                        protectionMode: protectionMode
+                    )
+                    localInferenceSeconds = local.localInferenceSeconds
+                    localPromptTokenCount = local.localPromptTokenCount
+                    localValidationReasons = localCheck.result.reasons
+                    guard localCheck.result.isSuspicious else {
+                        return try protectedResult(
+                            local,
+                            wasRetried: true,
+                            speechEvidence: speechEvidence,
+                            protectionMode: protectionMode,
+                            integrityCheck: localCheck
+                        )
+                    }
+                    checkedCandidates.append((local, localCheck))
+                } catch {
+                    // Provider candidates remain available when the optional
+                    // local engine fails during an already-warm inference.
                 }
-                checkedCandidates.append((local, localCheck))
-            } catch {
-                // Provider candidates remain available when the optional
-                // local engine is unavailable or also fails validation.
+            } else {
+                // A first-use WhisperKit model load can take tens of seconds.
+                // Never make the foreground recovery path wait for it.
+                localFallbackSkippedBecauseNotReady = true
             }
         }
         throw integrityFailure(
@@ -555,7 +566,9 @@ public actor ReliableSpeechTranscriber {
             localFallbackModel: localFallback?.diagnosticModel,
             localInferenceSeconds: localInferenceSeconds,
             localPromptTokenCount: localPromptTokenCount,
-            localValidationReasons: localValidationReasons
+            localValidationReasons: localValidationReasons,
+            localFallbackSkippedBecauseNotReady:
+                localFallbackSkippedBecauseNotReady
         )
     }
 
@@ -790,7 +803,8 @@ public actor ReliableSpeechTranscriber {
         localFallbackModel: String? = nil,
         localInferenceSeconds: Double? = nil,
         localPromptTokenCount: Int? = nil,
-        localValidationReasons: [TranscriptionIntegrityReason]? = nil
+        localValidationReasons: [TranscriptionIntegrityReason]? = nil,
+        localFallbackSkippedBecauseNotReady: Bool = false
     ) -> TranscriptionIntegrityFailure {
         TranscriptionIntegrityFailure(
             reasons: check.result.reasons,
@@ -808,7 +822,9 @@ public actor ReliableSpeechTranscriber {
             localFallbackModel: localFallbackModel,
             localInferenceSeconds: localInferenceSeconds,
             localPromptTokenCount: localPromptTokenCount,
-            localValidationReasons: localValidationReasons
+            localValidationReasons: localValidationReasons,
+            localFallbackSkippedBecauseNotReady:
+                localFallbackSkippedBecauseNotReady
         )
     }
 

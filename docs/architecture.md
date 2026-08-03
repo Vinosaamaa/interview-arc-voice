@@ -211,7 +211,11 @@ overlap-deduplicated and timestamp evidence is offset. An explicitly installed
 assembled candidate remains uncertain. The model lives in private app-owned
 storage with a permission-0600 SHA-256 manifest; Settings owns installation,
 integrity status, and deletion. It is never downloaded automatically and never
-runs on the healthy Groq path. Local decoding receives the same resolved
+runs on the healthy Groq path. An installed model prewarms asynchronously after
+launch. The foreground recovery path checks lock-protected readiness without
+waiting on the model actor; when prewarm is incomplete, it preserves the best
+provider candidate immediately instead of synchronously cold-loading the
+model. Local decoding receives the same resolved
 activity or General Dictation vocabulary context as the primary request. Voice
 normalizes whitespace, tokenizes with the installed WhisperKit tokenizer, and
 passes at most 180 trailing prompt tokens as decoder conditioning. If the

@@ -552,6 +552,41 @@ import Testing
     }
 }
 
+@Test func coldLocalFallbackNeverBlocksCoverageRecovery() async {
+    let partial = malformedFullLengthSegmentPartial()
+    let provider = CountingTranscriber(results: [partial, partial])
+    let coldLocal = CountingTranscriber(
+        results: [partial],
+        engine: "whisperkit",
+        model: "base.en",
+        isReadyForImmediateTranscription: false
+    )
+    let reliable = ReliableSpeechTranscriber(
+        base: provider,
+        localFallback: coldLocal
+    )
+
+    do {
+        _ = try await reliable.transcribe(
+            fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+            prompt: "Context vocabulary",
+            temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+            audioDurationSeconds: 80.88,
+            speechEvidence: sustainedSpeechEvidence(durationSeconds: 80.88),
+            protectionMode: .enhanced
+        )
+        Issue.record("Expected the provider candidate to remain uncertain")
+    } catch let failure as TranscriptionIntegrityFailure {
+        #expect(failure.recoveryCandidate?.text == partial.text)
+        #expect(!failure.localFallbackAttempted)
+        #expect(failure.localFallbackSkippedBecauseNotReady)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+
+    #expect(await coldLocal.callCount == 0)
+}
+
 @Test func combinedCoverageAndDurationFailureStillPreservesReviewableText() async {
     let partial = TranscriptionResult(
         text: "The usable beginning remains available for manual review.",
@@ -620,6 +655,7 @@ private actor CountingTranscriber: SpeechTranscribing {
     nonisolated let diagnosticModel: String?
     private var results: [TranscriptionResult]
     private var failuresBeforeResults: Int
+    nonisolated let isReadyForImmediateTranscription: Bool
     private(set) var prompts: [String] = []
     private(set) var coverageRecoveryCallCount = 0
 
@@ -627,12 +663,15 @@ private actor CountingTranscriber: SpeechTranscribing {
         results: [TranscriptionResult],
         engine: String = "fixture",
         model: String? = nil,
-        failuresBeforeResults: Int = 0
+        failuresBeforeResults: Int = 0,
+        isReadyForImmediateTranscription: Bool = true
     ) {
         self.results = results
         self.failuresBeforeResults = max(0, failuresBeforeResults)
         diagnosticEngine = engine
         diagnosticModel = model
+        self.isReadyForImmediateTranscription =
+            isReadyForImmediateTranscription
     }
 
     var callCount: Int { prompts.count }

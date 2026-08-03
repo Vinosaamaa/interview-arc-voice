@@ -1,7 +1,7 @@
 # Postmortem: Partial transcript delivered while speech remained in the recording
 
 **Date**: 2026-08-01  
-**Status**: Resolved — alternate recovery installed and verified<br>
+**Status**: Reopened — cold local fallback caused prolonged foreground failure<br>
 **Severity**: P0 silent data loss  
 **Issue**: [interview-arc-voice#123](https://github.com/Vinosaamaa/interview-arc-voice/issues/123)  
 **Pull requests**: [interview-arc-voice#136](https://github.com/Vinosaamaa/interview-arc-voice/pull/136), [interview-arc-voice#147](https://github.com/Vinosaamaa/interview-arc-voice/pull/147)
@@ -12,6 +12,15 @@
 > nonempty-segment fallback. Pull request #147 added alternate overlapping
 > recovery and safe uncertain-result preservation; its exact merged-main
 > artifact completed installed verification on 2026-08-02.
+>
+> **Second recurrence:** An approximately 87-second installed-app capture on
+> 2026-08-02 completed Groq in 1.868 seconds and local decoding in 1.801
+> seconds, yet the foreground path lasted 42.076 seconds before failing. Source
+> inspection showed that WhisperKit model loading and prewarming happened
+> synchronously before the recorded local-inference timer. Both nonempty
+> candidates then remained coverage-uncertain. The user therefore paid a
+> roughly 38-second unreported cold-start cost without receiving ordinary
+> output.
 
 ## Executive summary
 
@@ -401,6 +410,35 @@ ordinary Voice v2 envelope, and then waits for the specialist's normal
 related/unrelated/uncertain decision. Repeated confirmation, relaunch, Insert
 Again, and registration retry reuse that identity; confirmation never uploads
 to D1/R2 or marks the capture related by itself.
+
+## Cold-start recurrence and bounded foreground repair
+
+The second recurrence was not slow provider inference. The aggregate timing
+made Groq and local decoding visible but started the local timer only after
+WhisperKit had loaded and prewarmed the installed model. On the first fallback
+after launch, that unmeasured preparation took roughly 38 seconds. The
+foreground orchestration then rejected the nonempty local result for the same
+experimental coverage signal and reported failure.
+
+The follow-up repair changes the ownership of model preparation and latency:
+
+1. an installed model prewarms asynchronously after the app has presented its
+   local UI and loaded secure settings;
+2. readiness is exposed through a lock-protected nonisolated snapshot, so a
+   foreground check never queues behind an in-progress model load;
+3. local recovery runs only when the engine is already warm; otherwise Voice
+   immediately preserves the best eligible provider candidate and original
+   M4A as coverage-uncertain;
+4. primary provider requests have a 20-second transport bound and the
+   alternate coverage-recovery requests have an 8-second bound instead of the
+   previous 300-second request timeout; and
+5. privacy-safe diagnostics explicitly report when local recovery was skipped
+   because the model was not warm.
+
+This does not weaken the trust boundary. A coverage-uncertain candidate is not
+inserted, registered, sent to D1, or uploaded to R2 unless the user explicitly
+chooses **Use this transcript**. Exact merged-main package and installed-app
+verification remain pending for this reopened incident.
 
 ## Lessons
 

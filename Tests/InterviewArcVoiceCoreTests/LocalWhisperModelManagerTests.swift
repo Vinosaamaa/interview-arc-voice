@@ -70,9 +70,11 @@ import Testing
     let installed = try await first.registerExistingModel(at: modelFolder)
     #expect(installed.state == .available)
     #expect(installed.sizeBytes == 23)
+    #expect(!first.isPreparedForRecovery)
 
     let relaunched = try LocalWhisperModelManager(rootDirectory: root)
     #expect(await relaunched.snapshot().state == .available)
+    #expect(!relaunched.isPreparedForRecovery)
 
     try Data("corrupted".utf8).write(to: fixtureFile)
     let corrupted = try LocalWhisperModelManager(rootDirectory: root)
