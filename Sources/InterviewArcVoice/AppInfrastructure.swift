@@ -1769,7 +1769,9 @@ struct FloatingRecorderView: View {
             if let sessionTime {
                 compactClock(
                     sessionTime,
-                    width: FloatingWidgetCompactTimerLayoutPolicy.sessionClockWidth,
+                    width: FloatingWidgetCompactTimerLayoutPolicy.sessionClockWidth(
+                        for: sessionTime
+                    ),
                     label: "Session time",
                     role: .session
                 )
@@ -1799,7 +1801,8 @@ struct FloatingRecorderView: View {
             .lineLimit(1)
             .minimumScaleFactor(0.92)
             .frame(width: width, height: 24, alignment: .center)
-            .accessibilityLabel("\(label), \(value)")
+            .accessibilityLabel(label)
+            .accessibilityValue(value)
     }
 
     private enum CompactClockRole {

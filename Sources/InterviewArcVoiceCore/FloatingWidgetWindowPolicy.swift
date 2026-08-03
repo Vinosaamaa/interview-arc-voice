@@ -271,13 +271,18 @@ public enum FloatingWidgetCompactTimerLayoutPolicy {
     public static let titleFillsAvailableHeight = true
     public static let activityClockWidth: CGFloat = 52
     public static let sessionClockWidth: CGFloat = 31
+    public static let expandedSessionClockWidth: CGFloat = 42
     public static let clusterSpacing: CGFloat = 2
     public static let dividerWidth: CGFloat = 1
     public static let maximumClusterWidth =
         activityClockWidth
-        + sessionClockWidth
+        + expandedSessionClockWidth
         + dividerWidth
         + (clusterSpacing * 2)
+
+    public static func sessionClockWidth(for value: String) -> CGFloat {
+        value.count > 5 ? expandedSessionClockWidth : sessionClockWidth
+    }
 }
 
 public enum FloatingWidgetMemoAction: Equatable, Hashable, Sendable {

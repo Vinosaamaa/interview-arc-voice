@@ -105,7 +105,7 @@ import Testing
 @Test func expandedTimerKeepsTheTitleAndClockClusterReadableBesideMemoActions() {
     #expect(FloatingWidgetCompactTimerLayoutPolicy.showsPreviousMemoActionsWhenExpanded)
     #expect(FloatingWidgetCompactTimerLayoutPolicy.minimumTitleWidth >= 58)
-    #expect(FloatingWidgetCompactTimerLayoutPolicy.maximumClusterWidth <= 90)
+    #expect(FloatingWidgetCompactTimerLayoutPolicy.maximumClusterWidth <= 100)
 }
 
 @Test func backgroundReconciliationNeverReplacesAnActiveRecordingPresentation() {
