@@ -4487,7 +4487,7 @@ final class VoiceBridgeModel: ObservableObject {
         lastRetryDestination = captureDestination(
             from: reference.retryDestination
         )
-        if failureNotice?.actions.contains(.retryTranscription) == true,
+        if failureNotice.actions.contains(.retryTranscription),
            lastRetryDestination != nil {
             canRetryLastTranscription = true
         }
