@@ -263,6 +263,7 @@ final class VoiceBridgeModel: ObservableObject {
         model: LocalWhisperModelManager.defaultModel
     )
     @Published private(set) var localWhisperModelOperationInFlight = false
+    @Published private(set) var localWhisperPreparationInFlight = false
     @Published private(set) var localWhisperModelMessage: String?
     @Published private(set) var dynamicRecordingInterfaceActive = false
 
@@ -2066,9 +2067,32 @@ final class VoiceBridgeModel: ObservableObject {
         guard let localWhisperModelManager else { return }
         localWhisperModel = await localWhisperModelManager.snapshot()
         guard localWhisperModel.state == .available else { return }
+        beginLocalWhisperPreparation(showProgressMessage: false)
+    }
+
+    func retryLocalWhisperPreparation() {
+        beginLocalWhisperPreparation(showProgressMessage: true)
+    }
+
+    private func beginLocalWhisperPreparation(
+        showProgressMessage: Bool
+    ) {
+        guard !localWhisperPreparationInFlight,
+              localWhisperModel.state == .available,
+              !localWhisperModel.isPreparedForRecovery,
+              let localWhisperModelManager else { return }
+        localWhisperPreparationInFlight = true
+        if showProgressMessage {
+            localWhisperModelMessage = "Preparing the local model for immediate recovery…"
+        }
         Task(priority: .utility) {
-            _ = await localWhisperModelManager
+            let prepared = await localWhisperModelManager
                 .prepareForRecoveryIfInstalled()
+            localWhisperModel = await localWhisperModelManager.snapshot()
+            localWhisperPreparationInFlight = false
+            localWhisperModelMessage = prepared
+                ? "Local recovery is ready without a cold-start wait."
+                : "Local model preparation failed. Retry preparation or delete and reinstall the model."
         }
     }
 
@@ -2082,17 +2106,15 @@ final class VoiceBridgeModel: ObservableObject {
             do {
                 let snapshot = try await localWhisperModelManager.install()
                 self.localWhisperModel = snapshot
-                let prepared = await localWhisperModelManager
-                    .prepareForRecoveryIfInstalled()
                 let size = snapshot.sizeBytes.map {
                     ByteCountFormatter.string(
                         fromByteCount: $0,
                         countStyle: .file
                     )
                 } ?? "an unknown size"
-                self.localWhisperModelMessage = prepared
-                    ? "Local recovery is ready (\(size))."
-                    : "The model was installed, but preparation failed. Voice will retry preparation after relaunch."
+                self.localWhisperModelMessage = "Local recovery model installed (\(size)). Preparing it now…"
+                self.localWhisperModelOperationInFlight = false
+                self.beginLocalWhisperPreparation(showProgressMessage: false)
             } catch is CancellationError {
                 self.localWhisperModelMessage = "Local model installation was cancelled."
             } catch {
@@ -4585,22 +4607,34 @@ private struct VoiceSettingsWindow: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Local recovery")
                                 .font(.headline)
-                            Text(localWhisperStatusText)
-                                .font(.caption)
-                                .foregroundStyle(
-                                    model.localWhisperModel.state == .corrupt
-                                        ? AnyShapeStyle(.orange)
-                                        : AnyShapeStyle(.secondary)
-                                )
+                            HStack(spacing: 5) {
+                                Image(systemName: localWhisperStatusSymbol)
+                                    .accessibilityHidden(true)
+                                Text(localWhisperStatusText)
+                            }
+                            .font(.caption)
+                            .foregroundStyle(localWhisperStatusStyle)
                         }
                         Spacer()
-                        if model.localWhisperModelOperationInFlight {
+                        if model.localWhisperModelOperationInFlight
+                            || model.localWhisperPreparationInFlight {
                             ProgressView()
                                 .controlSize(.small)
                         } else if model.localWhisperModel.state == .notInstalled {
                             Button(
                                 "Install",
                                 action: model.installLocalWhisperModel
+                            )
+                        } else if model.localWhisperModel.state == .available,
+                                  !model.localWhisperModel.isPreparedForRecovery {
+                            Button(
+                                "Prepare",
+                                action: model.retryLocalWhisperPreparation
+                            )
+                            Button(
+                                "Delete",
+                                role: .destructive,
+                                action: model.deleteLocalWhisperModel
                             )
                         } else {
                             Button(
@@ -4917,9 +4951,45 @@ private struct VoiceSettingsWindow: View {
         case .installing:
             "Installing \(model.localWhisperModel.model)…"
         case .available:
-            "Ready · \(model.localWhisperModel.model) · \(localWhisperSizeText)"
+            if model.localWhisperPreparationInFlight {
+                "Preparing local recovery…"
+            } else if model.localWhisperModel.isPreparedForRecovery {
+                "Ready for immediate recovery · \(model.localWhisperModel.model) · \(localWhisperSizeText)"
+            } else {
+                "Installed, not ready · \(model.localWhisperModel.model) · \(localWhisperSizeText)"
+            }
         case .corrupt:
             "Integrity check failed · delete and reinstall"
+        }
+    }
+
+    private var localWhisperStatusSymbol: String {
+        switch model.localWhisperModel.state {
+        case .notInstalled:
+            "circle.dashed"
+        case .installing:
+            "arrow.down.circle"
+        case .available where model.localWhisperPreparationInFlight:
+            "clock.arrow.circlepath"
+        case .available where model.localWhisperModel.isPreparedForRecovery:
+            "checkmark.circle.fill"
+        case .available:
+            "exclamationmark.circle"
+        case .corrupt:
+            "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var localWhisperStatusStyle: AnyShapeStyle {
+        switch model.localWhisperModel.state {
+        case .available where model.localWhisperModel.isPreparedForRecovery:
+            AnyShapeStyle(.green)
+        case .available where model.localWhisperPreparationInFlight:
+            AnyShapeStyle(.tint)
+        case .corrupt:
+            AnyShapeStyle(.orange)
+        default:
+            AnyShapeStyle(.secondary)
         }
     }
 

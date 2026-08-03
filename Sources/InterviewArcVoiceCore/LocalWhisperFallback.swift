@@ -14,17 +14,20 @@ public struct LocalWhisperModelSnapshot: Codable, Equatable, Sendable {
     public let model: String
     public let sizeBytes: Int64?
     public let detail: String?
+    public let isPreparedForRecovery: Bool
 
     public init(
         state: LocalWhisperModelState,
         model: String,
         sizeBytes: Int64? = nil,
-        detail: String? = nil
+        detail: String? = nil,
+        isPreparedForRecovery: Bool = false
     ) {
         self.state = state
         self.model = model
         self.sizeBytes = sizeBytes
         self.detail = detail
+        self.isPreparedForRecovery = isPreparedForRecovery
     }
 }
 
@@ -169,7 +172,8 @@ public actor LocalWhisperModelManager {
             return .init(
                 state: .available,
                 model: manifest.model,
-                sizeBytes: manifest.sizeBytes
+                sizeBytes: manifest.sizeBytes,
+                isPreparedForRecovery: readiness.isPrepared
             )
         } catch LocalWhisperModelError.unavailable {
             return .init(state: .notInstalled, model: model)
@@ -191,7 +195,8 @@ public actor LocalWhisperModelManager {
             return .init(
                 state: .available,
                 model: manifest.model,
-                sizeBytes: manifest.sizeBytes
+                sizeBytes: manifest.sizeBytes,
+                isPreparedForRecovery: readiness.isPrepared
             )
         }
         installationInProgress = true
@@ -237,7 +242,8 @@ public actor LocalWhisperModelManager {
         return .init(
             state: .available,
             model: model,
-            sizeBytes: manifest.sizeBytes
+            sizeBytes: manifest.sizeBytes,
+            isPreparedForRecovery: false
         )
     }
 

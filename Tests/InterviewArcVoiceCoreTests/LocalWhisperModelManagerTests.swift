@@ -70,6 +70,7 @@ import Testing
     let installed = try await first.registerExistingModel(at: modelFolder)
     #expect(installed.state == .available)
     #expect(installed.sizeBytes == 23)
+    #expect(!installed.isPreparedForRecovery)
     #expect(!first.isPreparedForRecovery)
 
     let relaunched = try LocalWhisperModelManager(rootDirectory: root)
@@ -82,6 +83,24 @@ import Testing
 
     try await corrupted.deleteModel()
     #expect(await corrupted.snapshot().state == .notInstalled)
+}
+
+@Test func localWhisperSnapshotCarriesImmediateRecoveryReadiness() throws {
+    let snapshot = LocalWhisperModelSnapshot(
+        state: .available,
+        model: "base.en",
+        sizeBytes: 42,
+        isPreparedForRecovery: true
+    )
+
+    let data = try JSONEncoder().encode(snapshot)
+    let decoded = try JSONDecoder().decode(
+        LocalWhisperModelSnapshot.self,
+        from: data
+    )
+
+    #expect(decoded == snapshot)
+    #expect(decoded.isPreparedForRecovery)
 }
 
 @Test func unavailableLocalWhisperFailsSafelyWithoutDeveloperTooling() async throws {
