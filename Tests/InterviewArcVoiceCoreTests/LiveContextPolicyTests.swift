@@ -19,32 +19,24 @@ import Testing
     let cmux = CaptureTargetApplicationPolicy.decision(
         for: CaptureTargetDescriptor(
             bundleIdentifier: "com.cmuxterm.app",
-            windowTitle: "Interview Arc — Native cmux",
-            hasCodexDescendant: true
+            windowTitle: "Interview Arc — Native cmux"
         )
     )
     let warp = CaptureTargetApplicationPolicy.decision(
         for: CaptureTargetDescriptor(
             bundleIdentifier: "dev.warp.Warp-Stable",
-            windowTitle: "Interview Arc — LeetCode | codex",
-            hasCodexDescendant: true
+            windowTitle: "Interview Arc"
         )
     )
 
     #expect(cmux.canAttach)
     #expect(cmux.kind == .codexCLITerminal)
-    #expect(cmux.reason == .verifiedCodexCLIProcess)
+    #expect(cmux.reason == .verifiedCodexWorkspace)
     #expect(warp.canAttach)
     #expect(warp.kind == .codexCLITerminal)
-    #expect(CaptureTargetApplicationPolicy.requiresCodexDescendantInspection(
-        bundleIdentifier: "com.cmuxterm.app"
-    ))
-    #expect(!CaptureTargetApplicationPolicy.requiresCodexDescendantInspection(
-        bundleIdentifier: "com.google.Chrome"
-    ))
 }
 
-@Test func arbitraryTerminalAndNonTerminalWindowsRemainGeneralDictation() {
+@Test func approvedWorkspaceTitleSupportsDetachedCodexCLITerminals() {
     let shell = CaptureTargetApplicationPolicy.decision(
         for: CaptureTargetDescriptor(
             bundleIdentifier: "com.cmuxterm.app",
@@ -54,15 +46,19 @@ import Testing
     let titledShellWithoutCodex = CaptureTargetApplicationPolicy.decision(
         for: CaptureTargetDescriptor(
             bundleIdentifier: "com.cmuxterm.app",
-            windowTitle: "Interview Arc — shell",
-            hasCodexDescendant: false
+            windowTitle: "Interview Arc — shell"
+        )
+    )
+    let detachedCodexWorkspace = CaptureTargetApplicationPolicy.decision(
+        for: CaptureTargetDescriptor(
+            bundleIdentifier: "com.cmuxterm.app",
+            windowTitle: "Interview Arc — Coordinator | codex"
         )
     )
     let codexProcessOutsideWorkspace = CaptureTargetApplicationPolicy.decision(
         for: CaptureTargetDescriptor(
             bundleIdentifier: "com.cmuxterm.app",
-            windowTitle: "Personal shell",
-            hasCodexDescendant: true
+            windowTitle: "Personal shell"
         )
     )
     let browser = CaptureTargetApplicationPolicy.decision(
@@ -74,9 +70,12 @@ import Testing
     let missing = CaptureTargetApplicationPolicy.decision(for: nil)
 
     #expect(!shell.canAttach)
-    #expect(shell.reason == .terminalWithoutCodexProcess)
-    #expect(!titledShellWithoutCodex.canAttach)
-    #expect(titledShellWithoutCodex.reason == .terminalWithoutCodexProcess)
+    #expect(shell.reason == .terminalWithoutWorkspaceEvidence)
+    #expect(titledShellWithoutCodex.canAttach)
+    #expect(titledShellWithoutCodex.reason == .verifiedCodexWorkspace)
+    #expect(detachedCodexWorkspace.canAttach)
+    #expect(detachedCodexWorkspace.kind == .codexCLITerminal)
+    #expect(detachedCodexWorkspace.reason == .verifiedCodexWorkspace)
     #expect(!codexProcessOutsideWorkspace.canAttach)
     #expect(codexProcessOutsideWorkspace.reason == .terminalWithoutWorkspaceEvidence)
     #expect(!browser.canAttach)
@@ -112,6 +111,16 @@ import Testing
         hasFocusedActivity: true,
         contextIsFresh: false
     ) == CaptureRouteEvaluation(route: .general, reason: .staleFocusedContext))
+    #expect(evaluator.evaluate(
+        linkEnabled: true,
+        target: CaptureTargetDecision(
+            canAttach: true,
+            kind: .codexCLITerminal,
+            reason: .verifiedCodexWorkspace
+        ),
+        hasFocusedActivity: true,
+        contextIsFresh: true
+    ) == CaptureRouteEvaluation(route: .linked, reason: .linkedAtRecordStart))
     #expect(evaluator.evaluate(
         linkEnabled: true,
         target: CaptureTargetDecision(

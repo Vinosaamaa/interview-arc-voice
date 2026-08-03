@@ -182,15 +182,16 @@ public enum FloatingWidgetMotionPolicy {
 }
 
 public enum FloatingWidgetUpperSurfaceTransitionStyle: Equatable, Sendable {
-    case clippedCrossfade
+    case destinationOnly
 }
 
 public enum FloatingWidgetUpperSurfaceTransitionPolicy {
     public static let style: FloatingWidgetUpperSurfaceTransitionStyle =
-        .clippedCrossfade
+        .destinationOnly
     public static let keepsBottomAnchor = true
     public static let usesSingleHostResize = true
-    public static let primesDestinationBeforeDismissal = true
+    public static let retainsOutgoingSurface = false
+    public static let animatesModelState = false
 }
 
 public enum CompactTimerTextPolicy {

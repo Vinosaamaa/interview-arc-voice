@@ -93,6 +93,8 @@ import Testing
         localFallbackSkippedBecauseNotReady: true,
         providerHTTPStatus: 403,
         providerErrorCode: "model_access_denied",
+        captureTargetBundleIdentifier: "dev.warp.Warp-Stable",
+        captureTargetWindowTitle: "Interview Arc",
         captureTargetKind: .codexCLITerminal,
         captureTargetDecisionReason: .verifiedCodexCLIProcess,
         captureRouteReason: .linkedAfterContextRefresh,
@@ -116,6 +118,8 @@ import Testing
     #expect(record.report.contains("Local fallback skipped because model was not warm: true"))
     #expect(record.report.contains("Provider HTTP status: 403"))
     #expect(record.report.contains("Provider error code: model_access_denied"))
+    #expect(record.report.contains("Capture target host: dev.warp.Warp-Stable"))
+    #expect(record.report.contains("Capture target window: Interview Arc"))
     #expect(record.report.contains("Capture target: codexCLITerminal"))
     #expect(record.report.contains("Capture target decision: verifiedCodexCLIProcess"))
     #expect(record.report.contains("Capture route: linkedAfterContextRefresh"))

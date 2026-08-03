@@ -86,10 +86,9 @@ tokens rather than discarding the recovery.
 ## Product decisions
 
 - Groq `whisper-large-v3` is the primary transcription engine.
-- Local WhisperKit is a later offline/failure fallback, not the primary path.
-  An installed model prewarms quietly after launch. Foreground recovery uses
-  it only after prewarming completes, so first-use model loading never blocks
-  the user's transcript UI for tens of seconds.
+- Local WhisperKit is an explicit diagnostic and release-comparison engine,
+  not part of automatic foreground recovery. An installed model may prewarm
+  quietly after launch, but recording completion never waits for it.
 - The original recording remains one continuous file and one website player.
 - Internal transcription chunks are temporary and never appear in the UI.
 - Delivery coaching is enabled for coding, system-design, and behavioral work.
@@ -190,9 +189,11 @@ tokens rather than discarding the recovery.
   lexical word coverage. Sustained
   speech after that boundary is an Enhanced-only experimental signal. It
   triggers one prompt-free overlapping-window recovery; an uncertain recovery
-  preserves the best usable text and original recording visibly instead of
-  inserting text. Off and Basic do not reject usable provider text solely from
-  provider timestamp gaps.
+  immediately inserts the best nonempty provider candidate, preserves the
+  original recording, and shows a quiet “may be incomplete” warning. A linked
+  candidate still receives its normal stable Voice v2 envelope and specialist
+  classification. Off and Basic do not reject usable provider text solely
+  from provider timestamp gaps.
 - Settings → Silence protection offers `Off`, `Basic`, and
   `Enhanced — Experimental`. Basic rejects an entire recording with no
   sustained speech. Whole-capture admission requires both the existing
@@ -216,8 +217,10 @@ tokens rather than discarding the recovery.
   Stop transient from authorizing two short invented words while preserving a
   quiet, high-confidence closing. This uses no second Groq request or
   audio decode and never cuts, rewrites, or replaces the original M4A.
-  If Enhanced coverage recovery remains uncertain, Voice labels the retained
-  Recent Transcript for review and does not insert it or upload it to D1/R2.
+  If Enhanced coverage recovery remains uncertain, Voice labels the inserted
+  Recent Transcript “May be incomplete.” It never waits for a cold local model
+  in the foreground; installed WhisperKit models remain available for explicit
+  diagnostics and comparison.
 - Settings → Diagnostics records a bounded local timing breakdown for capture,
   validation, Groq, transcript corroboration, response handling, and insertion,
   plus privacy-safe WebRTC VAD frame/run counts, segment/word coverage, and
@@ -259,14 +262,17 @@ not.
 7. For interview practice, focus an activity on Today. Keep **Link to Interview Arc** on.
    The activity title appears in the floating recorder.
    For Codex CLI, keep the CLI inside an Interview Arc/Codex-named cmux or Warp
-   workspace. Voice also verifies a live descendant `codex` process before it
-   treats that terminal as a specialist destination; ordinary terminal windows
-   remain General Dictation.
+   workspace. When Link is enabled and the focused activity context is fresh,
+   that approved host-and-window combination enters the linked flow even under
+   tmux, whose detached server breaks terminal process ancestry. Ordinary
+   terminal windows remain General Dictation.
 
 For privacy-safe packaged-artifact diagnostics, pass a supported terminal PID
 to `InterviewArcVoice --capture-target-status <pid>`. The command reports only
-the target-kind and decision enums; it never prints the window title, process
-arguments, terminal content, transcript, or private paths.
+the target-kind and decision enums. The local Settings diagnostic also records
+the observed host bundle and top-level window title so routing decisions can be
+audited; it never records process arguments, terminal content, transcript text,
+credentials, or private paths.
 8. Select the microphone or press `Control-Option-Space`. Voice uses the
    continuously refreshed focused activity and immediately starts the local
    capture backend without a network or Bluetooth output-route wait.

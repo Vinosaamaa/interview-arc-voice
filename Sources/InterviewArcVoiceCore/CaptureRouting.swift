@@ -20,16 +20,13 @@ public struct CaptureRoutingPolicy: Sendable {
 public struct CaptureTargetDescriptor: Equatable, Sendable {
     public let bundleIdentifier: String?
     public let windowTitle: String?
-    public let hasCodexDescendant: Bool
 
     public init(
         bundleIdentifier: String?,
-        windowTitle: String?,
-        hasCodexDescendant: Bool = false
+        windowTitle: String?
     ) {
         self.bundleIdentifier = bundleIdentifier
         self.windowTitle = windowTitle
-        self.hasCodexDescendant = hasCodexDescendant
     }
 }
 
@@ -42,6 +39,7 @@ public enum CaptureTargetKind: String, Codable, Equatable, Sendable {
 public enum CaptureTargetDecisionReason: String, Codable, Equatable, Sendable {
     case desktopCodex
     case verifiedCodexCLIProcess
+    case verifiedCodexWorkspace
     case terminalWithoutCodexProcess
     case terminalWithoutWorkspaceEvidence
     case unsupportedApplication
@@ -174,13 +172,6 @@ public enum CaptureTargetApplicationPolicy {
                 reason: .unsupportedApplication
             )
         }
-        guard descriptor.hasCodexDescendant else {
-            return CaptureTargetDecision(
-                canAttach: false,
-                kind: .other,
-                reason: .terminalWithoutCodexProcess
-            )
-        }
         let title = descriptor.windowTitle?
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             .lowercased()
@@ -195,7 +186,7 @@ public enum CaptureTargetApplicationPolicy {
         return CaptureTargetDecision(
             canAttach: true,
             kind: .codexCLITerminal,
-            reason: .verifiedCodexCLIProcess
+            reason: .verifiedCodexWorkspace
         )
     }
 
@@ -206,13 +197,6 @@ public enum CaptureTargetApplicationPolicy {
                 windowTitle: nil
             )
         ).canAttach
-    }
-
-    public static func requiresCodexDescendantInspection(
-        bundleIdentifier: String?
-    ) -> Bool {
-        guard let bundleIdentifier else { return false }
-        return codexTerminalBundleIdentifiers.contains(bundleIdentifier)
     }
 
     public static func canReceiveDictation(bundleIdentifier: String?) -> Bool {

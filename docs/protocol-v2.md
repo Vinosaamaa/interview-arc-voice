@@ -11,20 +11,21 @@ classifies the capture.
 - The desktop Codex application plus a fresh focused activity enters the
   linked flow.
 - Codex CLI may enter the same flow only inside an approved terminal host when
-  Voice verifies both an Interview Arc/Codex workspace title and a live
-  descendant `codex` executable. Voice reads neither terminal contents nor
-  command arguments to make this decision.
-- An approved terminal without both signals remains General Dictation. A title
-  alone is never sufficient evidence.
+  Link is enabled, the focused activity context is fresh, and Voice verifies an
+  Interview Arc/Codex top-level window title. Process ancestry is not required
+  because tmux detaches pane processes from the terminal GUI. Voice reads
+  neither terminal contents nor command arguments to make this decision.
+- An approved terminal without the workspace-title signal remains General
+  Dictation.
 - Every other app uses General Dictation and never calls the Interview Arc
   capture, audio, or delivery endpoints.
 - A verified Codex target that starts from stale cached context may late-bind
   only after refresh proves the same activity was already running when the
   recording began. A recording from an unsupported target cannot be rebound.
 - The visible linked/general state uses the same target decision as capture
-  routing. Voice records only the bounded target kind and route-reason enums in
-  local diagnostics; it never records a window title, process path, terminal
-  content, or command argument.
+  routing. Voice records the host bundle, top-level window title, bounded target
+  kind, and route-reason enums in local diagnostics; it never records process
+  arguments, terminal content, transcript text, or credentials.
 
 ## Pending capture lifecycle
 

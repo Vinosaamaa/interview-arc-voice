@@ -452,6 +452,33 @@ inserted, registered, sent to D1, or uploaded to R2 unless the user explicitly
 chooses **Use this transcript**. Exact merged-main package and installed-app
 verification remain pending for this reopened incident.
 
+## 2026-08-03 bounded best-provider-candidate decision
+
+Installed and retained-recording comparisons showed that automatic native
+local fallback did not consistently improve provider coverage: across the
+bounded Recent Transcript sample, `base.en` produced more words in seven
+records, the same count in six, and fewer words in seven. Its median inference
+was about 1.1 seconds, but cold preparation had already produced a roughly
+38-second foreground stall. The native model therefore remains an explicit
+diagnostic/recovery capability rather than an automatic foreground dependency.
+
+The approved foreground path is now:
+
+1. send the ordinary provider request;
+2. when Enhanced detects missing speech coverage, immediately request the
+   existing overlapping approximately 30-second provider windows;
+3. select the longest eligible nonempty provider candidate deterministically;
+4. insert it without a blocking confirmation and retain the original M4A; and
+5. show a quiet **May be incomplete** warning in the widget and Recent
+   Transcripts.
+
+A linked uncertain candidate must still create exactly one ordinary protocol-v2
+envelope with stable capture and turn identifiers. It follows the same
+specialist decision, D1, and R2 lifecycle as any other linked recording; the
+warning does not bypass classification or duplicate delivery. Empty text,
+no-speech, recording failure, and provider authentication failure remain
+blocking states.
+
 ## Lessons
 
 Provider processing duration, timestamp coverage, and lexical coverage are

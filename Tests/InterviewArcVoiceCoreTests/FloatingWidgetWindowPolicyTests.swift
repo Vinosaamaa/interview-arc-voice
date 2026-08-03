@@ -65,10 +65,11 @@ import Foundation
 }
 
 @Test func focusPlannerTransitionUsesOneBottomAnchoredResize() {
-    #expect(FloatingWidgetUpperSurfaceTransitionPolicy.style == .clippedCrossfade)
+    #expect(FloatingWidgetUpperSurfaceTransitionPolicy.style == .destinationOnly)
     #expect(FloatingWidgetUpperSurfaceTransitionPolicy.keepsBottomAnchor)
     #expect(FloatingWidgetUpperSurfaceTransitionPolicy.usesSingleHostResize)
-    #expect(FloatingWidgetUpperSurfaceTransitionPolicy.primesDestinationBeforeDismissal)
+    #expect(!FloatingWidgetUpperSurfaceTransitionPolicy.retainsOutgoingSurface)
+    #expect(!FloatingWidgetUpperSurfaceTransitionPolicy.animatesModelState)
 }
 
 @Test func animatedHostOwnsGeometryWhileSwiftUIStaysBottomTrailing() {

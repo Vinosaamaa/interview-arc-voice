@@ -421,3 +421,28 @@ cursor, D1, R2, or Delivery Coach.
 Issue #33 was reopened for this recurrence and is cross-linked to the active
 silent-microphone recurrence in #58. Final merged-main artifact and installed
 acoustic verification are recorded in those issue resolution histories.
+
+## 2026-08-03 terminal-tail recurrence with malformed provider time
+
+A retained Enhanced-mode recording again ended with the known terminal phrase
+although the user did not speak it. The private audio and transcript remained
+local; only aggregate evidence is recorded here:
+
+- decoded audio duration: 29.859625 seconds;
+- provider lexical coverage end: 59.46 seconds;
+- complete word alignment across 43 timestamped words and three segments;
+- zero omitted segments and zero omitted words; and
+- the installed local verifier covered 36 words through 23.74 seconds.
+
+The earlier terminal-tail guard recognized a material timestamp overrun but
+then opened the local acoustic evidence window at the provider word start.
+Because that start was already beyond the decoded audio end, the window held no
+frames and the guard failed open.
+
+For an exact terminal phrase with a material provider timestamp overrun, the
+repair right-aligns a bounded phrase-duration window to the real decoded audio
+end. The phrase is removable only when that real tail contains no sustained
+speech and remains below the existing speech-like fraction threshold. A
+paired regression supplies genuine tail speech with the same malformed
+provider timeline and requires the phrase to remain. This is not a global text
+blacklist and remains limited to Enhanced protection.

@@ -185,8 +185,10 @@ least 58 points for the activity title.
   the reserved title width and far-right microphone anchor.
 - The recorder remains the bottom-right anchor. Planner expansion grows left
   and upward, preserves the real ten-point transparent gap, and never moves
-  the microphone. Reduce Motion replaces geometry emphasis with a short
-  crossfade.
+  the microphone. The native panel is the only geometry animator. Compact,
+  Focus, and Plan Today render destination-only upper-surface content during
+  that resize; an outgoing surface is never retained underneath its successor.
+  Reduce Motion applies the destination and geometry immediately.
 - The planner uses native system typography, theme palette tokens, compact
   cards, and one persistent review tray. Selected cards use a tinted border
   and fill; they do not add a checkbox before the title or copy their title
@@ -296,6 +298,13 @@ least 58 points for the activity title.
   or recording-width frame.
 - Processing: show a compact progress mark only after meaningful elapsed
   processing time. Do not keep the widget busy after insertion succeeds.
+- When coverage remains uncertain but Voice has inserted the best eligible
+  nonempty candidate, replace the compact title/timer cluster with one quiet
+  theme-aware warning line: **Best available transcript inserted · may be
+  incomplete**. Use the semantic warning token plus an accessibility label;
+  do not open a popover, steal focus, or retain the processing state. The next
+  recording clears this transient widget notice, while Recent Transcripts
+  keeps the persistent **May be incomplete** badge.
 - A native recorder termination never disappears into an idle surface. Preserve
   its finalized audio, present a high-visibility recovery state, and offer
   Retry transcription, Record again, Play, and Save without submitting a

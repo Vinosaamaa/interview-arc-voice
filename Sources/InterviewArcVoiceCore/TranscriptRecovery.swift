@@ -367,6 +367,36 @@ public actor LocalTranscriptHistoryStore {
         return replacement
     }
 
+    @discardableResult
+    public func markCoverageUncertain(
+        captureID: String,
+        now: Date = Date()
+    ) throws -> LocalTranscriptRecord? {
+        var current = try readRecords()
+        guard let index = current.firstIndex(where: {
+            $0.captureID == captureID
+        }) else {
+            return nil
+        }
+        let previous = current[index]
+        let replacement = LocalTranscriptRecord(
+            id: previous.id,
+            createdAt: previous.createdAt,
+            transcript: previous.transcript,
+            editorText: previous.editorText,
+            durationSeconds: previous.durationSeconds,
+            activityTitle: previous.activityTitle,
+            captureID: previous.captureID,
+            recoveryStatus: .coverageUncertain,
+            linkedRecoveryContext: previous.linkedRecoveryContext,
+            lifecycleProtected: previous.lifecycleProtected,
+            audioReference: previous.audioReference
+        )
+        current[index] = replacement
+        try write(pruned(current, now: now))
+        return replacement
+    }
+
     public func audioURL(
         for record: LocalTranscriptRecord
     ) -> URL? {

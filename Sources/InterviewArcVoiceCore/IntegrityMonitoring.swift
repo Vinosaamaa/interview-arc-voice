@@ -254,6 +254,7 @@ public struct ReliableTranscription: Equatable, Sendable {
     public let model: String?
     public let localInferenceSeconds: Double?
     public let localPromptTokenCount: Int?
+    public let coverageUncertain: Bool
 
     public init(
         transcription: TranscriptionResult,
@@ -270,7 +271,8 @@ public struct ReliableTranscription: Equatable, Sendable {
         engine: String? = nil,
         model: String? = nil,
         localInferenceSeconds: Double? = nil,
-        localPromptTokenCount: Int? = nil
+        localPromptTokenCount: Int? = nil,
+        coverageUncertain: Bool = false
     ) {
         self.transcription = transcription
         self.wasRetried = wasRetried
@@ -288,6 +290,7 @@ public struct ReliableTranscription: Equatable, Sendable {
         self.model = model
         self.localInferenceSeconds = localInferenceSeconds
         self.localPromptTokenCount = localPromptTokenCount
+        self.coverageUncertain = coverageUncertain
     }
 }
 
@@ -352,35 +355,10 @@ public actor ReliableSpeechTranscriber {
         let trailingSpeechEvidence: SpeechIntervalEvidence?
     }
 
-    private struct LocalFallbackOutcome {
-        let accepted: ReliableTranscription?
-        let checkedCandidate: (TranscriptionResult, IntegrityCheck)?
-        let attempted: Bool
-        let inferenceSeconds: Double?
-        let promptTokenCount: Int?
-        let validationReasons: [TranscriptionIntegrityReason]?
-        let skippedBecauseNotReady: Bool
-
-        static let notApplicable = LocalFallbackOutcome(
-            accepted: nil,
-            checkedCandidate: nil,
-            attempted: false,
-            inferenceSeconds: nil,
-            promptTokenCount: nil,
-            validationReasons: nil,
-            skippedBecauseNotReady: false
-        )
-    }
-
     private let base: any SpeechTranscribing
-    private let localFallback: (any SpeechTranscribing)?
 
-    public init(
-        base: any SpeechTranscribing,
-        localFallback: (any SpeechTranscribing)? = nil
-    ) {
+    public init(base: any SpeechTranscribing) {
         self.base = base
-        self.localFallback = localFallback
     }
 
     public func transcribe(
@@ -414,17 +392,12 @@ public actor ReliableSpeechTranscriber {
                 protectionMode: protectionMode
             )
             guard !retryCheck.result.isSuspicious else {
-                return try await recoverWithLocalFallbackOrThrow(
+                return try recoverBestProviderCandidateOrThrow(
                     retryCheck: retryCheck,
                     checkedCandidates: [(retry, retryCheck)],
                     timing: retry.timing,
-                    fileURL: fileURL,
-                    temporaryDirectory: temporaryDirectory,
-                    audioDurationSeconds: audioDurationSeconds,
-                    expectedChunkCount: expectedChunkCount,
                     speechEvidence: speechEvidence,
-                    protectionMode: protectionMode,
-                    prompt: prompt
+                    protectionMode: protectionMode
                 )
             }
             return try protectedResult(
@@ -461,17 +434,12 @@ public actor ReliableSpeechTranscriber {
                     temporaryDirectory: temporaryDirectory
                 )
             } catch {
-                return try await recoverWithLocalFallbackOrThrow(
+                return try recoverBestProviderCandidateOrThrow(
                     retryCheck: firstCheck,
                     checkedCandidates: [(first, firstCheck)],
                     timing: first.timing,
-                    fileURL: fileURL,
-                    temporaryDirectory: temporaryDirectory,
-                    audioDurationSeconds: audioDurationSeconds,
-                    expectedChunkCount: expectedChunkCount,
                     speechEvidence: speechEvidence,
-                    protectionMode: protectionMode,
-                    prompt: prompt
+                    protectionMode: protectionMode
                 )
             }
         } else {
@@ -490,20 +458,15 @@ public actor ReliableSpeechTranscriber {
             protectionMode: protectionMode
         )
         guard !retryCheck.result.isSuspicious else {
-            return try await recoverWithLocalFallbackOrThrow(
+            return try recoverBestProviderCandidateOrThrow(
                 retryCheck: retryCheck,
                 checkedCandidates: [
                     (first, firstCheck),
                     (retry, retryCheck),
                 ],
                 timing: combinedTiming(first.timing, retry.timing),
-                fileURL: fileURL,
-                temporaryDirectory: temporaryDirectory,
-                audioDurationSeconds: audioDurationSeconds,
-                expectedChunkCount: expectedChunkCount,
                 speechEvidence: speechEvidence,
-                protectionMode: protectionMode,
-                prompt: prompt
+                protectionMode: protectionMode
             )
         }
         return try protectedResult(
@@ -515,156 +478,84 @@ public actor ReliableSpeechTranscriber {
         )
     }
 
-    private func recoverWithLocalFallbackOrThrow(
+    private func recoverBestProviderCandidateOrThrow(
         retryCheck: IntegrityCheck,
-        checkedCandidates initialCandidates: [(
+        checkedCandidates: [(
             TranscriptionResult,
             IntegrityCheck
         )],
         timing: TranscriptionTiming?,
-        fileURL: URL,
-        temporaryDirectory: URL,
-        audioDurationSeconds: Double,
-        expectedChunkCount: Int,
         speechEvidence: SpeechEvidenceResult?,
-        protectionMode: SpeechProtectionMode,
-        prompt: String
-    ) async throws -> ReliableTranscription {
-        var checkedCandidates = initialCandidates
-        let localOutcome = try await attemptWarmLocalFallback(
-            retryCheck: retryCheck,
-            fileURL: fileURL,
-            temporaryDirectory: temporaryDirectory,
-            audioDurationSeconds: audioDurationSeconds,
-            expectedChunkCount: expectedChunkCount,
-            speechEvidence: speechEvidence,
-            protectionMode: protectionMode,
-            prompt: prompt
-        )
-        if let accepted = localOutcome.accepted {
-            return accepted
-        }
-        if let checkedCandidate = localOutcome.checkedCandidate {
-            checkedCandidates.append(checkedCandidate)
+        protectionMode: SpeechProtectionMode
+    ) throws -> ReliableTranscription {
+        if let candidate = recoverableCoverageCandidate(checkedCandidates),
+           let candidateCheck = checkedCandidates.first(where: {
+               $0.0 == candidate
+           })?.1 {
+            return try coverageUncertainResult(
+                candidate,
+                check: candidateCheck,
+                timing: timing,
+                speechEvidence: speechEvidence,
+                protectionMode: protectionMode,
+                wasRetried: true
+            )
         }
         throw integrityFailure(
             retryCheck,
             timing: timing,
-            recoveryCandidate: recoverableCoverageCandidate(checkedCandidates),
-            localFallbackAttempted: localOutcome.attempted,
-            localFallbackEngine: localFallback?.diagnosticEngine,
-            localFallbackModel: localFallback?.diagnosticModel,
-            localInferenceSeconds: localOutcome.inferenceSeconds,
-            localPromptTokenCount: localOutcome.promptTokenCount,
-            localValidationReasons: localOutcome.validationReasons,
-            localFallbackSkippedBecauseNotReady:
-                localOutcome.skippedBecauseNotReady
+            recoveryCandidate: recoverableCoverageCandidate(checkedCandidates)
         )
     }
 
-    private func attemptWarmLocalFallback(
-        retryCheck: IntegrityCheck,
-        fileURL: URL,
-        temporaryDirectory: URL,
-        audioDurationSeconds: Double,
-        expectedChunkCount: Int,
+    private func coverageUncertainResult(
+        _ candidate: TranscriptionResult,
+        check: IntegrityCheck,
+        timing: TranscriptionTiming?,
         speechEvidence: SpeechEvidenceResult?,
         protectionMode: SpeechProtectionMode,
-        prompt: String
-    ) async throws -> LocalFallbackOutcome {
-        guard retryCheck.result.reasons.contains(.missingSpeechCoverage),
-              let localFallback else {
-            return .notApplicable
-        }
-        guard localFallback.isReadyForImmediateTranscription else {
-            // A first-use WhisperKit model load can take tens of seconds.
-            // Never make the foreground recovery path wait for it.
-            return LocalFallbackOutcome(
-                accepted: nil,
-                checkedCandidate: nil,
-                attempted: false,
-                inferenceSeconds: nil,
-                promptTokenCount: nil,
-                validationReasons: nil,
-                skippedBecauseNotReady: true
-            )
-        }
-        do {
-            let rawLocal = try await localFallback.transcribe(
-                fileURL: fileURL,
-                prompt: prompt,
-                temporaryDirectory: temporaryDirectory
-            )
-            let local = normalizedLocalFallback(
-                rawLocal,
-                audioDurationSeconds: audioDurationSeconds,
-                expectedChunkCount: expectedChunkCount
-            )
-            let localCheck = check(
-                local,
-                prompt: prompt,
-                audioDurationSeconds: audioDurationSeconds,
-                expectedChunkCount: expectedChunkCount,
-                speechEvidence: speechEvidence,
-                protectionMode: protectionMode
-            )
-            if !localCheck.result.isSuspicious {
-                return LocalFallbackOutcome(
-                    accepted: try protectedResult(
-                        local,
-                        wasRetried: true,
-                        speechEvidence: speechEvidence,
-                        protectionMode: protectionMode,
-                        integrityCheck: localCheck
-                    ),
-                    checkedCandidate: nil,
-                    attempted: true,
-                    inferenceSeconds: local.localInferenceSeconds,
-                    promptTokenCount: local.localPromptTokenCount,
-                    validationReasons: localCheck.result.reasons,
-                    skippedBecauseNotReady: false
-                )
-            }
-            return LocalFallbackOutcome(
-                accepted: nil,
-                checkedCandidate: (local, localCheck),
-                attempted: true,
-                inferenceSeconds: local.localInferenceSeconds,
-                promptTokenCount: local.localPromptTokenCount,
-                validationReasons: localCheck.result.reasons,
-                skippedBecauseNotReady: false
-            )
-        } catch {
-            // Provider candidates remain available when the optional local
-            // engine fails during an already-warm inference.
-            return LocalFallbackOutcome(
-                accepted: nil,
-                checkedCandidate: nil,
-                attempted: true,
-                inferenceSeconds: nil,
-                promptTokenCount: nil,
-                validationReasons: nil,
-                skippedBecauseNotReady: false
-            )
-        }
-    }
-
-    private func normalizedLocalFallback(
-        _ result: TranscriptionResult,
-        audioDurationSeconds: Double,
-        expectedChunkCount: Int
-    ) -> TranscriptionResult {
-        TranscriptionResult(
-            text: result.text,
-            words: result.words,
-            segments: result.segments,
-            durationSeconds: audioDurationSeconds,
-            chunkCount: max(1, expectedChunkCount),
-            timing: result.timing,
-            engine: result.engine,
-            model: result.model,
-            localInferenceSeconds: result.localInferenceSeconds,
-            localPromptTokenCount: result.localPromptTokenCount
+        wasRetried: Bool
+    ) throws -> ReliableTranscription {
+        let timedCandidate = TranscriptionResult(
+            text: candidate.text,
+            words: candidate.words,
+            segments: candidate.segments,
+            durationSeconds: candidate.durationSeconds,
+            chunkCount: candidate.chunkCount,
+            timing: timing ?? candidate.timing,
+            engine: candidate.engine,
+            model: candidate.model,
+            localInferenceSeconds: candidate.localInferenceSeconds,
+            localPromptTokenCount: candidate.localPromptTokenCount
+        )
+        let protected = try protectedResult(
+            timedCandidate,
+            wasRetried: wasRetried,
+            speechEvidence: speechEvidence,
+            protectionMode: protectionMode,
+            integrityCheck: check
+        )
+        return ReliableTranscription(
+            transcription: protected.transcription,
+            wasRetried: protected.wasRetried,
+            omittedUnsupportedSegmentCount:
+                protected.omittedUnsupportedSegmentCount,
+            omittedUnsupportedWordCount:
+                protected.omittedUnsupportedWordCount,
+            wordAlignmentComplete: protected.wordAlignmentComplete,
+            evaluatedSegmentCount: protected.evaluatedSegmentCount,
+            wordTimestampCount: protected.wordTimestampCount,
+            segmentValidationSeconds: protected.segmentValidationSeconds,
+            providerLexicalCoverageEndSeconds:
+                protected.providerLexicalCoverageEndSeconds,
+            trailingSpeechLikeFrameCount:
+                protected.trailingSpeechLikeFrameCount,
+            trailingSpeechLikeFraction: protected.trailingSpeechLikeFraction,
+            engine: protected.engine,
+            model: protected.model,
+            localInferenceSeconds: protected.localInferenceSeconds,
+            localPromptTokenCount: protected.localPromptTokenCount,
+            coverageUncertain: true
         )
     }
 

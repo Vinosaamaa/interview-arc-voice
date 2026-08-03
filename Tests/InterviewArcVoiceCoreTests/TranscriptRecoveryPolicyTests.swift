@@ -707,3 +707,23 @@ import Testing
         ) == newest
     )
 }
+
+@Test func linkedHistoryCanPersistTheCoverageUncertainBadgeAfterDelivery() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try LocalTranscriptHistoryStore(directory: root)
+    _ = try await store.append(LocalTranscriptRecord(
+        transcript: "Best available answer",
+        editorText: "Best available answer",
+        durationSeconds: 30,
+        captureID: "capture-1"
+    ))
+
+    let updated = try await store.markCoverageUncertain(
+        captureID: "capture-1"
+    )
+
+    #expect(updated?.recoveryStatus == .coverageUncertain)
+    #expect(try await store.records().first?.recoveryStatus == .coverageUncertain)
+}

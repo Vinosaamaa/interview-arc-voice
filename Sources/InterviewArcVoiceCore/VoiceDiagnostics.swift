@@ -41,6 +41,8 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
     public let localValidationReasons: [TranscriptionIntegrityReason]?
     public let providerHTTPStatus: Int?
     public let providerErrorCode: String?
+    public let captureTargetBundleIdentifier: String?
+    public let captureTargetWindowTitle: String?
     public let captureTargetKind: CaptureTargetKind?
     public let captureTargetDecisionReason: CaptureTargetDecisionReason?
     public let captureRouteReason: CaptureRouteReason?
@@ -81,6 +83,8 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         localValidationReasons: [TranscriptionIntegrityReason]? = nil,
         providerHTTPStatus: Int? = nil,
         providerErrorCode: String? = nil,
+        captureTargetBundleIdentifier: String? = nil,
+        captureTargetWindowTitle: String? = nil,
         captureTargetKind: CaptureTargetKind? = nil,
         captureTargetDecisionReason: CaptureTargetDecisionReason? = nil,
         captureRouteReason: CaptureRouteReason? = nil,
@@ -121,6 +125,8 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         self.localValidationReasons = localValidationReasons
         self.providerHTTPStatus = providerHTTPStatus
         self.providerErrorCode = providerErrorCode
+        self.captureTargetBundleIdentifier = captureTargetBundleIdentifier
+        self.captureTargetWindowTitle = captureTargetWindowTitle
         self.captureTargetKind = captureTargetKind
         self.captureTargetDecisionReason = captureTargetDecisionReason
         self.captureRouteReason = captureRouteReason
@@ -163,6 +169,8 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
             "Local validation reasons: \(localValidationReasons?.map(\.rawValue).joined(separator: ", ") ?? "None")",
             "Provider HTTP status: \(providerHTTPStatus.map(String.init) ?? "Unavailable")",
             "Provider error code: \(providerErrorCode ?? "Unavailable")",
+            "Capture target host: \(captureTargetBundleIdentifier ?? "Unavailable")",
+            "Capture target window: \(captureTargetWindowTitle ?? "Unavailable")",
             "Capture target: \(captureTargetKind?.rawValue ?? "Unavailable")",
             "Capture target decision: \(captureTargetDecisionReason?.rawValue ?? "Unavailable")",
             "Capture route: \(captureRouteReason?.rawValue ?? "Unavailable")",
