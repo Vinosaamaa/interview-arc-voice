@@ -760,7 +760,7 @@ final class FloatingPanelController {
     private var miniDragStartFrame: NSRect?
     private var miniDragStartPointer: CGPoint?
     private var miniDragDidMove = false
-    private var resizeAnimationTask: Task<Void, Never>?
+    private var resizeAnimationGeneration = 0
 
     func show(model: VoiceBridgeModel) {
         if let panel {
@@ -864,38 +864,26 @@ final class FloatingPanelController {
                 || abs(panel.frame.height - frame.height) > 0.5
                 || abs(panel.frame.minX - frame.minX) > 0.5
                 || abs(panel.frame.minY - frame.minY) > 0.5 else { return }
-        resizeAnimationTask?.cancel()
-        resizeAnimationTask = nil
+        resizeAnimationGeneration += 1
+        let generation = resizeAnimationGeneration
         if reduceMotion {
             panel.setFrame(frame, display: true)
         } else {
-            let startFrame = panel.frame
-            let duration = FloatingWidgetMotionPolicy.durationSeconds
-            resizeAnimationTask = Task { @MainActor [weak panel] in
-                let startedAt = Date()
-                while !Task.isCancelled {
-                    guard let panel else { return }
-                    let progress = Date().timeIntervalSince(startedAt) / duration
-                    let intermediate = FloatingWidgetFrameInterpolationPolicy.frame(
-                        from: startFrame,
-                        to: frame,
-                        progress: progress
-                    )
-                    panel.setFrame(intermediate, display: true)
-                    if progress >= 1 {
-                        panel.setFrame(frame, display: true)
-                        // Let AppKit coalesce SwiftUI layout during the resize.
-                        // Forcing a full layout on every nominal 60 Hz frame
-                        // blocks the main actor for the large Plan Today tree,
-                        // leaving only one visible intermediate frame.
-                        panel.contentView?.needsLayout = true
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = FloatingWidgetMotionPolicy.durationSeconds
+                context.timingFunction = CAMediaTimingFunction(
+                    name: .easeInEaseOut
+                )
+                panel.animator().setFrame(frame, display: true)
+            } completionHandler: { [weak self, weak panel] in
+                Task { @MainActor in
+                    guard let self,
+                          let panel,
+                          generation == self.resizeAnimationGeneration else {
                         return
                     }
-                    try? await Task.sleep(
-                        for: .seconds(
-                            FloatingWidgetMotionPolicy.frameIntervalSeconds
-                        )
-                    )
+                    panel.setFrame(frame, display: true)
+                    panel.contentView?.needsLayout = true
                 }
             }
         }
@@ -1343,7 +1331,19 @@ struct FloatingRecorderView: View {
         }
         .onChange(of: model.plannerPresented) { _, presented in
             if presented {
-                FloatingPanelController.shared.beginPlannerTextEntry()
+                if reduceMotion {
+                    FloatingPanelController.shared.beginPlannerTextEntry()
+                } else {
+                    Task { @MainActor in
+                        try? await Task.sleep(
+                            for: .seconds(
+                                FloatingWidgetMotionPolicy.deferredWorkDelaySeconds
+                            )
+                        )
+                        guard model.plannerPresented else { return }
+                        FloatingPanelController.shared.beginPlannerTextEntry()
+                    }
+                }
             } else {
                 FloatingPanelController.shared.endPlannerTextEntry()
             }

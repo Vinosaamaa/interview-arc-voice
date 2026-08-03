@@ -351,10 +351,14 @@ least 58 points for the activity title.
   ease-in-out transaction in both directions. Their content fades with a
   restrained bottom-anchored scale while AppKit owns the corresponding window
   resize; opening and closing must feel symmetric.
-- AppKit is the only owner of animated window geometry. The SwiftUI root fills
-  every intermediate host size and pins its content bottom-trailing; it must
-  not jump immediately to the final model size while the panel is still
-  interpolating.
+- AppKit is the only owner of animated window geometry. Use one native
+  `NSAnimationContext` frame transaction for every direction; do not drive
+  window frames from a main-actor sleep loop. Publish the destination upper
+  surface and disclosure as one atomic presentation change before that native
+  transaction begins, so Focus, Plan Today, and Record never introduce an
+  intermediate model state. The SwiftUI root fills every intermediate host
+  size and pins its content bottom-trailing; it must not jump immediately to
+  the final model size while the panel is still interpolating.
 - When the wider Plan Today surface changes to Focus, the visible Focus surface
   follows every intermediate host width until it reaches the settled Focus
   width. Animating only transparent host area is a snap, not a transition.
@@ -439,6 +443,10 @@ least 58 points for the activity title.
   must not collapse the card or leave the selected transcript body blank.
 - Intermediate expansion and collapse frames visibly resize the capsule; no
   target-width snap may be hidden inside an otherwise animated native panel.
+- Compact → Focus is the motion reference for Focus → compact, Focus ↔ Plan
+  Today, Plan Today → closed, and Focus/Plan Today → Record. Every path uses
+  the same native duration and ease-in-out timing without an async preparation
+  phase or a second disclosure resize.
 - Expand and collapse keep the capsule on one bottom baseline with no vertical
   hop, flash, or competing SwiftUI geometry animation.
 - Mini recording is always the 48-point one-circle state. A linked 108-point

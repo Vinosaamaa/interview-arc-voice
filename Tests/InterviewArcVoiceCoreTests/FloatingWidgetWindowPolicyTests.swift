@@ -129,6 +129,47 @@ import Foundation
     #expect(middle.minY == start.minY)
 }
 
+@Test func everyWidgetDirectionUsesOneNativeAppKitAnimationTransaction() {
+    #expect(
+        FloatingWidgetMotionPolicy.backend
+            == .nativeAppKitAnimationContext
+    )
+    #expect(FloatingWidgetMotionPolicy.durationSeconds == 0.30)
+    #expect(
+        FloatingWidgetMotionPolicy.deferredWorkDelaySeconds
+            > FloatingWidgetMotionPolicy.durationSeconds
+    )
+}
+
+@Test func upperSurfaceAndRecordingChangesAreAtomicPresentationTransitions() {
+    let focus = FloatingWidgetPresentationState(
+        timerPanelExpanded: true,
+        plannerPresented: false,
+        dynamicRecordingInterfaceActive: false
+    )
+    let planner = FloatingWidgetPresentationTransitionPolicy.showPlanner(
+        from: focus
+    )
+    #expect(planner == FloatingWidgetPresentationState(
+        timerPanelExpanded: false,
+        plannerPresented: true,
+        dynamicRecordingInterfaceActive: false
+    ))
+
+    #expect(
+        FloatingWidgetPresentationTransitionPolicy.showFocus(from: planner)
+            == focus
+    )
+    #expect(
+        FloatingWidgetPresentationTransitionPolicy.beginRecording(from: focus)
+            == FloatingWidgetPresentationState(
+                timerPanelExpanded: false,
+                plannerPresented: false,
+                dynamicRecordingInterfaceActive: true
+            )
+    )
+}
+
 @Test func floatingPanelResizeInterpolationKeepsExactEndpoints() {
     let start = CGRect(x: 900, y: 120, width: 430, height: 340)
     let end = CGRect(x: 1_080, y: 120, width: 250, height: 56)

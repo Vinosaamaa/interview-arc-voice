@@ -267,12 +267,16 @@ activity picker, and finish drawer grow upward. The optional dynamic recording
 interface snapshots that disclosure, hides it behind one shared recording
 capsule, and restores the snapshot immediately on Stop. Hidden clocks continue
 to use authoritative timer state. AppKit owns the single bottom-anchored frame
-animation. The panel controller drives an explicit 60 Hz eased frame sequence
-for expansion and collapse, cancelling and continuing from the current
-intermediate frame when the user reverses direction. SwiftUI supplies one
-clipped upper surface and never owns window geometry. This prevents a
-transparent borderless panel from settling directly at its target frame and
-making collapse look disabled. The visible timer-to-recorder gap remains
+animation. The panel controller uses one native `NSAnimationContext`
+transaction for expansion and collapse, allowing AppKit to schedule frame
+updates against display refresh instead of waking the main actor from a sleep
+loop. Focus, Plan Today, and dynamic Record publish their destination as one
+presentation state; planner refresh and key-window activation wait until the
+geometry transaction completes. SwiftUI supplies one clipped upper surface and
+never owns window geometry. Compact-to-Focus is the motion reference for every
+direction. This prevents a transparent borderless panel from settling directly
+at its target frame and making collapse look disabled. The visible
+timer-to-recorder gap remains
 10 points outside capture. Saving uses
 the native macOS save panel: the user chooses the name and location, the
 `.m4a` suffix remains canonical, and a sibling `.txt` transcript is optional.
@@ -280,6 +284,12 @@ Recovery actions that change capsule geometry first dismiss and settle their
 anchored native popover. AppKit's completed-close notification—not a guessed
 animation delay—releases playback and Record again, so they never resize the
 anchor during popover teardown.
+
+A finalized recording with a valid decodable prefix but a wall-clock/decoded
+duration mismatch remains protected local audio. Voice offers explicit Retry
+transcription for that playable prefix, alongside Record again, Play, and Save.
+The UI labels the result as potentially partial: retry cannot recreate the
+missing interval and must never imply that the original answer is complete.
 
 The resting Standard recorder row reserves Play, Insert, and Plan Today in
 three stable trailing slots. When the linked timer drawer or Today planner is

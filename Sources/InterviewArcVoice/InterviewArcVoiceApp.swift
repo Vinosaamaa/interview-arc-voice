@@ -211,8 +211,34 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var timerInstrument: VoiceTimerInstrument?
     @Published private(set) var timerMutationInFlight = false
     @Published private(set) var timerMutationMessage: String?
-    @Published var timerPanelExpanded = false
-    @Published var plannerPresented = false
+    @Published private var floatingPresentationState =
+        FloatingWidgetPresentationState(
+            timerPanelExpanded: false,
+            plannerPresented: false,
+            dynamicRecordingInterfaceActive: false
+        )
+    var timerPanelExpanded: Bool {
+        get { floatingPresentationState.timerPanelExpanded }
+        set {
+            guard newValue != floatingPresentationState.timerPanelExpanded else {
+                return
+            }
+            var next = floatingPresentationState
+            next.timerPanelExpanded = newValue
+            floatingPresentationState = next
+        }
+    }
+    var plannerPresented: Bool {
+        get { floatingPresentationState.plannerPresented }
+        set {
+            guard newValue != floatingPresentationState.plannerPresented else {
+                return
+            }
+            var next = floatingPresentationState
+            next.plannerPresented = newValue
+            floatingPresentationState = next
+        }
+    }
     @Published var planningState = VoicePlanningPresentationState()
     @Published private(set) var planningResponse: VoicePlanningResponse?
     @Published private(set) var planningLoading = false
@@ -266,7 +292,9 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var localWhisperModelOperationInFlight = false
     @Published private(set) var localWhisperPreparationInFlight = false
     @Published private(set) var localWhisperModelMessage: String?
-    @Published private(set) var dynamicRecordingInterfaceActive = false
+    var dynamicRecordingInterfaceActive: Bool {
+        floatingPresentationState.dynamicRecordingInterfaceActive
+    }
 
     var workbenchVoiceCaptures: [PendingVoiceCapture] {
         let workbenchID = timerInstrument?.workbenchId
@@ -923,8 +951,10 @@ final class VoiceBridgeModel: ObservableObject {
     func toggleTimerPanel() {
         guard hasTimerInstrument, !isRecording else { return }
         if plannerPresented {
-            timerPanelExpanded = true
-            plannerPresented = false
+            floatingPresentationState =
+                FloatingWidgetPresentationTransitionPolicy.showFocus(
+                    from: floatingPresentationState
+                )
             timerPanelExpandedBeforePlanner = nil
             return
         }
@@ -938,19 +968,39 @@ final class VoiceBridgeModel: ObservableObject {
     func togglePlanner() {
         guard linkToInterviewArc, !isRecording, !isStartingRecording else { return }
         if plannerPresented {
-            timerPanelExpanded = timerPanelExpandedBeforePlanner ?? false
-            plannerPresented = false
+            let restoresFocus = timerPanelExpandedBeforePlanner ?? false
+            floatingPresentationState = restoresFocus
+                ? FloatingWidgetPresentationTransitionPolicy.showFocus(
+                    from: floatingPresentationState
+                )
+                : FloatingWidgetPresentationState(
+                    timerPanelExpanded: false,
+                    plannerPresented: false,
+                    dynamicRecordingInterfaceActive: false
+                )
             timerPanelExpandedBeforePlanner = nil
         } else {
             timerPanelExpandedBeforePlanner = timerPanelExpanded
-            plannerPresented = true
-            timerPanelExpanded = false
-            finishingActivityID = nil
-            activityPickerExpanded = false
-            sessionFinishResolutionRequested = false
+            floatingPresentationState =
+                FloatingWidgetPresentationTransitionPolicy.showPlanner(
+                    from: floatingPresentationState
+                )
+            if finishingActivityID != nil { finishingActivityID = nil }
+            if activityPickerExpanded { activityPickerExpanded = false }
+            if sessionFinishResolutionRequested {
+                sessionFinishResolutionRequested = false
+            }
         }
         if plannerPresented {
-            Task { await refreshPlanning() }
+            Task { [weak self] in
+                try? await Task.sleep(
+                    for: .seconds(
+                        FloatingWidgetMotionPolicy.deferredWorkDelaySeconds
+                    )
+                )
+                guard let self, self.plannerPresented else { return }
+                await self.refreshPlanning()
+            }
         }
     }
 
@@ -960,8 +1010,10 @@ final class VoiceBridgeModel: ObservableObject {
 
     func showFocusSurface() {
         guard hasTimerInstrument else { return }
-        timerPanelExpanded = true
-        plannerPresented = false
+        floatingPresentationState =
+            FloatingWidgetPresentationTransitionPolicy.showFocus(
+                from: floatingPresentationState
+            )
         timerPanelExpandedBeforePlanner = nil
     }
 
@@ -3548,17 +3600,23 @@ final class VoiceBridgeModel: ObservableObject {
                 activityPickerExpanded: activityPickerExpanded
             )
             disclosureStateBeforeRecording = currentDisclosure
-            dynamicRecordingInterfaceActive = true
             let recordingDisclosure = FloatingWidgetWindowPolicy
                 .disclosureStateWhenRecordingStarts(current: currentDisclosure)
-            timerPanelExpanded = recordingDisclosure.timerPanelExpanded
-            finishingActivityID = recordingDisclosure.finishingActivityID
-            activityPickerExpanded = recordingDisclosure.activityPickerExpanded
+            if finishingActivityID != recordingDisclosure.finishingActivityID {
+                finishingActivityID = recordingDisclosure.finishingActivityID
+            }
+            if activityPickerExpanded
+                != recordingDisclosure.activityPickerExpanded {
+                activityPickerExpanded = recordingDisclosure.activityPickerExpanded
+            }
         } else {
             disclosureStateBeforeRecording = nil
-            dynamicRecordingInterfaceActive = false
         }
-        plannerPresented = false
+        floatingPresentationState =
+            FloatingWidgetPresentationTransitionPolicy.beginRecording(
+                from: floatingPresentationState,
+                dynamicInterfaceEnabled: dynamicRecordingInterfaceEnabled
+            )
     }
 
     private func stopAndProcess(unexpectedTermination: Bool = false) {
@@ -3683,18 +3741,23 @@ final class VoiceBridgeModel: ObservableObject {
                     recording,
                     activityTitle: memoActivityTitle
                 )
-            case .preserveWithoutRetry:
+            case .retryTranscription:
                 rememberLastAudio(
                     recording,
                     activityTitle: memoActivityTitle
                 )
-                canRetryLastTranscription = false
+                canRetryLastTranscription = true
                 reportFailure(
                     kind: .recording,
                     title: "Recording ended early",
-                    message: "Playable audio preserved · record again for a complete answer",
+                    message: "Playable audio preserved · retry its partial transcription or record again",
                     detail: recordingDiagnosticDetail(evidence),
-                    actions: [.recordAgain, .playRecording, .saveRecording]
+                    actions: [
+                        .retryTranscription,
+                        .recordAgain,
+                        .playRecording,
+                        .saveRecording,
+                    ]
                 )
                 return
             case .recordAgain:
@@ -3745,19 +3808,22 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     private func restoreDisclosureAfterRecording() {
+        let restoredTimerPanelExpanded =
+            disclosureStateBeforeRecording?.timerPanelExpanded
         if let disclosureStateBeforeRecording {
             // Restore the hidden disclosure while the recording frame is still
             // active. The view reveals it only after the final state change, so
             // AppKit performs one anchored resize instead of a compact detour.
-            timerPanelExpanded = disclosureStateBeforeRecording.timerPanelExpanded
             finishingActivityID = disclosureStateBeforeRecording.finishingActivityID
             activityPickerExpanded = disclosureStateBeforeRecording.activityPickerExpanded
         }
+        floatingPresentationState =
+            FloatingWidgetPresentationTransitionPolicy.restoreAfterRecording(
+                from: floatingPresentationState,
+                timerPanelExpanded: restoredTimerPanelExpanded,
+                plannerPresented: plannerPresentedBeforeRecording
+            )
         self.disclosureStateBeforeRecording = nil
-        dynamicRecordingInterfaceActive = false
-        if let plannerPresentedBeforeRecording {
-            plannerPresented = plannerPresentedBeforeRecording
-        }
         self.plannerPresentedBeforeRecording = nil
     }
 

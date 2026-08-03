@@ -45,7 +45,7 @@ public struct RecordingIntegrityResult: Equatable, Sendable {
 
 public enum RecordingRecoveryAction: Equatable, Sendable {
     case transcribe
-    case preserveWithoutRetry
+    case retryTranscription
     case recordAgain
 }
 
@@ -63,7 +63,7 @@ public enum RecordingRecoveryPolicy {
         if evidence.fileSizeBytes >= 512,
            evidence.decodedFrameCount > 0,
            evidence.decodedDurationSeconds > 0 {
-            return .preserveWithoutRetry
+            return .retryTranscription
         }
         return .recordAgain
     }
