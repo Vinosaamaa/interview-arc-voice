@@ -467,9 +467,8 @@ final product-level observation; no literal phrase is globally blacklisted.
 The installed PR #168 application delivered another genuine long-form
 Enhanced-mode dictation with the known terminal phrase even though the user did
 not speak it. The private audio and complete transcript remain local. Bounded
-diagnostics showed about 30.6 seconds of decoded audio, complete alignment
-across 75 words and five segments, no omitted text, and provider lexical
-coverage ending about 0.16 seconds before the decoded file.
+diagnostics showed complete word alignment, no omitted text, and provider
+lexical coverage ending inside the decoded audio timeline.
 
 The malformed-time repair was present but not applicable. The phrase timestamps
 were inside the decoded timeline, and its encompassing provider segment carried
