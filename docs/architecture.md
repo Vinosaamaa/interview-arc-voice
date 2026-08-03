@@ -211,8 +211,13 @@ overlap-deduplicated and timestamp evidence is offset. An explicitly installed
 assembled candidate remains uncertain. The model lives in private app-owned
 storage with a permission-0600 SHA-256 manifest; Settings owns installation,
 integrity status, and deletion. It is never downloaded automatically and never
-runs on the healthy Groq path. An installed model prewarms asynchronously after
-launch. The foreground recovery path checks lock-protected readiness without
+runs on the healthy Groq path. An explicitly installed model prewarms
+asynchronously at utility priority only after Voice has presented its local UI,
+restored local state, and loaded secure settings. This is an intentional opt-in
+latency/memory tradeoff: users who do not install the model pay no model I/O or
+memory cost, while users who install it avoid the known tens-of-seconds cold
+recovery penalty. The loaded engine is released when the model is deleted or
+replaced. The foreground recovery path checks lock-protected readiness without
 waiting on the model actor; when prewarm is incomplete, it preserves the best
 provider candidate immediately instead of synchronously cold-loading the
 model. Local decoding receives the same resolved

@@ -130,6 +130,11 @@ public actor LocalWhisperModelManager {
     private var installationInProgress = false
     private var verifiedManifest: LocalWhisperModelManifest?
     private var engine: WhisperKit?
+    private var modelGeneration: UInt64 = 0
+    private var preparation: (
+        generation: UInt64,
+        task: Task<WhisperKit, Error>
+    )?
     private nonisolated let readiness = LocalWhisperReadiness()
 
     public nonisolated var isPreparedForRecovery: Bool {
@@ -228,8 +233,7 @@ public actor LocalWhisperModelManager {
             ofItemAtPath: manifestURL.path
         )
         verifiedManifest = manifest
-        engine = nil
-        readiness.setPrepared(false)
+        invalidatePreparedEngine()
         return .init(
             state: .available,
             model: model,
@@ -241,9 +245,8 @@ public actor LocalWhisperModelManager {
         if installationInProgress {
             throw LocalWhisperModelError.installationInProgress
         }
-        engine = nil
+        invalidatePreparedEngine()
         verifiedManifest = nil
-        readiness.setPrepared(false)
         guard fileManager.fileExists(atPath: rootDirectory.path) else { return }
         let children = try fileManager.contentsOfDirectory(
             at: rootDirectory,
@@ -371,6 +374,20 @@ public actor LocalWhisperModelManager {
             return engine
         }
         try Task.checkCancellation()
+        let generation = modelGeneration
+        if let preparation,
+           preparation.generation == generation {
+            let prepared = try await preparation.task.value
+            try Task.checkCancellation()
+            guard modelGeneration == generation,
+                  verifiedManifest == manifest else {
+                throw CancellationError()
+            }
+            engine = prepared
+            self.preparation = nil
+            readiness.setPrepared(true)
+            return prepared
+        }
         let modelFolder = try safeModelFolder(for: manifest)
         let config = WhisperKitConfig(
             model: manifest.model,
@@ -382,11 +399,34 @@ public actor LocalWhisperModelManager {
             download: false,
             useBackgroundDownloadSession: false
         )
-        let prepared = try await WhisperKit(config)
-        try Task.checkCancellation()
-        engine = prepared
-        readiness.setPrepared(true)
-        return prepared
+        let task = Task { try await WhisperKit(config) }
+        preparation = (generation, task)
+        do {
+            let prepared = try await task.value
+            try Task.checkCancellation()
+            guard modelGeneration == generation,
+                  verifiedManifest == manifest else {
+                throw CancellationError()
+            }
+            engine = prepared
+            preparation = nil
+            readiness.setPrepared(true)
+            return prepared
+        } catch {
+            if modelGeneration == generation {
+                preparation = nil
+                readiness.setPrepared(false)
+            }
+            throw error
+        }
+    }
+
+    private func invalidatePreparedEngine() {
+        modelGeneration &+= 1
+        preparation?.task.cancel()
+        preparation = nil
+        engine = nil
+        readiness.setPrepared(false)
     }
 
     private func verifiedModelManifest() throws -> LocalWhisperModelManifest {

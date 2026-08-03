@@ -337,7 +337,12 @@ This verification proved artifact provenance and the empty-segment fixture,
 but it did not cover the later malformed-word/nonempty-segment response shape.
 It is therefore not final verification for issue #123.
 
-## Final alternate-recovery verification
+## Superseded alternate-recovery verification
+
+This verification finalized the alternate provider-recovery repair in pull
+request #147. It remains valid for that response topology, but it did not cover
+the later cold-start latency recurrence and is therefore no longer the final
+closure evidence for this reopened incident.
 
 - Two retained long recordings reproduced the failure across three whole-file
   Groq submissions each. The provider timestamp JSON changed between runs, but
@@ -429,9 +434,10 @@ The follow-up repair changes the ownership of model preparation and latency:
 3. local recovery runs only when the engine is already warm; otherwise Voice
    immediately preserves the best eligible provider candidate and original
    M4A as coverage-uncertain;
-4. primary provider requests have a 20-second transport bound and the
-   alternate coverage-recovery requests have an 8-second bound instead of the
-   previous 300-second request timeout; and
+4. primary provider requests have a 20-second total request-transport bound and
+   the much smaller approximately 30-second alternate-recovery uploads have an
+   8-second total request-transport bound instead of the previous 300-second
+   request timeout; and
 5. privacy-safe diagnostics explicitly report when local recovery was skipped
    because the model was not warm.
 
