@@ -90,6 +90,7 @@ import Testing
         integrityReasons: [.missingSpeechCoverage],
         localInferenceSeconds: 1.25,
         localPromptTokenCount: 17,
+        localFallbackSkippedBecauseNotReady: true,
         captureTargetKind: .codexCLITerminal,
         captureTargetDecisionReason: .verifiedCodexCLIProcess,
         captureRouteReason: .linkedAfterContextRefresh,
@@ -110,6 +111,7 @@ import Testing
     #expect(record.report.contains("Transcription integrity reasons: missingSpeechCoverage"))
     #expect(record.report.contains("Local vocabulary conditioning: true"))
     #expect(record.report.contains("Local vocabulary prompt tokens: 17"))
+    #expect(record.report.contains("Local fallback skipped because model was not warm: true"))
     #expect(record.report.contains("Capture target: codexCLITerminal"))
     #expect(record.report.contains("Capture target decision: verifiedCodexCLIProcess"))
     #expect(record.report.contains("Capture route: linkedAfterContextRefresh"))

@@ -68,6 +68,8 @@ import Testing
 @Test func recoveryConcurrencyIsBoundedWithoutMultiplyingNearLimitBodies() {
     #expect(AudioChunkingPolicy.coverageRecovery.maximumConcurrentRequests == 4)
     #expect(AudioChunkingPolicy.providerLimit.maximumConcurrentRequests == 1)
+    #expect(AudioChunkingPolicy.coverageRecovery.requestTimeoutInterval == 8)
+    #expect(AudioChunkingPolicy.providerLimit.requestTimeoutInterval == 20)
 }
 
 @Test func overlappingDurationChunksMergeWithoutDuplicatingBoundaryWords() {

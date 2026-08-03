@@ -202,6 +202,7 @@ final class VoiceBridgeModel: ObservableObject {
         var localInferenceSeconds: Double?
         var localPromptTokenCount: Int?
         var localFallbackAttempted: Bool?
+        var localFallbackSkippedBecauseNotReady: Bool?
         var localValidationReasons: [TranscriptionIntegrityReason]?
     }
 
@@ -871,6 +872,7 @@ final class VoiceBridgeModel: ObservableObject {
             restoreRecoverableRecordingIfNeeded()
             await loadSecureSettings()
             await refreshDiagnostics()
+            await prepareInstalledLocalWhisperInBackground()
             startLiveUpdates()
         }
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -2060,6 +2062,16 @@ final class VoiceBridgeModel: ObservableObject {
         localWhisperModel = await localWhisperModelManager.snapshot()
     }
 
+    private func prepareInstalledLocalWhisperInBackground() async {
+        guard let localWhisperModelManager else { return }
+        localWhisperModel = await localWhisperModelManager.snapshot()
+        guard localWhisperModel.state == .available else { return }
+        Task(priority: .utility) {
+            _ = await localWhisperModelManager
+                .prepareForRecoveryIfInstalled()
+        }
+    }
+
     func installLocalWhisperModel() {
         guard !localWhisperModelOperationInFlight,
               let localWhisperModelManager else { return }
@@ -2070,13 +2082,17 @@ final class VoiceBridgeModel: ObservableObject {
             do {
                 let snapshot = try await localWhisperModelManager.install()
                 self.localWhisperModel = snapshot
+                let prepared = await localWhisperModelManager
+                    .prepareForRecoveryIfInstalled()
                 let size = snapshot.sizeBytes.map {
                     ByteCountFormatter.string(
                         fromByteCount: $0,
                         countStyle: .file
                     )
                 } ?? "an unknown size"
-                self.localWhisperModelMessage = "Local recovery is ready (\(size))."
+                self.localWhisperModelMessage = prepared
+                    ? "Local recovery is ready (\(size))."
+                    : "The model was installed, but preparation failed. Voice will retry preparation after relaunch."
             } catch is CancellationError {
                 self.localWhisperModelMessage = "Local model installation was cancelled."
             } catch {
@@ -2472,6 +2488,8 @@ final class VoiceBridgeModel: ObservableObject {
             localInferenceSeconds: transcription.localInferenceSeconds,
             localPromptTokenCount: transcription.localPromptTokenCount,
             localFallbackAttempted: transcription.localFallbackAttempted,
+            localFallbackSkippedBecauseNotReady:
+                transcription.localFallbackSkippedBecauseNotReady,
             localValidationReasons: transcription.localValidationReasons,
             captureTargetKind: seed.captureTargetKind,
             captureTargetDecisionReason: seed.captureTargetDecisionReason,
@@ -3082,6 +3100,9 @@ final class VoiceBridgeModel: ObservableObject {
                         integrityFailure?.localPromptTokenCount,
                     localFallbackAttempted:
                         integrityFailure?.localFallbackAttempted,
+                    localFallbackSkippedBecauseNotReady:
+                        integrityFailure?
+                            .localFallbackSkippedBecauseNotReady,
                     localValidationReasons:
                         integrityFailure?.localValidationReasons
                 ),

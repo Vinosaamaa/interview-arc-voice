@@ -102,6 +102,23 @@ private struct LocalWhisperModelManifest: Codable, Equatable, Sendable {
     }
 }
 
+private final class LocalWhisperReadiness: @unchecked Sendable {
+    private let lock = NSLock()
+    private var prepared = false
+
+    var isPrepared: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return prepared
+    }
+
+    func setPrepared(_ value: Bool) {
+        lock.lock()
+        prepared = value
+        lock.unlock()
+    }
+}
+
 public actor LocalWhisperModelManager {
     public static let defaultModel = "base.en"
     public static let runtimeVersion = "argmax-oss-swift-1.0.0"
@@ -113,6 +130,16 @@ public actor LocalWhisperModelManager {
     private var installationInProgress = false
     private var verifiedManifest: LocalWhisperModelManifest?
     private var engine: WhisperKit?
+    private var modelGeneration: UInt64 = 0
+    private var preparation: (
+        generation: UInt64,
+        task: Task<WhisperKit, Error>
+    )?
+    private nonisolated let readiness = LocalWhisperReadiness()
+
+    public nonisolated var isPreparedForRecovery: Bool {
+        readiness.isPrepared
+    }
 
     public init(
         rootDirectory: URL,
@@ -206,7 +233,7 @@ public actor LocalWhisperModelManager {
             ofItemAtPath: manifestURL.path
         )
         verifiedManifest = manifest
-        engine = nil
+        invalidatePreparedEngine()
         return .init(
             state: .available,
             model: model,
@@ -218,7 +245,7 @@ public actor LocalWhisperModelManager {
         if installationInProgress {
             throw LocalWhisperModelError.installationInProgress
         }
-        engine = nil
+        invalidatePreparedEngine()
         verifiedManifest = nil
         guard fileManager.fileExists(atPath: rootDirectory.path) else { return }
         let children = try fileManager.contentsOfDirectory(
@@ -239,24 +266,7 @@ public actor LocalWhisperModelManager {
     ) async throws -> ArcTranscriptionResult {
         try Task.checkCancellation()
         let manifest = try verifiedModelManifest()
-        let modelFolder = try safeModelFolder(for: manifest)
-        let whisper: WhisperKit
-        if let engine {
-            whisper = engine
-        } else {
-            let config = WhisperKitConfig(
-                model: manifest.model,
-                downloadBase: rootDirectory,
-                modelFolder: modelFolder.path,
-                verbose: false,
-                prewarm: true,
-                load: true,
-                download: false,
-                useBackgroundDownloadSession: false
-            )
-            whisper = try await WhisperKit(config)
-            engine = whisper
-        }
+        let whisper = try await preparedEngine(for: manifest)
         try Task.checkCancellation()
         let promptTokens = whisper.tokenizer.map {
             LocalWhisperPromptPolicy.boundedTokens(
@@ -339,6 +349,84 @@ public actor LocalWhisperModelManager {
             localInferenceSeconds: inferenceSeconds,
             localPromptTokenCount: effectivePromptTokens.count
         )
+    }
+
+    /// Loads and prewarms an already-installed model outside the foreground
+    /// transcription path. Failure is intentionally nonfatal: the provider
+    /// candidate remains available and recovery simply skips local inference.
+    @discardableResult
+    public func prepareForRecoveryIfInstalled() async -> Bool {
+        do {
+            let manifest = try verifiedModelManifest()
+            _ = try await preparedEngine(for: manifest)
+            return true
+        } catch {
+            readiness.setPrepared(false)
+            return false
+        }
+    }
+
+    private func preparedEngine(
+        for manifest: LocalWhisperModelManifest
+    ) async throws -> WhisperKit {
+        if let engine {
+            readiness.setPrepared(true)
+            return engine
+        }
+        try Task.checkCancellation()
+        let generation = modelGeneration
+        if let preparation,
+           preparation.generation == generation {
+            let prepared = try await preparation.task.value
+            try Task.checkCancellation()
+            guard modelGeneration == generation,
+                  verifiedManifest == manifest else {
+                throw CancellationError()
+            }
+            engine = prepared
+            self.preparation = nil
+            readiness.setPrepared(true)
+            return prepared
+        }
+        let modelFolder = try safeModelFolder(for: manifest)
+        let config = WhisperKitConfig(
+            model: manifest.model,
+            downloadBase: rootDirectory,
+            modelFolder: modelFolder.path,
+            verbose: false,
+            prewarm: true,
+            load: true,
+            download: false,
+            useBackgroundDownloadSession: false
+        )
+        let task = Task { try await WhisperKit(config) }
+        preparation = (generation, task)
+        do {
+            let prepared = try await task.value
+            try Task.checkCancellation()
+            guard modelGeneration == generation,
+                  verifiedManifest == manifest else {
+                throw CancellationError()
+            }
+            engine = prepared
+            preparation = nil
+            readiness.setPrepared(true)
+            return prepared
+        } catch {
+            if modelGeneration == generation {
+                preparation = nil
+                readiness.setPrepared(false)
+            }
+            throw error
+        }
+    }
+
+    private func invalidatePreparedEngine() {
+        modelGeneration &+= 1
+        preparation?.task.cancel()
+        preparation = nil
+        engine = nil
+        readiness.setPrepared(false)
     }
 
     private func verifiedModelManifest() throws -> LocalWhisperModelManifest {
@@ -450,6 +538,10 @@ public actor ManagedLocalWhisperTranscriber: SpeechTranscribing {
 
     public init(manager: LocalWhisperModelManager) {
         self.manager = manager
+    }
+
+    public nonisolated var isReadyForImmediateTranscription: Bool {
+        manager.isPreparedForRecovery
     }
 
     public func transcribe(

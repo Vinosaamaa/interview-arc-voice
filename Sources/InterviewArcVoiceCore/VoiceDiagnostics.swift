@@ -37,6 +37,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
     public let localInferenceSeconds: Double?
     public let localPromptTokenCount: Int?
     public let localFallbackAttempted: Bool?
+    public let localFallbackSkippedBecauseNotReady: Bool?
     public let localValidationReasons: [TranscriptionIntegrityReason]?
     public let captureTargetKind: CaptureTargetKind?
     public let captureTargetDecisionReason: CaptureTargetDecisionReason?
@@ -74,6 +75,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         localInferenceSeconds: Double? = nil,
         localPromptTokenCount: Int? = nil,
         localFallbackAttempted: Bool? = nil,
+        localFallbackSkippedBecauseNotReady: Bool? = nil,
         localValidationReasons: [TranscriptionIntegrityReason]? = nil,
         captureTargetKind: CaptureTargetKind? = nil,
         captureTargetDecisionReason: CaptureTargetDecisionReason? = nil,
@@ -110,6 +112,8 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
         self.localInferenceSeconds = localInferenceSeconds
         self.localPromptTokenCount = localPromptTokenCount
         self.localFallbackAttempted = localFallbackAttempted
+        self.localFallbackSkippedBecauseNotReady =
+            localFallbackSkippedBecauseNotReady
         self.localValidationReasons = localValidationReasons
         self.captureTargetKind = captureTargetKind
         self.captureTargetDecisionReason = captureTargetDecisionReason
@@ -149,6 +153,7 @@ public struct VoiceDiagnosticRecord: Codable, Equatable, Identifiable, Sendable 
             "Local vocabulary conditioning: \(localPromptTokenCount.map { String($0 > 0) } ?? "Unavailable")",
             "Local vocabulary prompt tokens: \(localPromptTokenCount.map(String.init) ?? "Unavailable")",
             "Local fallback attempted: \(localFallbackAttempted.map { String($0) } ?? "Unavailable")",
+            "Local fallback skipped because model was not warm: \(localFallbackSkippedBecauseNotReady.map { String($0) } ?? "Unavailable")",
             "Local validation reasons: \(localValidationReasons?.map(\.rawValue).joined(separator: ", ") ?? "None")",
             "Capture target: \(captureTargetKind?.rawValue ?? "Unavailable")",
             "Capture target decision: \(captureTargetDecisionReason?.rawValue ?? "Unavailable")",

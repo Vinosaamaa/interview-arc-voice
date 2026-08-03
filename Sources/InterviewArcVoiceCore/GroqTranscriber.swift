@@ -107,6 +107,7 @@ public typealias ArcTranscriptionResult = TranscriptionResult
 public protocol SpeechTranscribing: Sendable {
     var diagnosticEngine: String { get }
     var diagnosticModel: String? { get }
+    var isReadyForImmediateTranscription: Bool { get }
     func transcribe(fileURL: URL, prompt: String, temporaryDirectory: URL) async throws -> TranscriptionResult
     func transcribeCoverageRecovery(
         fileURL: URL,
@@ -117,6 +118,7 @@ public protocol SpeechTranscribing: Sendable {
 public extension SpeechTranscribing {
     var diagnosticEngine: String { "unknown" }
     var diagnosticModel: String? { nil }
+    var isReadyForImmediateTranscription: Bool { true }
 
     func transcribeCoverageRecovery(
         fileURL: URL,
@@ -204,7 +206,9 @@ public actor GroqTranscriber: SpeechTranscribing {
                         prompt: prompt,
                         apiKey: apiKey,
                         model: model,
-                        session: session
+                        session: session,
+                        timeoutInterval:
+                            chunkingPolicy.requestTimeoutInterval
                     )
                     return (chunk, response)
                 }
@@ -223,7 +227,9 @@ public actor GroqTranscriber: SpeechTranscribing {
                             prompt: prompt,
                             apiKey: apiKey,
                             model: model,
-                            session: session
+                            session: session,
+                            timeoutInterval:
+                                chunkingPolicy.requestTimeoutInterval
                         )
                         return (chunk, response)
                     }
@@ -261,14 +267,15 @@ public actor GroqTranscriber: SpeechTranscribing {
         prompt: String,
         apiKey: String,
         model: String,
-        session: URLSession
+        session: URLSession,
+        timeoutInterval: TimeInterval
     ) async throws -> GroqTranscription {
         let boundary = "InterviewArcGroq-\(UUID().uuidString)"
         var request = URLRequest(url: URL(string: "https://api.groq.com/openai/v1/audio/transcriptions")!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 300
+        request.timeoutInterval = timeoutInterval
 
         var body = Data()
         body.appendGroqField("model", model, boundary: boundary)
@@ -327,6 +334,13 @@ public enum AudioChunkingPolicy: Sendable {
         switch self {
         case .providerLimit: 1
         case .coverageRecovery: 4
+        }
+    }
+
+    var requestTimeoutInterval: TimeInterval {
+        switch self {
+        case .providerLimit: 20
+        case .coverageRecovery: 8
         }
     }
 }
