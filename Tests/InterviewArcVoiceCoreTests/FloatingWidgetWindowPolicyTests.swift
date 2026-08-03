@@ -39,10 +39,26 @@ import Foundation
 }
 
 @Test func compactTimerClusterReservesReadableTitleSpace() {
-    #expect(FloatingWidgetCompactTimerLayoutPolicy.activityClockWidth == 36)
-    #expect(FloatingWidgetCompactTimerLayoutPolicy.sessionClockWidth == 42)
-    #expect(FloatingWidgetCompactTimerLayoutPolicy.maximumClusterWidth <= 84)
+    #expect(FloatingWidgetCompactTimerLayoutPolicy.activityClockWidth == 52)
+    #expect(FloatingWidgetCompactTimerLayoutPolicy.sessionClockWidth == 31)
+    #expect(FloatingWidgetCompactTimerLayoutPolicy.maximumClusterWidth <= 90)
     #expect(FloatingWidgetCompactTimerLayoutPolicy.minimumTitleWidth >= 58)
+}
+
+@Test func activityClockAlwaysShowsHoursMinutesAndSeconds() {
+    #expect(CompactTimerTextPolicy.activityElapsed(seconds: 3_845) == "01:04:05")
+    #expect(CompactTimerTextPolicy.activityElapsed(seconds: 65) == "00:01:05")
+}
+
+@Test func sessionClockOmitsSecondsAndKeepsOvertimeVisible() {
+    #expect(CompactTimerTextPolicy.sessionRemaining(seconds: 50_148) == "13:55")
+    #expect(CompactTimerTextPolicy.sessionRemaining(seconds: -3_661) == "+01:01")
+}
+
+@Test func focusPlannerTransitionUsesOneBottomAnchoredResize() {
+    #expect(FloatingWidgetUpperSurfaceTransitionPolicy.style == .clippedCrossfade)
+    #expect(FloatingWidgetUpperSurfaceTransitionPolicy.keepsBottomAnchor)
+    #expect(FloatingWidgetUpperSurfaceTransitionPolicy.usesSingleHostResize)
 }
 
 @Test func animatedHostOwnsGeometryWhileSwiftUIStaysBottomTrailing() {
