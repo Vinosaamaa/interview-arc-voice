@@ -340,7 +340,7 @@ public enum FloatingWidgetUpperSurfaceTransitionPolicy {
         if desired == .focus, retained == .planToday {
             return .planToday
         }
-        desired ?? retained
+        return desired ?? retained
     }
 
     public static func shouldRetainOutgoing(
