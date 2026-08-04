@@ -180,18 +180,36 @@ import Testing
 @Test func restoredBluetoothBaselineMustRemainStableBeforeSnapshotClears() {
     var tracker = BackgroundAudioBaselineStabilityTracker()
 
-    #expect(!tracker.observe(baselineAtOriginalVolume: true, now: 10))
-    #expect(!tracker.observe(baselineAtOriginalVolume: true, now: 12.99))
-    #expect(tracker.observe(baselineAtOriginalVolume: true, now: 13))
+    let started = tracker.observe(baselineAtOriginalVolume: true, now: 10)
+    let almostStable = tracker.observe(
+        baselineAtOriginalVolume: true,
+        now: 12.99
+    )
+    let stable = tracker.observe(baselineAtOriginalVolume: true, now: 13)
+
+    #expect(!started)
+    #expect(!almostStable)
+    #expect(stable)
 }
 
 @Test func bluetoothRouteResetRestartsTheStableReadbackWindow() {
     var tracker = BackgroundAudioBaselineStabilityTracker()
 
-    #expect(!tracker.observe(baselineAtOriginalVolume: true, now: 10))
-    #expect(!tracker.observe(baselineAtOriginalVolume: false, now: 11))
+    let firstStart = tracker.observe(baselineAtOriginalVolume: true, now: 10)
+    let reset = tracker.observe(baselineAtOriginalVolume: false, now: 11)
+
+    #expect(!firstStart)
+    #expect(!reset)
     #expect(!tracker.isTracking)
-    #expect(!tracker.observe(baselineAtOriginalVolume: true, now: 12))
-    #expect(!tracker.observe(baselineAtOriginalVolume: true, now: 14.99))
-    #expect(tracker.observe(baselineAtOriginalVolume: true, now: 15))
+
+    let secondStart = tracker.observe(baselineAtOriginalVolume: true, now: 12)
+    let almostStable = tracker.observe(
+        baselineAtOriginalVolume: true,
+        now: 14.99
+    )
+    let stable = tracker.observe(baselineAtOriginalVolume: true, now: 15)
+
+    #expect(!secondStart)
+    #expect(!almostStable)
+    #expect(stable)
 }
