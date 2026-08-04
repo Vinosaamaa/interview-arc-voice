@@ -1615,6 +1615,26 @@ final class VoiceBridgeModel: ObservableObject {
         contextMessage = "Capture and Voice v2 envelope copied."
     }
 
+    func copyPendingCaptureDiagnostic(_ capture: PendingVoiceCapture) {
+        let lines = [
+            "Interview Arc Voice delivery diagnostic",
+            "captureId: \(capture.id)",
+            "turnId: \(capture.turnID)",
+            "clipId: \(capture.clipID)",
+            "activityId: \(capture.activity.activityId)",
+            "state: \((capture.localState ?? .insertedRegistrationPending).rawValue)",
+            "stage: \(capture.deliveryStage?.rawValue ?? "unknown")",
+            "attempt: \(capture.retryAttempt ?? 0)",
+            "errorCode: \(capture.lastErrorCode ?? "none")",
+            "httpStatus: \(capture.lastErrorStatusCode.map(String.init) ?? "none")",
+            "retryable: \(capture.lastErrorRetryable.map(String.init) ?? "unknown")",
+        ]
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(lines.joined(separator: "\n"), forType: .string)
+        contextMessage = "Redacted delivery diagnostic copied."
+    }
+
     func insertPendingAgain(
         _ capture: PendingVoiceCapture,
         dismissMenu: @escaping @MainActor () -> Void
@@ -4065,6 +4085,7 @@ final class VoiceBridgeModel: ObservableObject {
                 && $0.localState != .needsDecision
                 && $0.localState != .excludedGracePeriod
                 && $0.localState != .quarantinedConflict
+                && $0.localState != .needsAttention
         }.count
         pendingRetryCount = legacyCount + transientCaptureCount
         synchronizePendingReconciliationLoop()
@@ -4305,7 +4326,7 @@ final class VoiceBridgeModel: ObservableObject {
         pendingRetryInFlight = true
         defer { pendingRetryInFlight = false }
         let previousPhase = phase
-        _ = await pipeline.retryPending()
+        _ = await pipeline.retryPending(force: false)
         await updateRetryCount()
         await refreshTranscriptHistory()
         if VoiceBackgroundPresentationPolicy.decision(
@@ -5896,6 +5917,12 @@ private struct VoiceBridgeMenu: View {
                 captureAction("Copy", symbol: "doc.on.doc") {
                     model.copyPendingCapture(capture)
                 }
+                if capture.localState == .needsAttention
+                    || capture.localState == .quarantinedConflict {
+                    captureAction("Copy delivery details", symbol: "stethoscope") {
+                        model.copyPendingCaptureDiagnostic(capture)
+                    }
+                }
                 Spacer()
                 if capture.localState == .needsDecision {
                     Button("Delete") {
@@ -5909,6 +5936,11 @@ private struct VoiceBridgeMenu: View {
                     .controlSize(.mini)
                 } else if capture.localState == .acceptedDelivering {
                     Button("Retry upload", action: model.retryPending)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.mini)
+                } else if capture.localState == .needsAttention,
+                          capture.lastErrorRetryable == true {
+                    Button("Retry once", action: model.retryPending)
                         .buttonStyle(.borderedProminent)
                         .controlSize(.mini)
                 } else if capture.localState == .audioLostNeedsAcknowledgement {
@@ -5946,15 +5978,32 @@ private struct VoiceBridgeMenu: View {
         case .needsDecision: return "Needs decision"
         case .excludedGracePeriod: return "Excluded · expires in 24h"
         case .acceptedDelivering:
-            return capture.lastErrorCode == nil
-                ? "Related · uploading audio"
-                : "Upload failed · recording safe locally"
+            if let nextAttemptAt = capture.nextAttemptAt {
+                let seconds = max(0, Int(nextAttemptAt.timeIntervalSinceNow.rounded(.up)))
+                return "\(deliveryStageLabel(capture.deliveryStage)) · retry in \(seconds)s"
+            }
+            return "Related · \(deliveryStageLabel(capture.deliveryStage))"
+        case .needsAttention:
+            return "Delivery paused · needs attention"
         case .audioLostNeedsAcknowledgement:
             return "Recording unavailable · acknowledge"
         case .audioLostAcknowledged:
             return "Recording unavailable · acknowledged"
         case .quarantinedConflict: return "Conflict · review required"
         case .complete: return "R2 available · complete"
+        }
+    }
+
+    private func deliveryStageLabel(_ stage: VoiceCaptureDeliveryStage?) -> String {
+        switch stage {
+        case .transcriptPending: return "Transcript"
+        case .transcriptCommitted: return "Transcript saved"
+        case .audioPending: return "Audio upload"
+        case .audioAvailable: return "Audio saved"
+        case .coachPending: return "Coach queue"
+        case .coachQueued: return "Coach"
+        case .complete: return "Complete"
+        case nil: return "Delivery"
         }
     }
 

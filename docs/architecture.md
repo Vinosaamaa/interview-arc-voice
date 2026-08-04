@@ -96,6 +96,24 @@ This safety path recovers a decision whose best-effort live invalidation was
 missed without re-registering known captures. Permanent identity conflicts are
 quarantined.
 
+Accepted completion is a persisted state machine rather than one monolithic
+retry: transcript commit, R2 availability, Delivery Coach queue, Delivery
+Coach completion, and settled local retention each leave an idempotent receipt
+in the pending record. Reconciliation resumes only the first incomplete stage.
+The API's structured retryability is authoritative. Permanent conflicts stop
+immediately; transient stage failures use bounded backoff and open
+`needs_attention` after eight attempts or six hours. Manual Retry performs one
+attempt. A stage success clears only that stage's retry budget, and the full
+server code/status/safe message survive relaunch for diagnostics.
+
+Before any accepted transcript retry, Voice reads the owner/activity-scoped
+delivery-blocker receipt. A group member the server already marks received is
+not posted again; Voice persists the response-group identity/digest and resumes
+at the first incomplete audio or coaching stage. A quarantined canonical group
+becomes terminal local attention instead of retry traffic. Receipt-read
+transport failures use the same bounded retry policy and never fall back to an
+unverified content mutation.
+
 The menu-bar recovery surface lists every linked capture belonging to the
 currently open workbench, not merely the newest transcript-history records.
 Untouched `pending` captures do not silently block Finish: the server

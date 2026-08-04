@@ -6,9 +6,20 @@ public enum LocalVoiceCaptureState: String, Codable, Equatable, Sendable {
     case needsDecision = "needs_decision"
     case excludedGracePeriod = "excluded_grace_period"
     case acceptedDelivering = "accepted_delivering"
+    case needsAttention = "needs_attention"
     case audioLostNeedsAcknowledgement = "audio_lost_needs_acknowledgement"
     case audioLostAcknowledged = "audio_lost_acknowledged"
     case quarantinedConflict = "quarantined_conflict"
+    case complete
+}
+
+public enum VoiceCaptureDeliveryStage: String, Codable, Equatable, Sendable {
+    case transcriptPending = "transcript_pending"
+    case transcriptCommitted = "transcript_committed"
+    case audioPending = "audio_pending"
+    case audioAvailable = "audio_available"
+    case coachPending = "coach_pending"
+    case coachQueued = "coach_queued"
     case complete
 }
 
@@ -27,8 +38,19 @@ public struct PendingVoiceCapture: Codable, Equatable, Identifiable, Sendable {
     public let createdAt: Date
     public var localState: LocalVoiceCaptureState?
     public var retryAttempt: Int?
+    public var retryStartedAt: Date?
     public var nextAttemptAt: Date?
     public var lastErrorCode: String?
+    public var lastErrorStatusCode: Int?
+    public var lastErrorMessage: String?
+    public var lastErrorRetryable: Bool?
+    public var deliveryStage: VoiceCaptureDeliveryStage?
+    public var transcriptCommittedAt: Date?
+    public var audioAvailableAt: Date?
+    public var coachQueuedAt: Date?
+    public var coachCompletedAt: Date?
+    public var responseGroupID: String?
+    public var responseGroupDigest: String?
     public var transcriptInsertedAt: Date?
     public var registrationCompletedAt: Date?
 
@@ -47,8 +69,19 @@ public struct PendingVoiceCapture: Codable, Equatable, Identifiable, Sendable {
         createdAt: Date,
         localState: LocalVoiceCaptureState? = nil,
         retryAttempt: Int? = nil,
+        retryStartedAt: Date? = nil,
         nextAttemptAt: Date? = nil,
         lastErrorCode: String? = nil,
+        lastErrorStatusCode: Int? = nil,
+        lastErrorMessage: String? = nil,
+        lastErrorRetryable: Bool? = nil,
+        deliveryStage: VoiceCaptureDeliveryStage? = nil,
+        transcriptCommittedAt: Date? = nil,
+        audioAvailableAt: Date? = nil,
+        coachQueuedAt: Date? = nil,
+        coachCompletedAt: Date? = nil,
+        responseGroupID: String? = nil,
+        responseGroupDigest: String? = nil,
         transcriptInsertedAt: Date? = nil,
         registrationCompletedAt: Date? = nil
     ) {
@@ -66,8 +99,19 @@ public struct PendingVoiceCapture: Codable, Equatable, Identifiable, Sendable {
         self.createdAt = createdAt
         self.localState = localState
         self.retryAttempt = retryAttempt
+        self.retryStartedAt = retryStartedAt
         self.nextAttemptAt = nextAttemptAt
         self.lastErrorCode = lastErrorCode
+        self.lastErrorStatusCode = lastErrorStatusCode
+        self.lastErrorMessage = lastErrorMessage
+        self.lastErrorRetryable = lastErrorRetryable
+        self.deliveryStage = deliveryStage
+        self.transcriptCommittedAt = transcriptCommittedAt
+        self.audioAvailableAt = audioAvailableAt
+        self.coachQueuedAt = coachQueuedAt
+        self.coachCompletedAt = coachCompletedAt
+        self.responseGroupID = responseGroupID
+        self.responseGroupDigest = responseGroupDigest
         self.transcriptInsertedAt = transcriptInsertedAt
         self.registrationCompletedAt = registrationCompletedAt
     }

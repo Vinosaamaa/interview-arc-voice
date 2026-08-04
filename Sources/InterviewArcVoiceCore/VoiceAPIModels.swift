@@ -246,6 +246,70 @@ public struct VoiceCaptureIntentListResponse: Codable, Equatable, Sendable {
     public let nextCursor: String?
 }
 
+public struct VoiceDeliveryBlocker: Codable, Equatable, Sendable {
+    public let captureId: String
+    public let turnId: String
+    public let status: String
+    public let responseTurnId: String?
+    public let memberOrder: Int?
+    public let memberCount: Int?
+    public let groupStatus: String?
+    public let groupDigest: String?
+    public let canonicalUserTurnPresent: Bool
+    public let canonicalResponseTurnPresent: Bool
+    public let transcriptDeliveryState: String
+    public let audioState: String
+    public let audioLossAcknowledged: Bool
+    public let deletionState: String
+    public let lastError: String?
+    public let retryable: Bool
+    public let allowedActions: [String]
+
+    public init(
+        captureId: String,
+        turnId: String,
+        status: String,
+        responseTurnId: String?,
+        memberOrder: Int?,
+        memberCount: Int?,
+        groupStatus: String?,
+        groupDigest: String?,
+        canonicalUserTurnPresent: Bool,
+        canonicalResponseTurnPresent: Bool,
+        transcriptDeliveryState: String,
+        audioState: String,
+        audioLossAcknowledged: Bool,
+        deletionState: String,
+        lastError: String?,
+        retryable: Bool,
+        allowedActions: [String]
+    ) {
+        self.captureId = captureId
+        self.turnId = turnId
+        self.status = status
+        self.responseTurnId = responseTurnId
+        self.memberOrder = memberOrder
+        self.memberCount = memberCount
+        self.groupStatus = groupStatus
+        self.groupDigest = groupDigest
+        self.canonicalUserTurnPresent = canonicalUserTurnPresent
+        self.canonicalResponseTurnPresent = canonicalResponseTurnPresent
+        self.transcriptDeliveryState = transcriptDeliveryState
+        self.audioState = audioState
+        self.audioLossAcknowledged = audioLossAcknowledged
+        self.deletionState = deletionState
+        self.lastError = lastError
+        self.retryable = retryable
+        self.allowedActions = allowedActions
+    }
+}
+
+public struct VoiceDeliveryBlockersResponse: Codable, Equatable, Sendable {
+    public let protocolVersion: Int
+    public let activityId: String
+    public let blockers: [VoiceDeliveryBlocker]
+}
+
 public struct LegacyVoiceCapture: Codable, Equatable, Identifiable, Sendable {
     public var id: String { clipId }
     public let clipId: String

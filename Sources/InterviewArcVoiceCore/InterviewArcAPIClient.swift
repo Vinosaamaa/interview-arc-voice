@@ -289,6 +289,23 @@ public actor InterviewArcAPIClient {
         return results
     }
 
+    public func deliveryBlockers(activityID: String) async throws -> VoiceDeliveryBlockersResponse {
+        var components = URLComponents(
+            url: baseURL.appending(path: "voice/delivery-blockers"),
+            resolvingAgainstBaseURL: false
+        )!
+        components.queryItems = [URLQueryItem(name: "activityId", value: activityID)]
+        let response: VoiceDeliveryBlockersResponse = try await send(
+            url: components.url!,
+            method: "GET",
+            body: Optional<Data>.none
+        )
+        guard response.protocolVersion == Self.protocolVersion else {
+            throw VoiceBridgeError.protocolMismatch(response.protocolVersion)
+        }
+        return response
+    }
+
     public func legacyVoiceOrphans() async throws -> [LegacyVoiceCapture] {
         let response: VoiceCaptureIntentListResponse = try await send(
             path: "voice/intents",

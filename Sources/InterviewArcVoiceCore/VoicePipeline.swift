@@ -259,8 +259,8 @@ public actor VoicePipeline {
         )
     }
 
-    public func retryPending() async -> Int {
-        var completed = await reconcilePendingCaptures()
+    public func retryPending(force: Bool = true) async -> Int {
+        var completed = await reconcilePendingCaptures(force: force)
         guard let items = try? await retryQueue.items() else { return completed }
         for item in items {
             do {
@@ -417,7 +417,7 @@ public actor VoicePipeline {
         }
     }
 
-    private func reconcilePendingCaptures() async -> Int {
+    private func reconcilePendingCaptures(force: Bool = false) async -> Int {
         let now = Date()
         let retryPolicy = VoiceCaptureRetryPolicy()
         guard let captures = try? await pendingCaptureStore.items(),
@@ -465,13 +465,59 @@ public actor VoicePipeline {
             }
         }
         let byID = Dictionary(uniqueKeysWithValues: intents.map { ($0.captureId, $0) })
+        let receiptStatuses = Set([
+            "activity_related", "accepted", "quarantined_conflict",
+        ])
+        let receiptActivityIDs = Set(intents.compactMap { intent in
+            receiptStatuses.contains(intent.status) ? intent.activityId : nil
+        })
+        var blockersByCapture: [String: VoiceDeliveryBlocker] = [:]
+        var blockerErrorsByActivity: [String: InterviewArcAPIError] = [:]
+        for activityID in receiptActivityIDs {
+            do {
+                let response = try await api.deliveryBlockers(activityID: activityID)
+                for blocker in response.blockers {
+                    blockersByCapture[blocker.captureId] = blocker
+                }
+            } catch let error as InterviewArcAPIError {
+                blockerErrorsByActivity[activityID] = error
+            } catch let error as URLError {
+                blockerErrorsByActivity[activityID] = InterviewArcAPIError(
+                    statusCode: 0,
+                    message: error.localizedDescription,
+                    code: "network_transport_failure",
+                    retryable: true
+                )
+            } catch {
+                blockerErrorsByActivity[activityID] = InterviewArcAPIError(
+                    statusCode: 0,
+                    message: error.localizedDescription,
+                    code: "delivery_receipt_read_failed",
+                    retryable: true
+                )
+            }
+        }
         for capture in captures {
             if capture.localState == .complete
                 || capture.localState == .audioLostAcknowledged
                 || capture.localState == .audioLostNeedsAcknowledgement {
                 continue
             }
+            if capture.localState == .needsAttention
+                && (!force || capture.lastErrorRetryable != true) {
+                continue
+            }
             guard let intent = byID[capture.id] else { continue }
+            if receiptStatuses.contains(intent.status),
+               let receiptError = blockerErrorsByActivity[intent.activityId] {
+                try? await recordDeliveryFailure(
+                    receiptError,
+                    capture: capture,
+                    now: now,
+                    manualAttempt: force
+                )
+                continue
+            }
             do {
                 switch VoiceCaptureLifecyclePolicy().expiryAction(
                     capture: capture,
@@ -517,23 +563,67 @@ public actor VoicePipeline {
                         $0.nextAttemptAt = nil
                     }
                 case "activity_related":
-                    if let nextAttemptAt = capture.nextAttemptAt, nextAttemptAt > now {
+                    if !force,
+                       let nextAttemptAt = capture.nextAttemptAt,
+                       nextAttemptAt > now {
                         continue
                     }
-                    try await pendingCaptureStore.update(id: capture.id) {
-                        $0.localState = .acceptedDelivering
+                    switch VoiceDeliveryReceiptPolicy().action(
+                        for: blockersByCapture[capture.id]
+                    ) {
+                    case .quarantine(let responseGroupID, let responseGroupDigest):
+                        try await pendingCaptureStore.update(id: capture.id) {
+                            $0.localState = .quarantinedConflict
+                            $0.nextAttemptAt = nil
+                            $0.lastErrorCode = "voice_response_group_conflict"
+                            $0.lastErrorRetryable = false
+                            $0.responseGroupID = responseGroupID
+                            $0.responseGroupDigest = responseGroupDigest
+                        }
+                        continue
+                    case .resumeAfterTranscript(let responseGroupID, let responseGroupDigest):
+                        try await pendingCaptureStore.update(id: capture.id) {
+                            $0.localState = .acceptedDelivering
+                            $0.deliveryStage = .transcriptCommitted
+                            $0.transcriptCommittedAt = $0.transcriptCommittedAt ?? now
+                            $0.responseGroupID = responseGroupID
+                            $0.responseGroupDigest = responseGroupDigest
+                            Self.clearDeliveryFailure(&$0)
+                        }
+                    case .deliverTranscript:
+                        try await pendingCaptureStore.update(id: capture.id) {
+                            $0.localState = .acceptedDelivering
+                            $0.deliveryStage = .transcriptPending
+                        }
+                        _ = try await api.persistCapture(
+                            activity: capture.activity,
+                            turnID: capture.turnID,
+                            transcript: capture.transcript,
+                            occurredAt: capture.occurredAt,
+                            captureID: capture.id,
+                            checksum: capture.checksum
+                        )
+                        try await pendingCaptureStore.update(id: capture.id) {
+                            $0.deliveryStage = .transcriptCommitted
+                            $0.transcriptCommittedAt = $0.transcriptCommittedAt ?? now
+                            Self.clearDeliveryFailure(&$0)
+                        }
                     }
-                    _ = try await api.persistCapture(
-                        activity: capture.activity,
-                        turnID: capture.turnID,
-                        transcript: capture.transcript,
-                        occurredAt: capture.occurredAt,
-                        captureID: capture.id,
-                        checksum: capture.checksum
-                    )
                     try await completeAcceptedCapture(capture)
                     completed += 1
                 case "accepted":
+                    if !force,
+                       let nextAttemptAt = capture.nextAttemptAt,
+                       nextAttemptAt > now {
+                        continue
+                    }
+                    let receipt = blockersByCapture[capture.id]
+                    try await pendingCaptureStore.update(id: capture.id) {
+                        $0.deliveryStage = $0.deliveryStage ?? .transcriptCommitted
+                        $0.transcriptCommittedAt = $0.transcriptCommittedAt ?? now
+                        $0.responseGroupID = receipt?.responseTurnId ?? $0.responseGroupID
+                        $0.responseGroupDigest = receipt?.groupDigest ?? $0.responseGroupDigest
+                    }
                     try await completeAcceptedCapture(capture)
                     completed += 1
                 case "unrelated":
@@ -556,17 +646,45 @@ public actor VoicePipeline {
                     try await pendingCaptureStore.update(id: capture.id) {
                         $0.localState = .quarantinedConflict
                         $0.nextAttemptAt = nil
+                        $0.lastErrorCode = "voice_response_group_conflict"
+                        $0.lastErrorRetryable = false
                     }
                 default:
                     break
                 }
+            } catch let error as InterviewArcAPIError {
+                let latest = (try? await pendingCaptureStore.items().first(where: {
+                    $0.id == capture.id
+                })) ?? capture
+                try? await recordDeliveryFailure(
+                    error,
+                    capture: latest,
+                    now: now,
+                    manualAttempt: force
+                )
+            } catch let error as URLError {
+                let latest = (try? await pendingCaptureStore.items().first(where: {
+                    $0.id == capture.id
+                })) ?? capture
+                try? await recordDeliveryFailure(
+                    InterviewArcAPIError(
+                        statusCode: 0,
+                        message: error.localizedDescription,
+                        code: "network_transport_failure",
+                        retryable: true
+                    ),
+                    capture: latest,
+                    now: now,
+                    manualAttempt: force
+                )
             } catch {
-                let attempt = (capture.retryAttempt ?? 0) + 1
                 try? await pendingCaptureStore.update(id: capture.id) {
-                    $0.localState = .acceptedDelivering
-                    $0.retryAttempt = attempt
-                    $0.nextAttemptAt = retryPolicy.nextAttempt(attempt: attempt, now: now)
-                    $0.lastErrorCode = "transient_delivery_failure"
+                    $0.localState = .needsAttention
+                    $0.nextAttemptAt = nil
+                    $0.lastErrorCode = "terminal_delivery_validation_failure"
+                    $0.lastErrorStatusCode = nil
+                    $0.lastErrorMessage = error.localizedDescription
+                    $0.lastErrorRetryable = false
                 }
             }
         }
@@ -606,43 +724,81 @@ public actor VoicePipeline {
         }
     }
 
-    private func finishAcceptedCapture(_ capture: PendingVoiceCapture) async throws {
-        if let loss = Self.localAudioSourceLoss(capture.audioURL) {
-            throw loss
-        }
-        let upload = try await api.uploadAudio(
-            fileURL: capture.audioURL,
-            clipID: capture.clipID,
-            activityID: capture.activity.activityId,
-            turnID: capture.turnID,
-            durationSeconds: capture.durationSeconds,
-            captureID: capture.id
-        )
-        let analysisID = "delivery-\(capture.id)"
-        _ = try await api.queueDelivery(
-            analysisID: analysisID,
-            activity: capture.activity,
-            clipID: upload.clipId,
-            turnID: capture.turnID
-        )
-        try await codex.runDeliveryCoach(
-            analysisID: analysisID,
-            activity: capture.activity,
-            clipID: upload.clipId,
-            turnID: capture.turnID,
-            transcript: capture.transcript,
-            transcription: capture.transcription,
-            audioURL: capture.audioURL,
-            workspaceURL: workspaceURL,
-            interviewArcToken: interviewArcToken
-        )
-    }
-
     private func completeAcceptedCapture(
         _ capture: PendingVoiceCapture
     ) async throws {
         do {
-            try await finishAcceptedCapture(capture)
+            var current = (try await pendingCaptureStore.items().first(where: {
+                $0.id == capture.id
+            })) ?? capture
+            let analysisID = "delivery-\(capture.id)"
+            if current.audioAvailableAt == nil {
+                if let loss = Self.localAudioSourceLoss(capture.audioURL) {
+                    throw loss
+                }
+                try await pendingCaptureStore.update(id: capture.id) {
+                    $0.deliveryStage = .audioPending
+                }
+                let upload = try await api.uploadAudio(
+                    fileURL: capture.audioURL,
+                    clipID: capture.clipID,
+                    activityID: capture.activity.activityId,
+                    turnID: capture.turnID,
+                    durationSeconds: capture.durationSeconds,
+                    captureID: capture.id
+                )
+                guard upload.clipId == capture.clipID else {
+                    throw InterviewArcAPIError(
+                        statusCode: 409,
+                        message: "The audio acknowledgement changed the stable clip identity.",
+                        code: "voice_capture_identity_conflict",
+                        retryable: false
+                    )
+                }
+                let completedAt = Date()
+                try await pendingCaptureStore.update(id: capture.id) {
+                    $0.deliveryStage = .audioAvailable
+                    $0.audioAvailableAt = completedAt
+                    Self.clearDeliveryFailure(&$0)
+                }
+                current.audioAvailableAt = completedAt
+            }
+            if current.coachQueuedAt == nil {
+                try await pendingCaptureStore.update(id: capture.id) {
+                    $0.deliveryStage = .coachPending
+                }
+                _ = try await api.queueDelivery(
+                    analysisID: analysisID,
+                    activity: capture.activity,
+                    clipID: capture.clipID,
+                    turnID: capture.turnID
+                )
+                let queuedAt = Date()
+                try await pendingCaptureStore.update(id: capture.id) {
+                    $0.deliveryStage = .coachQueued
+                    $0.coachQueuedAt = queuedAt
+                    Self.clearDeliveryFailure(&$0)
+                }
+                current.coachQueuedAt = queuedAt
+            }
+            if current.coachCompletedAt == nil {
+                try await codex.runDeliveryCoach(
+                    analysisID: analysisID,
+                    activity: capture.activity,
+                    clipID: capture.clipID,
+                    turnID: capture.turnID,
+                    transcript: capture.transcript,
+                    transcription: capture.transcription,
+                    audioURL: capture.audioURL,
+                    workspaceURL: workspaceURL,
+                    interviewArcToken: interviewArcToken
+                )
+                let completedAt = Date()
+                try await pendingCaptureStore.update(id: capture.id) {
+                    $0.coachCompletedAt = completedAt
+                    Self.clearDeliveryFailure(&$0)
+                }
+            }
             let retainedInHistory = try await transcriptHistoryStore?
                 .adoptLinkedAudio(
                     captureID: capture.id,
@@ -654,9 +810,14 @@ public actor VoicePipeline {
             }
             try await pendingCaptureStore.update(id: capture.id) {
                 $0.localState = .complete
+                $0.deliveryStage = .complete
                 $0.retryAttempt = 0
+                $0.retryStartedAt = nil
                 $0.nextAttemptAt = nil
                 $0.lastErrorCode = nil
+                $0.lastErrorStatusCode = nil
+                $0.lastErrorMessage = nil
+                $0.lastErrorRetryable = nil
             }
         } catch let loss as LocalAudioSourceLoss {
             do {
@@ -681,6 +842,63 @@ public actor VoicePipeline {
                 throw error
             }
         }
+    }
+
+    private func recordDeliveryFailure(
+        _ error: InterviewArcAPIError,
+        capture: PendingVoiceCapture,
+        now: Date,
+        manualAttempt: Bool
+    ) async throws {
+        let decision = VoiceDeliveryFailurePolicy().decision(
+            error: error,
+            capture: capture,
+            now: now
+        )
+        try await pendingCaptureStore.update(id: capture.id) {
+            switch decision {
+            case .quarantine(let code, let statusCode, let message):
+                $0.localState = .quarantinedConflict
+                $0.nextAttemptAt = nil
+                $0.lastErrorCode = code
+                $0.lastErrorStatusCode = statusCode
+                $0.lastErrorMessage = message
+                $0.lastErrorRetryable = false
+            case .needsAttention(let code, let statusCode, let message):
+                $0.localState = .needsAttention
+                $0.nextAttemptAt = nil
+                $0.lastErrorCode = code
+                $0.lastErrorStatusCode = statusCode
+                $0.lastErrorMessage = message
+                $0.lastErrorRetryable = true
+            case .retry(
+                let attempt,
+                let retryStartedAt,
+                let nextAttemptAt,
+                let code,
+                let statusCode,
+                let message
+            ):
+                $0.localState = manualAttempt ? .needsAttention : .acceptedDelivering
+                $0.retryAttempt = attempt
+                $0.retryStartedAt = retryStartedAt
+                $0.nextAttemptAt = manualAttempt ? nil : nextAttemptAt
+                $0.lastErrorCode = code
+                $0.lastErrorStatusCode = statusCode
+                $0.lastErrorMessage = message
+                $0.lastErrorRetryable = true
+            }
+        }
+    }
+
+    private static func clearDeliveryFailure(_ capture: inout PendingVoiceCapture) {
+        capture.retryAttempt = 0
+        capture.retryStartedAt = nil
+        capture.nextAttemptAt = nil
+        capture.lastErrorCode = nil
+        capture.lastErrorStatusCode = nil
+        capture.lastErrorMessage = nil
+        capture.lastErrorRetryable = nil
     }
 
     private static func localAudioSourceLoss(
