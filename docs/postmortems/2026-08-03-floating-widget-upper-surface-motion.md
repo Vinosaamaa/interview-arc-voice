@@ -61,8 +61,8 @@ actually been proven.
 
 ## Repair
 
-- AppKit now owns each resize through one native `NSAnimationContext`
-  transaction with a shared 0.30-second ease-in-out curve.
+- AppKit now owns each resize through `NSWindow`'s dedicated smooth-resize API,
+  with a shared 0.30-second duration supplied by the panel subclass.
 - The destination Focus, Plan Today, or Record surface is published as one
   atomic presentation state.
 - Planner refresh, text-entry activation, and the return of application focus

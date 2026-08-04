@@ -267,10 +267,10 @@ activity picker, and finish drawer grow upward. The optional dynamic recording
 interface snapshots that disclosure, hides it behind one shared recording
 capsule, and restores the snapshot immediately on Stop. Hidden clocks continue
 to use authoritative timer state. AppKit owns the single bottom-anchored frame
-animation. The panel controller uses one native `NSAnimationContext`
-transaction for expansion and collapse, allowing AppKit to schedule frame
-updates against display refresh instead of waking the main actor from a sleep
-loop. Focus, Plan Today, and dynamic Record publish their destination as one
+animation. The panel controller uses `NSWindow.setFrame(_:display:animate:)`,
+AppKit's dedicated smooth-window-resize API, for expansion and collapse instead
+of waking the main actor from a sleep loop. Focus, Plan Today, and dynamic Record
+publish their destination as one
 presentation state; planner refresh, key-window activation, and returning focus
 to the previous application wait until the geometry transaction completes.
 SwiftUI supplies one clipped upper surface and

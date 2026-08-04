@@ -129,10 +129,10 @@ import Foundation
     #expect(middle.minY == start.minY)
 }
 
-@Test func everyWidgetDirectionUsesOneNativeAppKitAnimationTransaction() {
+@Test func everyWidgetDirectionUsesNativeWindowSmoothResize() {
     #expect(
         FloatingWidgetMotionPolicy.backend
-            == .nativeAppKitAnimationContext
+            == .nativeWindowSmoothResize
     )
     #expect(FloatingWidgetMotionPolicy.durationSeconds == 0.30)
     #expect(

@@ -179,14 +179,14 @@ public enum PlannerSelectionTrayPolicy {
 
 public enum FloatingWidgetMotionPolicy {
     public static let backend: FloatingWidgetMotionBackend =
-        .nativeAppKitAnimationContext
+        .nativeWindowSmoothResize
     public static let durationSeconds: TimeInterval = 0.30
     public static let deferredWorkDelaySeconds: TimeInterval =
         durationSeconds + 0.04
 }
 
 public enum FloatingWidgetMotionBackend: Equatable, Sendable {
-    case nativeAppKitAnimationContext
+    case nativeWindowSmoothResize
 }
 
 public struct FloatingWidgetPresentationState: Equatable, Sendable {

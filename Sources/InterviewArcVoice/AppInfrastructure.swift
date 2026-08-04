@@ -721,6 +721,11 @@ private struct PasteboardSnapshot {
 private final class VoiceFloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 
+    override func animationResizeTime(_ newFrame: NSRect) -> TimeInterval {
+        _ = newFrame
+        return FloatingWidgetMotionPolicy.durationSeconds
+    }
+
     override func sendEvent(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown:
@@ -760,7 +765,6 @@ final class FloatingPanelController {
     private var miniDragStartFrame: NSRect?
     private var miniDragStartPointer: CGPoint?
     private var miniDragDidMove = false
-    private var resizeAnimationGeneration = 0
 
     func show(model: VoiceBridgeModel) {
         if let panel {
@@ -869,30 +873,16 @@ final class FloatingPanelController {
                 || abs(panel.frame.height - frame.height) > 0.5
                 || abs(panel.frame.minX - frame.minX) > 0.5
                 || abs(panel.frame.minY - frame.minY) > 0.5 else { return }
-        resizeAnimationGeneration += 1
-        let generation = resizeAnimationGeneration
         if reduceMotion {
             panel.setFrame(frame, display: true)
         } else {
             switch FloatingWidgetMotionPolicy.backend {
-            case .nativeAppKitAnimationContext:
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = FloatingWidgetMotionPolicy.durationSeconds
-                    context.timingFunction = CAMediaTimingFunction(
-                        name: .easeInEaseOut
-                    )
-                    panel.animator().setFrame(frame, display: true)
-                } completionHandler: { [weak self, weak panel] in
-                    Task { @MainActor in
-                        guard let self,
-                              let panel,
-                              generation == self.resizeAnimationGeneration else {
-                            return
-                        }
-                        panel.setFrame(frame, display: true)
-                        panel.contentView?.needsLayout = true
-                    }
-                }
+            case .nativeWindowSmoothResize:
+                // This is NSWindow's dedicated smooth-resize API. It animates
+                // both expansion and contraction and obtains its duration from
+                // VoiceFloatingPanel.animationResizeTime(_:).
+                panel.setFrame(frame, display: true, animate: true)
+                panel.contentView?.needsLayout = true
             }
         }
     }
