@@ -137,6 +137,49 @@ import Testing
     )
 }
 
+@Test func recreatedAirPlayUIDMatchesTheOriginalLogicalRoute() {
+    let original = BackgroundAudioVolumeSnapshot(
+        deviceUID: "11111111-2222-3333-4444-555555555555-248754390196083-Audio",
+        nominalSampleRate: 44_100,
+        outputChannelCount: 2,
+        originalVolume: 0.54,
+        appliedVolume: 0.108
+    )
+
+    #expect(
+        original.matches(
+            deviceUID: "11111111-2222-3333-4444-555555555555-355597298113375-Audio",
+            nominalSampleRate: 44_100,
+            outputChannelCount: 2
+        )
+    )
+}
+
+@Test func recreatedAirPlayUIDDoesNotMatchAnotherFamilyOrProfile() {
+    let original = BackgroundAudioVolumeSnapshot(
+        deviceUID: "11111111-2222-3333-4444-555555555555-248754390196083-Audio",
+        nominalSampleRate: 44_100,
+        outputChannelCount: 2,
+        originalVolume: 0.54,
+        appliedVolume: 0.108
+    )
+
+    #expect(
+        !original.matches(
+            deviceUID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee-355597298113375-Audio",
+            nominalSampleRate: 44_100,
+            outputChannelCount: 2
+        )
+    )
+    #expect(
+        !original.matches(
+            deviceUID: "11111111-2222-3333-4444-555555555555-355597298113375-Audio",
+            nominalSampleRate: 24_000,
+            outputChannelCount: 1
+        )
+    )
+}
+
 @Test func baselineRestorationWaitsForTheOriginalBluetoothProfile() {
     let baseline = BackgroundAudioVolumeSnapshot(
         deviceUID: "airpods",
@@ -175,4 +218,41 @@ import Testing
             hasPendingBaseline: false
         )
     )
+}
+
+@Test func restoredBluetoothBaselineMustRemainStableBeforeSnapshotClears() {
+    var tracker = BackgroundAudioBaselineStabilityTracker()
+
+    let started = tracker.observe(baselineAtOriginalVolume: true, now: 10)
+    let almostStable = tracker.observe(
+        baselineAtOriginalVolume: true,
+        now: 12.99
+    )
+    let stable = tracker.observe(baselineAtOriginalVolume: true, now: 13)
+
+    #expect(!started)
+    #expect(!almostStable)
+    #expect(stable)
+}
+
+@Test func bluetoothRouteResetRestartsTheStableReadbackWindow() {
+    var tracker = BackgroundAudioBaselineStabilityTracker()
+
+    let firstStart = tracker.observe(baselineAtOriginalVolume: true, now: 10)
+    let reset = tracker.observe(baselineAtOriginalVolume: false, now: 11)
+
+    #expect(!firstStart)
+    #expect(!reset)
+    #expect(!tracker.isTracking)
+
+    let secondStart = tracker.observe(baselineAtOriginalVolume: true, now: 12)
+    let almostStable = tracker.observe(
+        baselineAtOriginalVolume: true,
+        now: 14.99
+    )
+    let stable = tracker.observe(baselineAtOriginalVolume: true, now: 15)
+
+    #expect(!secondStart)
+    #expect(!almostStable)
+    #expect(stable)
 }

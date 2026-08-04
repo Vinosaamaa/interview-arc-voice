@@ -320,8 +320,12 @@ device write. Voice records the pre-capture route signature before acquiring
 the microphone, treats Bluetooth stereo and hands-free profiles as distinct
 routes even when macOS reports the same device UID, and applies the configured
 relative level without compounding it. Stop restores adjusted temporary routes
-but keeps the durable session pending until the exact pre-capture route returns;
-this prevents a late stereo-profile switch from inheriting the ducked level.
+but keeps the durable session pending until the pre-capture logical route
+returns. CoreAudio AirPlay UIDs with the same UUID family, sample rate, and
+channel count remain one logical route even when their numeric instance changes.
+The original route and volume must then remain stable for three seconds before
+Voice clears recovery state. This prevents a late stereo-profile switch from
+inheriting the ducked level after an initially successful volume write.
 
 The user sends the inserted text through the visible Codex task. The rendered
 message shows the answer while the specialist receives the comment envelope and
