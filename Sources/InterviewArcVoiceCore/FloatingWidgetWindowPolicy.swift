@@ -333,7 +333,7 @@ public enum FloatingWidgetUpperSurfaceTransitionPolicy {
         desired: FloatingWidgetUpperSurface?,
         retained: FloatingWidgetUpperSurface?
     ) -> FloatingWidgetUpperSurface? {
-        return desired ?? retained
+        desired ?? retained
     }
 
     public static func shouldRetainOutgoing(

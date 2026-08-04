@@ -1,96 +1,144 @@
 # Floating-widget upper-surface motion regression
 
 - Date: 2026-08-03
-- Status: Repair in verification
-- Issue: #37
+- Status: Deferred after rollback
+- Issues: #37, #58
+- Pull request: #169
+- Restored baseline: `77cd2a6`
 
 ## Summary
 
-Compact-to-Focus remained smooth, but Plan Today to Focus, Focus to Plan Today,
-and Record-triggered collapse visibly hitched. Record could expose two distinct
-collapse stages. The same installed build and machine rendered the reference
-transition smoothly, which isolated the defect to path-specific application
-work rather than hardware capacity.
+Compact-to-Focus remained the accepted motion reference, but Plan Today to
+Focus had no visible content transition. Several attempts made the native
+window bounds animate, but did not produce an acceptable transition between
+the two SwiftUI surfaces. Two attempts introduced worse intermediate states:
+one visibly cropped the outgoing planner and another stretched Focus inside a
+planner-sized surface.
 
-## Impact
+The running test application and the pull-request motion code were restored to
+`77cd2a6`. Work is intentionally deferred. Issue #37 remains unresolved; the
+rollback preserves the directions that were already acceptable without
+claiming that Plan Today to Focus is fixed.
 
-The widget reached the correct final surfaces, but several common transitions
-missed display frames or exposed an intermediate presentation. Timer state,
-transcripts, recordings, and Interview Arc practice data were not changed by
-the motion defect.
+## User impact
 
-## Detection
+- Compact to Focus was smooth and became the reference transition.
+- Focus to compact and Focus to Plan Today were acceptable on the restored
+  baseline.
+- Plan Today to Focus reached the correct final Focus state, but appeared to
+  swap content without a transition.
+- Experimental builds briefly exposed a planner cropped through its middle or
+  an oversized Focus card during the native window contraction.
+- Timer state, recordings, transcripts, and practice data were not changed by
+  these motion experiments.
 
-The regression was reported after PR #168 had been installed and issue #37 had
-been closed. Endpoint reproduction confirmed each control reached the intended
-surface. Comparing the source paths showed that only the failing transitions
-performed additional observable-state and main-actor work during geometry
-animation.
+The same machine rendered compact to Focus smoothly throughout this work. The
+direction-specific failures therefore do not indicate insufficient hardware.
 
-## Root cause
+## Detection and evidence
 
-Four conditions combined:
+Settled-frame checks were insufficient because every build reached the correct
+final bounds. The useful evidence was a user-supplied screen recording of the
+exact Plan Today-to-Focus action. Temporary frames sampled at 16.4, 16.7,
+17.0, 17.3, and 17.6 seconds showed:
 
-1. The panel controller animated geometry with a `Task` that woke the main
-   actor at a nominal 60 Hz, calculated an intermediate frame, called
-   `setFrame(display:)`, and slept again. Removing forced subtree layout in the
-   previous repair reduced work but left frame scheduling in application code.
-2. Focus, Plan Today, and dynamic Record were represented by separate
-   `@Published` booleans. One user action could therefore invalidate the
-   SwiftUI tree multiple times and briefly expose an intermediate surface.
-3. Planner application activation was asymmetric. Opening Plan Today deferred
-   key-window/text-entry work, but closing it immediately reactivated the
-   previous application on the same run-loop turn as the native shrink. That
-   focus handoff let AppKit commit Plan Today-to-Focus at the destination frame
-   without presenting the intermediate frames.
-4. The root `NSHostingView` still advertised the outgoing planner's SwiftUI
-   fitting bounds to AppKit. During Plan Today-to-Focus, that 560-point surface
-   temporarily acted like a minimum host size, blocking intermediate shrink
-   frames until the destination surface replaced it.
+1. the full planner before the click;
+2. the right-anchored window contracting while the 560-point planner remained;
+3. the planner's left and upper content cut away at the middle frame; and
+4. Focus appearing only after the contraction.
 
-The smooth compact-to-Focus path avoided the planner work and most of the
-multi-property transition cost, which is why it remained a reliable reference.
+The recording and extracted frames were not committed. Temporary derived
+frames were deleted after inspection.
 
-## Why prior verification missed it
+## Confirmed architectural conditions
 
-PR #168 verified settled window endpoints and removed the largest synchronous
-layout call. Those checks did not measure presentation cadence, compare every
-direction against compact-to-Focus, or cover Record's combined presentation
-change. Closing the recurrence after endpoint verification overstated what had
-actually been proven.
+The earlier repair established four useful conditions that remain in the
+baseline:
 
-## Repair
+1. AppKit owns panel geometry through one native `NSAnimationContext`
+   transaction using a 0.30-second ease-in-out curve.
+2. Focus, Plan Today, and dynamic Record presentation changes are published as
+   one atomic state rather than several independently visible mutations.
+3. Planner application activation and focus return are deferred until after
+   the geometry transaction.
+4. The root `NSHostingView` does not publish its SwiftUI fitting size back as a
+   temporary AppKit minimum.
 
-- AppKit now owns each resize through one native `NSAnimationContext`
-  transaction with a shared 0.30-second ease-in-out curve.
-- The destination Focus, Plan Today, or Record surface is published as one
-  atomic presentation state.
-- Planner refresh, text-entry activation, and the return of application focus
-  are deferred until the geometry transaction has finished.
-- The root hosting view no longer contributes SwiftUI fitting-size constraints;
-  the panel controller is the single owner of window bounds.
-- Plan Today remains visible and clipped through the Plan Today-to-Focus native
-  contraction; Focus replaces it only after the final resize frame.
-- Policy coverage requires every direction to use the native backend and
-  verifies Focus/Planner/Record state transitions as indivisible values.
+These conditions improved the previously working directions but did not, by
+themselves, animate the content replacement from Plan Today to Focus.
 
-## Regression prevention
+## Attempts and outcomes
 
-Compact-to-Focus is now the named motion reference in the design contract.
-Future acceptance must exercise compact-to-Focus, Focus-to-compact,
-Focus-to-Plan Today, Plan Today-to-Focus, and Record-triggered collapse from the
-exact packaged artifact. Correct settled geometry alone is insufficient.
+| Attempt | Commits or run | Intended mechanism | Observed result | Disposition |
+| --- | --- | --- | --- | --- |
+| Remove synchronous layout pressure | PR #168 and early #169 work | Stop forced SwiftUI layout from consuming animation frames | Improved the reference paths, but endpoint verification incorrectly suggested the recurrence was resolved | Kept as background learning; issue reopened |
+| Atomic presentation and deferred focus handoff | Through `77cd2a6` | Prevent intermediate model states and keep activation work outside the resize transaction | Compact-to-Focus, Focus-to-Plan Today, and Focus-to-compact remained acceptable; Plan Today-to-Focus still had no visible content transition | Restored baseline |
+| Direct `NSWindow.setFrame(_:display:animate:)` | `054c45c`, CI run `30866969162` | Replace the custom/native animation-context path with AppKit's smooth-resize API | Regressed compact-to-Focus, Focus-to-Plan Today, and Plan Today-to-Focus; only Focus-to-compact remained animated | Reverted |
+| Retain the outgoing planner through the contraction | `6105e77`, `013aecc`, `61165a6`; CI run `30868026232` | Keep visible content present for every intermediate native window frame | Produced visible motion, but the right-anchored shrinking viewport hard-clipped the 560-point planner through its middle | Rejected and reverted |
+| Render destination Focus and stretch its material to the intermediate host | `37bd15a`; CI run `30868978220` | Avoid planner clipping while making the shrinking surface visible | Removed the planner slice, but swapped content immediately and exposed an oversized Focus card; only the outer widget had a shrink animation | Rejected and rolled back |
 
-## Verification
+Two intermediate hosted runs failed before packaging and did not produce test
+artifacts:
 
-Local parser and repository checks are pending completion. The canonical macOS
-build, exact packaged-artifact comparison, and installed transition pass must
-all succeed before issue #37 is closed again.
+- `30867633998`: compiler failure caused by a missing explicit `return` while
+  editing the transition policy;
+- `30867756774`: obsolete test expectations still described the behavior that
+  the experiment intentionally changed.
+
+Both failures were corrected before evaluating the corresponding experimental
+artifact. They were process overhead, not evidence that the motion was good.
+
+## What did not work in verification
+
+- Settled width and height assertions proved final geometry, not motion
+  continuity or intermediate content.
+- Automated policy tests could prove which surface was selected, but could not
+  prove what SwiftUI and AppKit presented together during each frame.
+- Repeated still screenshots were inefficient and could miss the exact bad
+  frame. They were stopped after user feedback.
+- A green packaged build established compilation and regression-test health,
+  but could not substitute for direct visual acceptance of motion.
+- A code-level explanation was treated as stronger evidence than the user's
+  visual result. That led to premature claims and repeated experimental
+  launches.
+
+## Current state
+
+- The temporary running application uses signed baseline commit `77cd2a6`.
+- Pull-request motion source and tests are restored to the `77cd2a6` behavior.
+- PR #169 is not merged and the installed application is unchanged.
+- Issue #37 must remain open. Plan Today to Focus is a known limitation of the
+  baseline.
+- No further animation experiment should be launched in this work session.
+
+## Requirements for a future attempt
+
+1. Define the content handoff separately from the NSWindow bounds animation.
+   The window shrinking is not, by itself, a surface transition.
+2. Keep the accepted compact-to-Focus implementation unchanged and verify it
+   after every candidate.
+3. Do not retain an opaque 560-point planner inside a narrower clipped host.
+4. Do not resize the Focus material to planner height merely to make motion
+   visible.
+5. Prototype the Plan Today-to-Focus content handoff in an isolated harness
+   with representative planner and timer surfaces before changing the live
+   widget.
+6. Evaluate one bounded candidate against a short recording containing all
+   required directions: compact to Focus, Focus to compact, Focus to Plan
+   Today, Plan Today to Focus, and Record-triggered collapse.
+7. Require user visual acceptance of the exact signed artifact before merge,
+   installation, issue closure, or any claim that the recurrence is fixed.
+
+The most plausible future direction is a coordinated content transition—such
+as a short outgoing fade and destination reveal—running inside the existing
+native bounds transaction. This is a hypothesis, not a verified fix.
 
 ## Glossary
 
-- **Display deadline:** the time by which a frame must be ready for the next
-  screen refresh; missing it is perceived as a hitch.
+- **Bounds animation:** movement or resizing of the native `NSWindow` frame.
+- **Content transition:** the visual handoff between the Plan Today and Focus
+  SwiftUI surfaces inside that window.
 - **Atomic presentation state:** one observable value containing all flags
-  needed to choose the surface, so a transition cannot publish a half-updated
-  combination.
+  needed to choose a surface, preventing half-updated combinations.
+- **Clipping viewport:** a container that hides pixels falling outside its
+  current bounds; this caused the retained planner to be cut during shrink.

@@ -276,9 +276,6 @@ to the previous application wait until the geometry transaction completes.
 SwiftUI supplies one clipped upper surface and
 never owns window geometry; the root hosting view disables SwiftUI-derived
 sizing options so an outgoing surface cannot constrain a native shrink.
-Plan Today remains the rendered upper surface through its contraction to Focus;
-only the final frame swaps in Focus, so the transparent host never animates by
-itself while visible content jumps.
 Compact-to-Focus is the motion reference for every direction. This prevents a
 transparent borderless panel from settling directly at its target frame and
 making collapse look disabled. The visible

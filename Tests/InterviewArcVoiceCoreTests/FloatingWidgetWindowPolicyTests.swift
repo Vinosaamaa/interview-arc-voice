@@ -64,7 +64,7 @@ import Foundation
     #expect(CompactTimerTextPolicy.sessionRemaining(seconds: -3_661) == "+01:01")
 }
 
-@Test func upperSurfaceMotionUsesOneClippedSurfaceAndRetainsOnlyRemovalCollapses() {
+@Test func upperSurfaceMotionUsesOneClippedSurfaceAndRetainsOnlyARealCollapse() {
     #expect(
         FloatingWidgetUpperSurfaceTransitionPolicy.style
             == .singleSurfaceClippedResize
@@ -191,27 +191,7 @@ import Foundation
     )
 }
 
-@Test func planToFocusShowsTheDestinationSurfaceDuringTheNativeShrink() {
-    #expect(
-        FloatingWidgetUpperSurfaceTransitionPolicy.renderedSurface(
-            desired: .focus,
-            retained: .planToday
-        ) == .focus
-    )
-    #expect(
-        !FloatingWidgetUpperSurfaceTransitionPolicy.shouldRetainOutgoing(
-            from: .planToday,
-            to: .focus,
-            reduceMotion: false
-        )
-    )
-    #expect(
-        !FloatingWidgetUpperSurfaceTransitionPolicy.shouldRetainOutgoing(
-            from: .focus,
-            to: .planToday,
-            reduceMotion: false
-        )
-    )
+@Test func planToFocusMakesTheVisibleSurfaceFollowEveryShrinkingHostFrame() {
     #expect(
         FloatingWidgetUpperSurfaceTransitionPolicy.visibleWidth(
             for: .focus,
