@@ -92,8 +92,37 @@ public struct BackgroundAudioSessionSnapshot: Codable, Equatable, Sendable {
     }
 }
 
+public struct BackgroundAudioBaselineStabilityTracker: Equatable, Sendable {
+    public private(set) var stableSince: TimeInterval?
+
+    public init() {}
+
+    public var isTracking: Bool { stableSince != nil }
+
+    public mutating func observe(
+        baselineAtOriginalVolume: Bool,
+        now: TimeInterval
+    ) -> Bool {
+        guard baselineAtOriginalVolume else {
+            stableSince = nil
+            return false
+        }
+        guard let stableSince else {
+            self.stableSince = now
+            return false
+        }
+        return BackgroundAudioPolicy.baselineRestorationIsStable(
+            stableFor: now - stableSince
+        )
+    }
+}
+
 public enum BackgroundAudioPolicy {
     public static let defaultRelativeLevel: Double = 0.20
+    /// Bluetooth can briefly expose the original profile, accept a volume
+    /// write, and then settle again. Keep the durable baseline until the
+    /// original route and volume have stayed stable through that window.
+    public static let baselineRestorationStabilitySeconds: TimeInterval = 3
 
     public static func targetVolume(
         currentVolume: Float,
@@ -146,5 +175,11 @@ public enum BackgroundAudioPolicy {
         hasPendingBaseline: Bool
     ) -> Bool {
         !hasPendingBaseline
+    }
+
+    public static func baselineRestorationIsStable(
+        stableFor seconds: TimeInterval
+    ) -> Bool {
+        seconds >= baselineRestorationStabilitySeconds
     }
 }

@@ -176,3 +176,22 @@ import Testing
         )
     )
 }
+
+@Test func restoredBluetoothBaselineMustRemainStableBeforeSnapshotClears() {
+    var tracker = BackgroundAudioBaselineStabilityTracker()
+
+    #expect(!tracker.observe(baselineAtOriginalVolume: true, now: 10))
+    #expect(!tracker.observe(baselineAtOriginalVolume: true, now: 12.99))
+    #expect(tracker.observe(baselineAtOriginalVolume: true, now: 13))
+}
+
+@Test func bluetoothRouteResetRestartsTheStableReadbackWindow() {
+    var tracker = BackgroundAudioBaselineStabilityTracker()
+
+    #expect(!tracker.observe(baselineAtOriginalVolume: true, now: 10))
+    #expect(!tracker.observe(baselineAtOriginalVolume: false, now: 11))
+    #expect(!tracker.isTracking)
+    #expect(!tracker.observe(baselineAtOriginalVolume: true, now: 12))
+    #expect(!tracker.observe(baselineAtOriginalVolume: true, now: 14.99))
+    #expect(tracker.observe(baselineAtOriginalVolume: true, now: 15))
+}
