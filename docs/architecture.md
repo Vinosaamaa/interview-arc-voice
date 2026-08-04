@@ -274,9 +274,11 @@ loop. Focus, Plan Today, and dynamic Record publish their destination as one
 presentation state; planner refresh, key-window activation, and returning focus
 to the previous application wait until the geometry transaction completes.
 SwiftUI supplies one clipped upper surface and
-never owns window geometry. Compact-to-Focus is the motion reference for every
-direction. This prevents a transparent borderless panel from settling directly
-at its target frame and making collapse look disabled. The visible
+never owns window geometry; the root hosting view disables SwiftUI-derived
+sizing options so an outgoing surface cannot constrain a native shrink.
+Compact-to-Focus is the motion reference for every direction. This prevents a
+transparent borderless panel from settling directly at its target frame and
+making collapse look disabled. The visible
 timer-to-recorder gap remains
 10 points outside capture. Saving uses
 the native macOS save panel: the user chooses the name and location, the

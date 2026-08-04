@@ -796,6 +796,11 @@ final class FloatingPanelController {
         let hostingView = TransparentHostingView(
             rootView: FloatingRecorderView(model: model)
         )
+        // Window geometry is owned by FloatingPanelController. If the root
+        // hosting view publishes its SwiftUI fitting bounds back to AppKit,
+        // the outgoing 560-point planner becomes a temporary minimum size and
+        // a planner-to-focus shrink cannot present intermediate frames.
+        hostingView.sizingOptions = []
         panel.contentView = hostingView
         panel.setFrameAutosaveName("InterviewArcVoiceFloatingPanel")
         if !panel.setFrameUsingName("InterviewArcVoiceFloatingPanel") {

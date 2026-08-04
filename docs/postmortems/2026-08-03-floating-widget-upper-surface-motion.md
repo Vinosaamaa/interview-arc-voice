@@ -29,7 +29,7 @@ animation.
 
 ## Root cause
 
-Three conditions combined:
+Four conditions combined:
 
 1. The panel controller animated geometry with a `Task` that woke the main
    actor at a nominal 60 Hz, calculated an intermediate frame, called
@@ -43,6 +43,10 @@ Three conditions combined:
    previous application on the same run-loop turn as the native shrink. That
    focus handoff let AppKit commit Plan Today-to-Focus at the destination frame
    without presenting the intermediate frames.
+4. The root `NSHostingView` still advertised the outgoing planner's SwiftUI
+   fitting bounds to AppKit. During Plan Today-to-Focus, that 560-point surface
+   temporarily acted like a minimum host size, blocking intermediate shrink
+   frames until the destination surface replaced it.
 
 The smooth compact-to-Focus path avoided the planner work and most of the
 multi-property transition cost, which is why it remained a reliable reference.
@@ -63,6 +67,8 @@ actually been proven.
   atomic presentation state.
 - Planner refresh, text-entry activation, and the return of application focus
   are deferred until the geometry transaction has finished.
+- The root hosting view no longer contributes SwiftUI fitting-size constraints;
+  the panel controller is the single owner of window bounds.
 - Policy coverage requires every direction to use the native backend and
   verifies Focus/Planner/Record state transitions as indivisible values.
 
