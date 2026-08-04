@@ -760,7 +760,7 @@ final class FloatingPanelController {
     private var miniDragStartFrame: NSRect?
     private var miniDragStartPointer: CGPoint?
     private var miniDragDidMove = false
-    private var resizeAnimationTask: Task<Void, Never>?
+    private var resizeAnimationGeneration = 0
 
     func show(model: VoiceBridgeModel) {
         if let panel {
@@ -796,6 +796,11 @@ final class FloatingPanelController {
         let hostingView = TransparentHostingView(
             rootView: FloatingRecorderView(model: model)
         )
+        // Window geometry is owned by FloatingPanelController. If the root
+        // hosting view publishes its SwiftUI fitting bounds back to AppKit,
+        // the outgoing 560-point planner becomes a temporary minimum size and
+        // a planner-to-focus shrink cannot present intermediate frames.
+        hostingView.sizingOptions = []
         panel.contentView = hostingView
         panel.setFrameAutosaveName("InterviewArcVoiceFloatingPanel")
         if !panel.setFrameUsingName("InterviewArcVoiceFloatingPanel") {
@@ -864,38 +869,29 @@ final class FloatingPanelController {
                 || abs(panel.frame.height - frame.height) > 0.5
                 || abs(panel.frame.minX - frame.minX) > 0.5
                 || abs(panel.frame.minY - frame.minY) > 0.5 else { return }
-        resizeAnimationTask?.cancel()
-        resizeAnimationTask = nil
+        resizeAnimationGeneration += 1
+        let generation = resizeAnimationGeneration
         if reduceMotion {
             panel.setFrame(frame, display: true)
         } else {
-            let startFrame = panel.frame
-            let duration = FloatingWidgetMotionPolicy.durationSeconds
-            resizeAnimationTask = Task { @MainActor [weak panel] in
-                let startedAt = Date()
-                while !Task.isCancelled {
-                    guard let panel else { return }
-                    let progress = Date().timeIntervalSince(startedAt) / duration
-                    let intermediate = FloatingWidgetFrameInterpolationPolicy.frame(
-                        from: startFrame,
-                        to: frame,
-                        progress: progress
+            switch FloatingWidgetMotionPolicy.backend {
+            case .nativeAppKitAnimationContext:
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = FloatingWidgetMotionPolicy.durationSeconds
+                    context.timingFunction = CAMediaTimingFunction(
+                        name: .easeInEaseOut
                     )
-                    panel.setFrame(intermediate, display: true)
-                    if progress >= 1 {
+                    panel.animator().setFrame(frame, display: true)
+                } completionHandler: { [weak self, weak panel] in
+                    Task { @MainActor in
+                        guard let self,
+                              let panel,
+                              generation == self.resizeAnimationGeneration else {
+                            return
+                        }
                         panel.setFrame(frame, display: true)
-                        // Let AppKit coalesce SwiftUI layout during the resize.
-                        // Forcing a full layout on every nominal 60 Hz frame
-                        // blocks the main actor for the large Plan Today tree,
-                        // leaving only one visible intermediate frame.
                         panel.contentView?.needsLayout = true
-                        return
                     }
-                    try? await Task.sleep(
-                        for: .seconds(
-                            FloatingWidgetMotionPolicy.frameIntervalSeconds
-                        )
-                    )
                 }
             }
         }
@@ -1245,6 +1241,7 @@ struct FloatingRecorderView: View {
     @State private var miniSmoothedLevel = 0.0
     @State private var retainedUpperSurface: FloatingWidgetUpperSurface?
     @State private var upperSurfaceRetentionGeneration = 0
+    @State private var plannerActivationGeneration = 0
 
     private var palette: VoiceWidgetPalette { model.widgetPalette }
 
@@ -1342,10 +1339,36 @@ struct FloatingRecorderView: View {
             )
         }
         .onChange(of: model.plannerPresented) { _, presented in
-            if presented {
-                FloatingPanelController.shared.beginPlannerTextEntry()
+            plannerActivationGeneration += 1
+            let generation = plannerActivationGeneration
+            if reduceMotion {
+                if presented {
+                    FloatingPanelController.shared.beginPlannerTextEntry()
+                } else {
+                    FloatingPanelController.shared.endPlannerTextEntry()
+                }
             } else {
-                FloatingPanelController.shared.endPlannerTextEntry()
+                // Both directions defer application activation until AppKit's
+                // frame transaction completes. Returning focus immediately on
+                // Plan Today -> Focus causes AppKit to commit the destination
+                // frame without presenting the intermediate shrink frames.
+                Task { @MainActor in
+                    try? await Task.sleep(
+                        for: .seconds(
+                            FloatingWidgetMotionPolicy.deferredWorkDelaySeconds
+                        )
+                    )
+                    guard generation == plannerActivationGeneration else {
+                        return
+                    }
+                    if presented {
+                        guard model.plannerPresented else { return }
+                        FloatingPanelController.shared.beginPlannerTextEntry()
+                    } else {
+                        guard !model.plannerPresented else { return }
+                        FloatingPanelController.shared.endPlannerTextEntry()
+                    }
+                }
             }
         }
         .onChange(of: model.planningCustomPresented) { _, _ in

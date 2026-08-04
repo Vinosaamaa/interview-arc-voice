@@ -178,8 +178,111 @@ public enum PlannerSelectionTrayPolicy {
 }
 
 public enum FloatingWidgetMotionPolicy {
+    public static let backend: FloatingWidgetMotionBackend =
+        .nativeAppKitAnimationContext
     public static let durationSeconds: TimeInterval = 0.30
-    public static let frameIntervalSeconds: TimeInterval = 1.0 / 60.0
+    public static let deferredWorkDelaySeconds: TimeInterval =
+        durationSeconds + 0.04
+}
+
+public enum FloatingWidgetMotionBackend: Equatable, Sendable {
+    case nativeAppKitAnimationContext
+}
+
+public struct FloatingWidgetPresentationState: Equatable, Sendable {
+    public internal(set) var timerPanelExpanded: Bool
+    public internal(set) var plannerPresented: Bool
+    public internal(set) var dynamicRecordingInterfaceActive: Bool
+
+    public static let compact = FloatingWidgetPresentationState(
+        timerPanelExpanded: false,
+        plannerPresented: false,
+        dynamicRecordingInterfaceActive: false
+    )
+
+    private init(
+        timerPanelExpanded: Bool,
+        plannerPresented: Bool,
+        dynamicRecordingInterfaceActive: Bool
+    ) {
+        self.timerPanelExpanded = timerPanelExpanded
+        self.plannerPresented = plannerPresented
+        self.dynamicRecordingInterfaceActive = dynamicRecordingInterfaceActive
+    }
+}
+
+public enum FloatingWidgetPresentationTransitionPolicy {
+    public static func settingTimerPanelExpanded(
+        _ expanded: Bool,
+        from current: FloatingWidgetPresentationState
+    ) -> FloatingWidgetPresentationState {
+        var next = current
+        next.timerPanelExpanded = expanded
+        if expanded { next.plannerPresented = false }
+        return next
+    }
+
+    public static func settingPlannerPresented(
+        _ presented: Bool,
+        from current: FloatingWidgetPresentationState
+    ) -> FloatingWidgetPresentationState {
+        var next = current
+        next.plannerPresented = presented
+        if presented { next.timerPanelExpanded = false }
+        return next
+    }
+
+    public static func showPlanner(
+        from current: FloatingWidgetPresentationState
+    ) -> FloatingWidgetPresentationState {
+        var next = current
+        next.timerPanelExpanded = false
+        next.plannerPresented = true
+        next.dynamicRecordingInterfaceActive = false
+        return next
+    }
+
+    public static func showFocus(
+        from current: FloatingWidgetPresentationState
+    ) -> FloatingWidgetPresentationState {
+        var next = current
+        next.timerPanelExpanded = true
+        next.plannerPresented = false
+        next.dynamicRecordingInterfaceActive = false
+        return next
+    }
+
+    public static func beginRecording(
+        from current: FloatingWidgetPresentationState,
+        dynamicInterfaceEnabled: Bool = true
+    ) -> FloatingWidgetPresentationState {
+        var next = current
+        next.plannerPresented = false
+        next.dynamicRecordingInterfaceActive = dynamicInterfaceEnabled
+        if dynamicInterfaceEnabled {
+            next.timerPanelExpanded = false
+        }
+        return next
+    }
+
+    public static func restoreAfterRecording(
+        from current: FloatingWidgetPresentationState,
+        timerPanelExpanded: Bool?,
+        plannerPresented: Bool?
+    ) -> FloatingWidgetPresentationState {
+        var next = current
+        if let timerPanelExpanded {
+            next.timerPanelExpanded = timerPanelExpanded
+        }
+        if let plannerPresented {
+            next.plannerPresented = plannerPresented
+        }
+        if next.plannerPresented {
+            next.timerPanelExpanded = false
+        }
+        next.dynamicRecordingInterfaceActive = false
+        return next
+    }
 }
 
 public enum FloatingWidgetFrameInterpolationPolicy {

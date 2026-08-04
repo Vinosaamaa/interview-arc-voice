@@ -47,7 +47,7 @@ import Testing
     #expect(recovery == .recordAgain)
 }
 
-@Test func interruptedButPlayableRecordingIsPreservedWithoutOfferingRetranscription() {
+@Test func interruptedButPlayableRecordingOffersExplicitRetranscription() {
     let recovery = RecordingRecoveryPolicy.action(
         for: RecordingIntegrityEvidence(
             wallDurationSeconds: 30,
@@ -58,7 +58,23 @@ import Testing
         )
     )
 
-    #expect(recovery == .preserveWithoutRetry)
+    #expect(recovery == .retryTranscription)
+}
+
+@Test func switchedInputDurationMismatchOffersTranscriptionOfPlayableAudio() {
+    let recovery = RecordingRecoveryPolicy.action(
+        for: RecordingIntegrityEvidence(
+            wallDurationSeconds: 8,
+            decodedDurationSeconds: 5,
+            fileSizeBytes: 32_121,
+            decodedFrameCount: 80_000,
+            writeErrorDescription: nil,
+            encodedAudioBytes: 32_121,
+            peakPowerDecibels: -17.4
+        )
+    )
+
+    #expect(recovery == .retryTranscription)
 }
 
 @Test func completeRecordingContinuesToTranscription() {

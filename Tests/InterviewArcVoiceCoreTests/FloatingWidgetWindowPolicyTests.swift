@@ -129,6 +129,48 @@ import Foundation
     #expect(middle.minY == start.minY)
 }
 
+@Test func everyWidgetDirectionUsesOneNativeAppKitAnimationTransaction() {
+    #expect(
+        FloatingWidgetMotionPolicy.backend
+            == .nativeAppKitAnimationContext
+    )
+    #expect(FloatingWidgetMotionPolicy.durationSeconds == 0.30)
+    #expect(
+        FloatingWidgetMotionPolicy.deferredWorkDelaySeconds
+            > FloatingWidgetMotionPolicy.durationSeconds
+    )
+}
+
+@Test func upperSurfaceAndRecordingChangesAreAtomicPresentationTransitions() {
+    let focus = FloatingWidgetPresentationTransitionPolicy.showFocus(
+        from: .compact
+    )
+    let planner = FloatingWidgetPresentationTransitionPolicy.showPlanner(
+        from: focus
+    )
+    #expect(!planner.timerPanelExpanded)
+    #expect(planner.plannerPresented)
+    #expect(!planner.dynamicRecordingInterfaceActive)
+
+    #expect(
+        FloatingWidgetPresentationTransitionPolicy.showFocus(from: planner)
+            == focus
+    )
+    let recording =
+        FloatingWidgetPresentationTransitionPolicy.beginRecording(from: focus)
+    #expect(!recording.timerPanelExpanded)
+    #expect(!recording.plannerPresented)
+    #expect(recording.dynamicRecordingInterfaceActive)
+
+    let invalidPlannerAndFocusRequest =
+        FloatingWidgetPresentationTransitionPolicy.settingPlannerPresented(
+            true,
+            from: focus
+        )
+    #expect(invalidPlannerAndFocusRequest.plannerPresented)
+    #expect(!invalidPlannerAndFocusRequest.timerPanelExpanded)
+}
+
 @Test func floatingPanelResizeInterpolationKeepsExactEndpoints() {
     let start = CGRect(x: 900, y: 120, width: 430, height: 340)
     let end = CGRect(x: 1_080, y: 120, width: 250, height: 56)

@@ -5,6 +5,12 @@ import InterviewArcVoiceCore
 
 @MainActor
 final class SystemOutputVolumeController {
+    private enum RestorationProgress: Equatable {
+        case pending
+        case baselineAtOriginalVolume
+        case complete
+    }
+
     private struct ActiveRoute {
         let device: AudioDeviceID
         let deviceUID: String
@@ -50,7 +56,8 @@ final class SystemOutputVolumeController {
             // A prior recording may still be waiting for the original stereo
             // profile. Reuse that durable baseline instead of replacing it
             // with the temporary hands-free route.
-            if restoreCurrentRouteIfPossible(existing) {
+            let progress = restoreCurrentRouteIfPossible(existing)
+            if progress == .baselineAtOriginalVolume || progress == .complete {
                 clearSnapshot()
             } else {
                 baselineUsesBluetooth = route?.isBluetooth ?? false
@@ -118,7 +125,7 @@ final class SystemOutputVolumeController {
         restoreTask?.cancel()
         restoreTask = nil
         guard let session = loadSnapshot() else { return }
-        if restoreCurrentRouteIfPossible(session) {
+        if restoreCurrentRouteIfPossible(session) == .complete {
             clearSnapshot()
         }
     }
@@ -127,28 +134,45 @@ final class SystemOutputVolumeController {
         restoreTask?.cancel()
         restoreTask = Task { [weak self] in
             var attempt = 0
+            var stability = BackgroundAudioBaselineStabilityTracker()
             while !Task.isCancelled {
                 guard let self, let session = self.loadSnapshot() else { return }
-                if self.restoreCurrentRouteIfPossible(session) {
+                switch self.restoreCurrentRouteIfPossible(session) {
+                case .complete:
                     self.clearSnapshot()
                     return
+                case .baselineAtOriginalVolume:
+                    if stability.observe(
+                        baselineAtOriginalVolume: true,
+                        now: Date().timeIntervalSinceReferenceDate
+                    ) {
+                        self.clearSnapshot()
+                        return
+                    }
+                case .pending:
+                    _ = stability.observe(
+                        baselineAtOriginalVolume: false,
+                        now: Date().timeIntervalSinceReferenceDate
+                    )
                 }
 
                 attempt += 1
-                let delay = attempt < 8 ? 180 : 1_000
+                let delay = stability.isTracking
+                    ? 180
+                    : (attempt < 8 ? 180 : 1_000)
                 try? await Task.sleep(for: .milliseconds(delay))
             }
         }
     }
 
-    /// Returns true only after the original pre-recording profile is active and
-    /// restored. Adjusted temporary profiles may be repaired earlier, but the
-    /// session remains durable until the baseline profile returns.
+    /// Reports the original route separately from final completion so the
+    /// caller can require a stable readback window before deleting recovery
+    /// state. Adjusted temporary profiles may be repaired earlier.
     private func restoreCurrentRouteIfPossible(
         _ session: BackgroundAudioSessionSnapshot
-    ) -> Bool {
+    ) -> RestorationProgress {
         guard let route = activeRoute(), let current = volume(route.device) else {
-            return false
+            return .pending
         }
 
         if let baseline = session.baseline,
@@ -159,9 +183,10 @@ final class SystemOutputVolumeController {
                baseline: baseline
            ) {
             if abs(current - baseline.originalVolume) <= 0.005 {
-                return true
+                return .baselineAtOriginalVolume
             }
-            return setVolume(baseline.originalVolume, device: route.device)
+            _ = setVolume(baseline.originalVolume, device: route.device)
+            return .pending
         }
 
         if BackgroundAudioPolicy.shouldRestoreTemporaryRoute(
@@ -191,10 +216,10 @@ final class SystemOutputVolumeController {
             ) {
                 _ = setVolume(legacy.originalVolume, device: route.device)
             }
-            return true
+            return .complete
         }
 
-        return false
+        return .pending
     }
 
     private func applyRecordingLevelToCurrentRoute(

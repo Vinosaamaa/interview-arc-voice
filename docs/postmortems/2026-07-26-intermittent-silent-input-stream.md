@@ -306,3 +306,20 @@ fallback rate. Release completion still requires the exact merged-main signed
 artifact to pass both a silent AirPods capture with zero provider wait and a
 genuine short spoken AirPods capture. Until then, issues #58 and #33 remain
 open.
+
+## Sixth recurrence: switched input preserved only a playable prefix
+
+On 2026-08-03 a recording made immediately after changing microphone input
+ran for 8 seconds but finalized with 5 seconds of decodable audio. The payload
+was neither empty nor silent: it averaged 51,394 bits per second and peaked at
+-17.4 dB. The integrity evaluator correctly reported `durationMismatch`, but
+the recovery policy treated every incomplete-but-playable file as preservation
+without retranscription. The failure card therefore offered only Record again,
+Play, and Save even though the 5-second prefix was transcribable.
+
+The missing 3 seconds cannot be reconstructed, so Voice must not describe the
+prefix as a complete answer. The recovery action now exposes **Retry
+transcription** explicitly and labels it as partial, while retaining Record
+again, Play, and Save. It does not automatically retry or silently discard the
+preserved recording. A deterministic 8-second/5-second fixture prevents this
+recovery-policy gap from returning.
