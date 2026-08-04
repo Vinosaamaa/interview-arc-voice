@@ -64,7 +64,7 @@ import Foundation
     #expect(CompactTimerTextPolicy.sessionRemaining(seconds: -3_661) == "+01:01")
 }
 
-@Test func upperSurfaceMotionUsesOneClippedSurfaceAndRetainsOnlyARealCollapse() {
+@Test func upperSurfaceMotionUsesOneClippedSurfaceAndRetainsVisibleCollapses() {
     #expect(
         FloatingWidgetUpperSurfaceTransitionPolicy.style
             == .singleSurfaceClippedResize
@@ -73,7 +73,7 @@ import Foundation
         FloatingWidgetUpperSurfaceTransitionPolicy.renderedSurface(
             desired: .focus,
             retained: .planToday
-        ) == .focus
+        ) == .planToday
     )
     #expect(
         FloatingWidgetUpperSurfaceTransitionPolicy.shouldRetainOutgoing(
@@ -83,7 +83,7 @@ import Foundation
         )
     )
     #expect(
-        !FloatingWidgetUpperSurfaceTransitionPolicy.shouldRetainOutgoing(
+        FloatingWidgetUpperSurfaceTransitionPolicy.shouldRetainOutgoing(
             from: .planToday,
             to: .focus,
             reduceMotion: false
