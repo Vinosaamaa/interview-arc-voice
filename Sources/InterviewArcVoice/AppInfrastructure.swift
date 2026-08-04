@@ -1336,23 +1336,34 @@ struct FloatingRecorderView: View {
         .onChange(of: model.plannerPresented) { _, presented in
             plannerActivationGeneration += 1
             let generation = plannerActivationGeneration
-            if presented {
-                if reduceMotion {
+            if reduceMotion {
+                if presented {
                     FloatingPanelController.shared.beginPlannerTextEntry()
                 } else {
-                    Task { @MainActor in
-                        try? await Task.sleep(
-                            for: .seconds(
-                                FloatingWidgetMotionPolicy.deferredWorkDelaySeconds
-                            )
-                        )
-                        guard generation == plannerActivationGeneration,
-                              model.plannerPresented else { return }
-                        FloatingPanelController.shared.beginPlannerTextEntry()
-                    }
+                    FloatingPanelController.shared.endPlannerTextEntry()
                 }
             } else {
-                FloatingPanelController.shared.endPlannerTextEntry()
+                // Both directions defer application activation until AppKit's
+                // frame transaction completes. Returning focus immediately on
+                // Plan Today -> Focus causes AppKit to commit the destination
+                // frame without presenting the intermediate shrink frames.
+                Task { @MainActor in
+                    try? await Task.sleep(
+                        for: .seconds(
+                            FloatingWidgetMotionPolicy.deferredWorkDelaySeconds
+                        )
+                    )
+                    guard generation == plannerActivationGeneration else {
+                        return
+                    }
+                    if presented {
+                        guard model.plannerPresented else { return }
+                        FloatingPanelController.shared.beginPlannerTextEntry()
+                    } else {
+                        guard !model.plannerPresented else { return }
+                        FloatingPanelController.shared.endPlannerTextEntry()
+                    }
+                }
             }
         }
         .onChange(of: model.planningCustomPresented) { _, _ in

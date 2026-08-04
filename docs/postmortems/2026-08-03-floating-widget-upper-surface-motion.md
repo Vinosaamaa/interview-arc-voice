@@ -38,8 +38,11 @@ Three conditions combined:
 2. Focus, Plan Today, and dynamic Record were represented by separate
    `@Published` booleans. One user action could therefore invalidate the
    SwiftUI tree multiple times and briefly expose an intermediate surface.
-3. Opening Plan Today began remote refresh and key-window/text-entry work while
-   its geometry was still animating.
+3. Planner application activation was asymmetric. Opening Plan Today deferred
+   key-window/text-entry work, but closing it immediately reactivated the
+   previous application on the same run-loop turn as the native shrink. That
+   focus handoff let AppKit commit Plan Today-to-Focus at the destination frame
+   without presenting the intermediate frames.
 
 The smooth compact-to-Focus path avoided the planner work and most of the
 multi-property transition cost, which is why it remained a reliable reference.
@@ -58,8 +61,8 @@ actually been proven.
   transaction with a shared 0.30-second ease-in-out curve.
 - The destination Focus, Plan Today, or Record surface is published as one
   atomic presentation state.
-- Planner refresh and text-entry activation are deferred until the geometry
-  transaction has finished.
+- Planner refresh, text-entry activation, and the return of application focus
+  are deferred until the geometry transaction has finished.
 - Policy coverage requires every direction to use the native backend and
   verifies Focus/Planner/Record state transitions as indivisible values.
 

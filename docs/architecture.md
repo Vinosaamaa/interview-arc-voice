@@ -271,8 +271,9 @@ animation. The panel controller uses one native `NSAnimationContext`
 transaction for expansion and collapse, allowing AppKit to schedule frame
 updates against display refresh instead of waking the main actor from a sleep
 loop. Focus, Plan Today, and dynamic Record publish their destination as one
-presentation state; planner refresh and key-window activation wait until the
-geometry transaction completes. SwiftUI supplies one clipped upper surface and
+presentation state; planner refresh, key-window activation, and returning focus
+to the previous application wait until the geometry transaction completes.
+SwiftUI supplies one clipped upper surface and
 never owns window geometry. Compact-to-Focus is the motion reference for every
 direction. This prevents a transparent borderless panel from settling directly
 at its target frame and making collapse look disabled. The visible
