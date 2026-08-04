@@ -129,10 +129,10 @@ import Foundation
     #expect(middle.minY == start.minY)
 }
 
-@Test func everyWidgetDirectionUsesNativeWindowSmoothResize() {
+@Test func everyWidgetDirectionUsesOneNativeAppKitAnimationTransaction() {
     #expect(
         FloatingWidgetMotionPolicy.backend
-            == .nativeWindowSmoothResize
+            == .nativeAppKitAnimationContext
     )
     #expect(FloatingWidgetMotionPolicy.durationSeconds == 0.30)
     #expect(
@@ -191,7 +191,27 @@ import Foundation
     )
 }
 
-@Test func planToFocusMakesTheVisibleSurfaceFollowEveryShrinkingHostFrame() {
+@Test func planToFocusRetainsTheVisiblePlannerThroughTheNativeShrink() {
+    #expect(
+        FloatingWidgetUpperSurfaceTransitionPolicy.renderedSurface(
+            desired: .focus,
+            retained: .planToday
+        ) == .planToday
+    )
+    #expect(
+        FloatingWidgetUpperSurfaceTransitionPolicy.shouldRetainOutgoing(
+            from: .planToday,
+            to: .focus,
+            reduceMotion: false
+        )
+    )
+    #expect(
+        !FloatingWidgetUpperSurfaceTransitionPolicy.shouldRetainOutgoing(
+            from: .focus,
+            to: .planToday,
+            reduceMotion: false
+        )
+    )
     #expect(
         FloatingWidgetUpperSurfaceTransitionPolicy.visibleWidth(
             for: .focus,

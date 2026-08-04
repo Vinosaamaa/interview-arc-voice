@@ -61,14 +61,16 @@ actually been proven.
 
 ## Repair
 
-- AppKit now owns each resize through `NSWindow`'s dedicated smooth-resize API,
-  with a shared 0.30-second duration supplied by the panel subclass.
+- AppKit now owns each resize through one native `NSAnimationContext`
+  transaction with a shared 0.30-second ease-in-out curve.
 - The destination Focus, Plan Today, or Record surface is published as one
   atomic presentation state.
 - Planner refresh, text-entry activation, and the return of application focus
   are deferred until the geometry transaction has finished.
 - The root hosting view no longer contributes SwiftUI fitting-size constraints;
   the panel controller is the single owner of window bounds.
+- Plan Today remains visible and clipped through the Plan Today-to-Focus native
+  contraction; Focus replaces it only after the final resize frame.
 - Policy coverage requires every direction to use the native backend and
   verifies Focus/Planner/Record state transitions as indivisible values.
 

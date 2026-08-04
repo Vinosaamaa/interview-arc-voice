@@ -179,14 +179,14 @@ public enum PlannerSelectionTrayPolicy {
 
 public enum FloatingWidgetMotionPolicy {
     public static let backend: FloatingWidgetMotionBackend =
-        .nativeWindowSmoothResize
+        .nativeAppKitAnimationContext
     public static let durationSeconds: TimeInterval = 0.30
     public static let deferredWorkDelaySeconds: TimeInterval =
         durationSeconds + 0.04
 }
 
 public enum FloatingWidgetMotionBackend: Equatable, Sendable {
-    case nativeWindowSmoothResize
+    case nativeAppKitAnimationContext
 }
 
 public struct FloatingWidgetPresentationState: Equatable, Sendable {
@@ -333,6 +333,13 @@ public enum FloatingWidgetUpperSurfaceTransitionPolicy {
         desired: FloatingWidgetUpperSurface?,
         retained: FloatingWidgetUpperSurface?
     ) -> FloatingWidgetUpperSurface? {
+        // Keep the planner visible while its larger host contracts. Replacing
+        // it with the already-settled Focus surface at the start makes the
+        // transparent part of the panel animate while visible content appears
+        // to jump straight to the destination.
+        if desired == .focus, retained == .planToday {
+            return .planToday
+        }
         desired ?? retained
     }
 
@@ -341,7 +348,8 @@ public enum FloatingWidgetUpperSurfaceTransitionPolicy {
         to: FloatingWidgetUpperSurface?,
         reduceMotion: Bool
     ) -> Bool {
-        !reduceMotion && from != nil && to == nil
+        guard !reduceMotion, let from else { return false }
+        return to == nil || (from == .planToday && to == .focus)
     }
 
     /// Focus normally keeps its settled width and is revealed by the host
