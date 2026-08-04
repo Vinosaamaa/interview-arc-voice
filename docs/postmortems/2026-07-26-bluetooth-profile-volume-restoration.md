@@ -1,9 +1,9 @@
 # Postmortem: Bluetooth output volume remained ducked after dictation
 
 **Date:** 2026-07-26  
-**Status:** Final  
+**Status:** Recurrence repair in verification
 **Related issues:** #38, #37  
-**Repair PR:** #56
+**Repair PRs:** #56, #65, #169
 
 ## Executive summary
 
@@ -14,6 +14,27 @@ During reproduction, the system volume began at 30%, correctly fell to 6% while 
 The repair gives each output profile a route signature, captures the stereo baseline before microphone acquisition, ducks only after recording begins, and retains a durable restoration task until the original stereo profile actually returns.
 
 No practice, transcript, or authentication data was lost.
+
+## 2026-08-03 recurrence
+
+The installed signed `77cd2a6` baseline again left output at the configured
+ducked level after Stop. Live containment found system output at 5%. The
+durable `voice.backgroundAudioSnapshot` was already absent, proving that Voice
+had declared restoration complete instead of continuing to wait.
+
+The restored controller cleared its snapshot immediately after the first
+successful CoreAudio volume write or first matching readback on the baseline
+profile. Bluetooth can briefly expose that profile, accept the write, and then
+continue settling. A later route/volume reset therefore had no persisted
+baseline left to repair it.
+
+Containment restored output to 25%, the pre-recording level implied by the
+configured 20% relative duck and observed 5% stuck level. The recurrence repair
+keeps polling and retains the snapshot until the original route and original
+volume have remained continuously stable for three seconds. A successful
+setter return alone is no longer completion evidence. Termination also leaves
+a baseline snapshot for next-launch recovery unless the session is a completed
+legacy snapshot.
 
 ## User impact
 
@@ -88,6 +109,10 @@ The controller identified an audio route primarily by device UID. AirPods can re
 - Restoration polls quickly during the normal transition window and then continues at a lightweight interval rather than timing out.
 - Interrupted-session recovery uses the same durable restoration path.
 - Recovery-popover actions wait for the native popover-close notification; a timeout remains only as a safety fallback.
+- The 2026-08-03 recurrence repair requires a three-second stable baseline
+  readback before clearing durable recovery state.
+- A successful CoreAudio setter call returns the restoration loop to polling;
+  it does not authorize snapshot deletion.
 
 ## Validation
 
