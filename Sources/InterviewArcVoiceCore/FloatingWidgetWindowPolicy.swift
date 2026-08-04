@@ -190,11 +190,17 @@ public enum FloatingWidgetMotionBackend: Equatable, Sendable {
 }
 
 public struct FloatingWidgetPresentationState: Equatable, Sendable {
-    public var timerPanelExpanded: Bool
-    public var plannerPresented: Bool
-    public var dynamicRecordingInterfaceActive: Bool
+    public internal(set) var timerPanelExpanded: Bool
+    public internal(set) var plannerPresented: Bool
+    public internal(set) var dynamicRecordingInterfaceActive: Bool
 
-    public init(
+    public static let compact = FloatingWidgetPresentationState(
+        timerPanelExpanded: false,
+        plannerPresented: false,
+        dynamicRecordingInterfaceActive: false
+    )
+
+    private init(
         timerPanelExpanded: Bool,
         plannerPresented: Bool,
         dynamicRecordingInterfaceActive: Bool
@@ -206,6 +212,26 @@ public struct FloatingWidgetPresentationState: Equatable, Sendable {
 }
 
 public enum FloatingWidgetPresentationTransitionPolicy {
+    public static func settingTimerPanelExpanded(
+        _ expanded: Bool,
+        from current: FloatingWidgetPresentationState
+    ) -> FloatingWidgetPresentationState {
+        var next = current
+        next.timerPanelExpanded = expanded
+        if expanded { next.plannerPresented = false }
+        return next
+    }
+
+    public static func settingPlannerPresented(
+        _ presented: Bool,
+        from current: FloatingWidgetPresentationState
+    ) -> FloatingWidgetPresentationState {
+        var next = current
+        next.plannerPresented = presented
+        if presented { next.timerPanelExpanded = false }
+        return next
+    }
+
     public static func showPlanner(
         from current: FloatingWidgetPresentationState
     ) -> FloatingWidgetPresentationState {
@@ -250,6 +276,9 @@ public enum FloatingWidgetPresentationTransitionPolicy {
         }
         if let plannerPresented {
             next.plannerPresented = plannerPresented
+        }
+        if next.plannerPresented {
+            next.timerPanelExpanded = false
         }
         next.dynamicRecordingInterfaceActive = false
         return next

@@ -142,32 +142,33 @@ import Foundation
 }
 
 @Test func upperSurfaceAndRecordingChangesAreAtomicPresentationTransitions() {
-    let focus = FloatingWidgetPresentationState(
-        timerPanelExpanded: true,
-        plannerPresented: false,
-        dynamicRecordingInterfaceActive: false
+    let focus = FloatingWidgetPresentationTransitionPolicy.showFocus(
+        from: .compact
     )
     let planner = FloatingWidgetPresentationTransitionPolicy.showPlanner(
         from: focus
     )
-    #expect(planner == FloatingWidgetPresentationState(
-        timerPanelExpanded: false,
-        plannerPresented: true,
-        dynamicRecordingInterfaceActive: false
-    ))
+    #expect(!planner.timerPanelExpanded)
+    #expect(planner.plannerPresented)
+    #expect(!planner.dynamicRecordingInterfaceActive)
 
     #expect(
         FloatingWidgetPresentationTransitionPolicy.showFocus(from: planner)
             == focus
     )
-    #expect(
+    let recording =
         FloatingWidgetPresentationTransitionPolicy.beginRecording(from: focus)
-            == FloatingWidgetPresentationState(
-                timerPanelExpanded: false,
-                plannerPresented: false,
-                dynamicRecordingInterfaceActive: true
-            )
-    )
+    #expect(!recording.timerPanelExpanded)
+    #expect(!recording.plannerPresented)
+    #expect(recording.dynamicRecordingInterfaceActive)
+
+    let invalidPlannerAndFocusRequest =
+        FloatingWidgetPresentationTransitionPolicy.settingPlannerPresented(
+            true,
+            from: focus
+        )
+    #expect(invalidPlannerAndFocusRequest.plannerPresented)
+    #expect(!invalidPlannerAndFocusRequest.timerPanelExpanded)
 }
 
 @Test func floatingPanelResizeInterpolationKeepsExactEndpoints() {

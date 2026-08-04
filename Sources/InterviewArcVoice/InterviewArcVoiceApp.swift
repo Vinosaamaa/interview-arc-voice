@@ -212,20 +212,19 @@ final class VoiceBridgeModel: ObservableObject {
     @Published private(set) var timerMutationInFlight = false
     @Published private(set) var timerMutationMessage: String?
     @Published private var floatingPresentationState =
-        FloatingWidgetPresentationState(
-            timerPanelExpanded: false,
-            plannerPresented: false,
-            dynamicRecordingInterfaceActive: false
-        )
+        FloatingWidgetPresentationState.compact
     var timerPanelExpanded: Bool {
         get { floatingPresentationState.timerPanelExpanded }
         set {
             guard newValue != floatingPresentationState.timerPanelExpanded else {
                 return
             }
-            var next = floatingPresentationState
-            next.timerPanelExpanded = newValue
-            floatingPresentationState = next
+            floatingPresentationState =
+                FloatingWidgetPresentationTransitionPolicy
+                    .settingTimerPanelExpanded(
+                        newValue,
+                        from: floatingPresentationState
+                    )
         }
     }
     var plannerPresented: Bool {
@@ -234,9 +233,12 @@ final class VoiceBridgeModel: ObservableObject {
             guard newValue != floatingPresentationState.plannerPresented else {
                 return
             }
-            var next = floatingPresentationState
-            next.plannerPresented = newValue
-            floatingPresentationState = next
+            floatingPresentationState =
+                FloatingWidgetPresentationTransitionPolicy
+                    .settingPlannerPresented(
+                        newValue,
+                        from: floatingPresentationState
+                    )
         }
     }
     @Published var planningState = VoicePlanningPresentationState()
@@ -976,11 +978,7 @@ final class VoiceBridgeModel: ObservableObject {
                 ? FloatingWidgetPresentationTransitionPolicy.showFocus(
                     from: floatingPresentationState
                 )
-                : FloatingWidgetPresentationState(
-                    timerPanelExpanded: false,
-                    plannerPresented: false,
-                    dynamicRecordingInterfaceActive: false
-                )
+                : .compact
             timerPanelExpandedBeforePlanner = nil
         } else {
             timerPanelExpandedBeforePlanner = timerPanelExpanded
