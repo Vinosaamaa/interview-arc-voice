@@ -3,7 +3,10 @@
 **Date:** 2026-08-04  
 **Status:** In review  
 **Severity:** Reliability / user-work blocked  
-**Tracking:** `interview-arc-voice#64`, paired with `interview-arc#157`
+**Tracking:** [interview-arc-voice#64](https://github.com/Vinosaamaa/interview-arc-voice/issues/64),
+[native PR #171](https://github.com/Vinosaamaa/interview-arc-voice/pull/171), paired with
+[interview-arc#157](https://github.com/Vinosaamaa/interview-arc/issues/157)
+and [server PR #159](https://github.com/Vinosaamaa/interview-arc/pull/159)
 
 ## Summary and impact
 
