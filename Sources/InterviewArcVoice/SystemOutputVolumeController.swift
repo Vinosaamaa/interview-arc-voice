@@ -57,9 +57,12 @@ final class SystemOutputVolumeController {
             // profile. Reuse that durable baseline instead of replacing it
             // with the temporary hands-free route.
             let progress = restoreCurrentRouteIfPossible(existing)
-            if progress == .baselineAtOriginalVolume || progress == .complete {
+            if progress == .complete {
                 clearSnapshot()
             } else {
+                // Even a matching baseline readback can be transient while
+                // Bluetooth settles. The new recording can reuse this session;
+                // only the asynchronous stability window may clear it.
                 baselineUsesBluetooth = route?.isBluetooth ?? false
                 if mode == .unchanged {
                     beginPendingRestoration()
