@@ -4306,6 +4306,14 @@ private struct FloatingTimerInstrumentPanel: View {
             .animation(drawerAnimation, value: model.activityPickerExpanded)
             .animation(drawerAnimation, value: model.sessionFinishResolutionRequested)
         }
+        // Apply the animated height before drawing the material. Otherwise
+        // the Focus card keeps only its settled intrinsic background while
+        // the surrounding transparent host shrinks, making Plan Today ->
+        // Focus look like an instantaneous swap.
+        .frame(
+            height: contentHeight,
+            alignment: .bottom
+        )
         .background {
             RoundedRectangle(cornerRadius: 17, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -4328,10 +4336,6 @@ private struct FloatingTimerInstrumentPanel: View {
                 .shadow(color: palette.coolShadow, radius: 8, y: 3)
         }
         .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-        .frame(
-            height: contentHeight,
-            alignment: .bottom
-        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Interview Arc timers")
     }

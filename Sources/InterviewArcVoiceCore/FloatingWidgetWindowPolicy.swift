@@ -333,13 +333,6 @@ public enum FloatingWidgetUpperSurfaceTransitionPolicy {
         desired: FloatingWidgetUpperSurface?,
         retained: FloatingWidgetUpperSurface?
     ) -> FloatingWidgetUpperSurface? {
-        // Keep the planner visible while its larger host contracts. Replacing
-        // it with the already-settled Focus surface at the start makes the
-        // transparent part of the panel animate while visible content appears
-        // to jump straight to the destination.
-        if desired == .focus, retained == .planToday {
-            return .planToday
-        }
         return desired ?? retained
     }
 
@@ -348,8 +341,7 @@ public enum FloatingWidgetUpperSurfaceTransitionPolicy {
         to: FloatingWidgetUpperSurface?,
         reduceMotion: Bool
     ) -> Bool {
-        guard !reduceMotion, let from else { return false }
-        return to == nil || (from == .planToday && to == .focus)
+        !reduceMotion && from != nil && to == nil
     }
 
     /// Focus normally keeps its settled width and is revealed by the host
