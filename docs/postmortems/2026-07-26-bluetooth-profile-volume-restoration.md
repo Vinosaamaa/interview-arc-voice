@@ -28,6 +28,14 @@ profile. Bluetooth can briefly expose that profile, accept the write, and then
 continue settling. A later route/volume reset therefore had no persisted
 baseline left to repair it.
 
+The first recurrence candidate retained the snapshot but reproduced a second
+boundary: macOS returned to a two-channel 44.1 kHz AirPlay output carrying the
+same stable UUID family and a different numeric CoreAudio instance suffix.
+Exact UID matching therefore kept waiting for an instance that no longer
+existed and left output at 5%. The final repair recognizes those recreated
+`UUID-<instance>-Audio` values as one logical route family while still requiring
+the same sample rate and channel count.
+
 Containment restored output to 25%, the pre-recording level implied by the
 configured 20% relative duck and observed 5% stuck level. The recurrence repair
 keeps polling and retains the snapshot until the original route and original
@@ -113,6 +121,8 @@ The controller identified an audio route primarily by device UID. AirPods can re
   readback before clearing durable recovery state.
 - A successful CoreAudio setter call returns the restoration loop to polling;
   it does not authorize snapshot deletion.
+- Recreated AirPlay UIDs match only within the same UUID family, sample rate,
+  and channel count; unrelated devices and hands-free profiles remain distinct.
 
 ## Validation
 

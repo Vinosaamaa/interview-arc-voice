@@ -137,6 +137,49 @@ import Testing
     )
 }
 
+@Test func recreatedAirPlayUIDMatchesTheOriginalLogicalRoute() {
+    let original = BackgroundAudioVolumeSnapshot(
+        deviceUID: "11111111-2222-3333-4444-555555555555-248754390196083-Audio",
+        nominalSampleRate: 44_100,
+        outputChannelCount: 2,
+        originalVolume: 0.54,
+        appliedVolume: 0.108
+    )
+
+    #expect(
+        original.matches(
+            deviceUID: "11111111-2222-3333-4444-555555555555-355597298113375-Audio",
+            nominalSampleRate: 44_100,
+            outputChannelCount: 2
+        )
+    )
+}
+
+@Test func recreatedAirPlayUIDDoesNotMatchAnotherFamilyOrProfile() {
+    let original = BackgroundAudioVolumeSnapshot(
+        deviceUID: "11111111-2222-3333-4444-555555555555-248754390196083-Audio",
+        nominalSampleRate: 44_100,
+        outputChannelCount: 2,
+        originalVolume: 0.54,
+        appliedVolume: 0.108
+    )
+
+    #expect(
+        !original.matches(
+            deviceUID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee-355597298113375-Audio",
+            nominalSampleRate: 44_100,
+            outputChannelCount: 2
+        )
+    )
+    #expect(
+        !original.matches(
+            deviceUID: "11111111-2222-3333-4444-555555555555-355597298113375-Audio",
+            nominalSampleRate: 24_000,
+            outputChannelCount: 1
+        )
+    )
+}
+
 @Test func baselineRestorationWaitsForTheOriginalBluetoothProfile() {
     let baseline = BackgroundAudioVolumeSnapshot(
         deviceUID: "airpods",

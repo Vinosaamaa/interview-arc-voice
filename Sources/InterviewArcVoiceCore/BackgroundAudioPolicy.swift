@@ -42,7 +42,12 @@ public struct BackgroundAudioVolumeSnapshot: Codable, Equatable, Sendable {
         nominalSampleRate: Double,
         outputChannelCount: UInt32
     ) -> Bool {
-        guard self.deviceUID == deviceUID else { return false }
+        guard BackgroundAudioPolicy.deviceUIDsIdentifySameRouteFamily(
+            self.deviceUID,
+            deviceUID
+        ) else {
+            return false
+        }
         // Legacy snapshots predate profile-aware routing. Preserve their
         // previous UID-only behavior when decoding an interrupted session.
         guard let storedRate = self.nominalSampleRate,
@@ -168,6 +173,22 @@ public enum BackgroundAudioPolicy {
         )
     }
 
+    /// CoreAudio recreates the generic AirPlay output after Bluetooth
+    /// microphone use with a different numeric instance in its UID. Treat
+    /// UUID-family `…-<instance>-Audio` values as the same logical output;
+    /// sample rate and channel count still distinguish its profiles.
+    public static func deviceUIDsIdentifySameRouteFamily(
+        _ first: String,
+        _ second: String
+    ) -> Bool {
+        guard first != second else { return true }
+        guard let firstFamily = ephemeralAudioRouteFamily(first),
+              let secondFamily = ephemeralAudioRouteFamily(second) else {
+            return false
+        }
+        return firstFamily == secondFamily
+    }
+
     /// A temporary Bluetooth hands-free route must stay ducked until the
     /// original stereo route returns. Restoring the temporary route first
     /// creates a short, loud, low-quality burst after Stop.
@@ -181,5 +202,22 @@ public enum BackgroundAudioPolicy {
         stableFor seconds: TimeInterval
     ) -> Bool {
         seconds >= baselineRestorationStabilitySeconds
+    }
+
+    private static func ephemeralAudioRouteFamily(_ deviceUID: String) -> String? {
+        let suffix = "-Audio"
+        guard deviceUID.hasSuffix(suffix) else { return nil }
+        let withoutSuffix = deviceUID.dropLast(suffix.count)
+        guard let separator = withoutSuffix.lastIndex(of: "-") else {
+            return nil
+        }
+        let instance = withoutSuffix[withoutSuffix.index(after: separator)...]
+        let family = String(withoutSuffix[..<separator])
+        guard !instance.isEmpty,
+              instance.allSatisfy(\.isNumber),
+              UUID(uuidString: family) != nil else {
+            return nil
+        }
+        return family
     }
 }
