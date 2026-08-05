@@ -719,7 +719,8 @@ public actor VoicePipeline {
                     try? await pendingCaptureStore.update(id: capture.id) {
                         $0.localState = .needsAttention
                         $0.nextAttemptAt = nil
-                        $0.lastErrorCode = "terminal_delivery_validation_failure"
+                        $0.lastErrorCode = VoiceLegacyDeliveryRecoveryPolicy
+                            .legacyValidationErrorCode
                         $0.lastErrorStatusCode = nil
                         $0.lastErrorMessage = error.localizedDescription
                         $0.lastErrorRetryable = false
