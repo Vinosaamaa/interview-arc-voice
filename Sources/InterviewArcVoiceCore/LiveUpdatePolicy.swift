@@ -204,6 +204,19 @@ public struct VoiceDeliveryErrorPolicy: Sendable {
     }
 }
 
+public struct VoiceLegacyDeliveryRecoveryPolicy: Sendable {
+    public static let legacyValidationErrorCode = "terminal_delivery_validation_failure"
+
+    public init() {}
+
+    public func permitsForcedRetry(_ capture: PendingVoiceCapture) -> Bool {
+        if capture.lastErrorRetryable == true { return true }
+        return capture.localState == .needsAttention
+            && capture.lastErrorCode == Self.legacyValidationErrorCode
+            && capture.deliveryStage == .transcriptPending
+    }
+}
+
 public enum VoiceDeliveryReceiptAction: Equatable, Sendable {
     case deliverTranscript
     case resumeAfterTranscript(responseGroupID: String?, responseGroupDigest: String?)
