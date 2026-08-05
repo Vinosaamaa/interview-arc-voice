@@ -16,6 +16,12 @@ import Testing
 }
 
 @Test func codexCLIInsideApprovedTerminalWorkspacesMayAttach() {
+    let appleTerminal = CaptureTargetApplicationPolicy.decision(
+        for: CaptureTargetDescriptor(
+            bundleIdentifier: "com.apple.Terminal",
+            windowTitle: "Interview Arc — Codex"
+        )
+    )
     let cmux = CaptureTargetApplicationPolicy.decision(
         for: CaptureTargetDescriptor(
             bundleIdentifier: "com.cmuxterm.app",
@@ -29,6 +35,9 @@ import Testing
         )
     )
 
+    #expect(appleTerminal.canAttach)
+    #expect(appleTerminal.kind == .codexCLITerminal)
+    #expect(appleTerminal.reason == .verifiedCodexWorkspace)
     #expect(cmux.canAttach)
     #expect(cmux.kind == .codexCLITerminal)
     #expect(cmux.reason == .verifiedCodexWorkspace)
@@ -37,6 +46,19 @@ import Testing
 }
 
 @Test func approvedWorkspaceTitleSupportsDetachedCodexCLITerminals() {
+    let appleTerminalShell = CaptureTargetApplicationPolicy.decision(
+        for: CaptureTargetDescriptor(
+            bundleIdentifier: "com.apple.Terminal",
+            windowTitle: "zsh — 80×24"
+        )
+    )
+    let appleTerminalFallback = CaptureTargetApplicationPolicy.decision(
+        for: CaptureTargetDescriptor(
+            bundleIdentifier: "com.apple.Terminal",
+            windowTitle: "Interview Arc — Codex",
+            windowEvidence: .visibleWindowFallback
+        )
+    )
     let shell = CaptureTargetApplicationPolicy.decision(
         for: CaptureTargetDescriptor(
             bundleIdentifier: "com.cmuxterm.app",
@@ -63,6 +85,10 @@ import Testing
     )
     let missing = CaptureTargetApplicationPolicy.decision(for: nil)
 
+    #expect(!appleTerminalShell.canAttach)
+    #expect(appleTerminalShell.reason == .terminalWithoutWorkspaceEvidence)
+    #expect(!appleTerminalFallback.canAttach)
+    #expect(appleTerminalFallback.reason == .terminalWithoutFocusedWindowEvidence)
     #expect(!shell.canAttach)
     #expect(shell.reason == .terminalWithoutWorkspaceEvidence)
     #expect(titledShellWithoutCodex.canAttach)

@@ -130,9 +130,9 @@ to promise linked behavior that the capture path would not perform.
 
 ## Regression prevention
 
-- Core tests cover desktop Codex, tmux-detached cmux/Warp Interview Arc
-  workspaces, arbitrary terminal windows, spoofed non-terminal titles, stale
-  context, and explicit downgrade reasons.
+- Core tests cover desktop Codex, Apple Terminal, and tmux-detached cmux/Warp
+  Interview Arc workspaces, arbitrary terminal windows, spoofed non-terminal
+  titles, stale context, and explicit downgrade reasons.
 - Packaged-app verification must exercise the exact signed installed app in a
   real active coding activity and verify one envelope/local pending record per
   recording.

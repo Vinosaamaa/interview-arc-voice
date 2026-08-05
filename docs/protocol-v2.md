@@ -17,6 +17,8 @@ classifies the capture.
   neither terminal contents nor command arguments to make this decision.
 - An approved terminal without the workspace-title signal remains General
   Dictation.
+- Apple Terminal additionally requires Accessibility evidence from its actual
+  focused window; a visible-window fallback is insufficient for linked routing.
 - Every other app uses General Dictation and never calls the Interview Arc
   capture, audio, or delivery endpoints.
 - A verified Codex target that starts from stale cached context may late-bind

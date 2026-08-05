@@ -236,8 +236,8 @@ tokens rather than discarding the recovery.
 ## First-time setup
 
 You need macOS 14 or later, the ChatGPT/Codex desktop app or a verified Codex
-CLI workspace in cmux/Warp, a Groq API key, and your Interview Arc personal
-connection token.
+CLI workspace in Apple Terminal, cmux, or Warp, a Groq API key, and your
+Interview Arc personal connection token.
 
 1. Open Interview Arc, choose **Connect tools**, and copy the personal token.
 2. Launch **Interview Arc Voice** from the packaged application.
@@ -264,11 +264,14 @@ credential re-save; subsequent replacements signed by the same certificate do
 not.
 7. For interview practice, focus an activity on Today. Keep **Link to Interview Arc** on.
    The activity title appears in the floating recorder.
-   For Codex CLI, keep the CLI inside an Interview Arc/Codex-named cmux or Warp
-   workspace. When Link is enabled and the focused activity context is fresh,
-   that approved host-and-window combination enters the linked flow even under
-   tmux, whose detached server breaks terminal process ancestry. Ordinary
-   terminal windows remain General Dictation.
+   For Codex CLI, keep the CLI inside an Interview Arc/Codex-named Apple
+   Terminal, cmux, or Warp workspace. When Link is enabled and the focused
+   activity context is fresh, that approved host-and-window combination enters
+   the linked flow even under tmux, whose detached server breaks terminal
+   process ancestry. Ordinary terminal windows remain General Dictation.
+   Apple Terminal must expose its actual focused-window title through macOS
+   Accessibility; Voice fails closed instead of trusting a visible-window
+   fallback for that host.
 
 For privacy-safe packaged-artifact diagnostics, pass a supported terminal PID
 to `InterviewArcVoice --capture-target-status <pid>`. The command reports only

@@ -6,7 +6,9 @@ Before a capture may enter this flow, Voice verifies its insertion target. The
 desktop Codex app is an intrinsic specialist surface. A CLI terminal is a
 specialist surface when Link is enabled, the focused activity context is fresh,
 the host is approved, and the focused top-level window identifies an Interview
-Arc/Codex workspace. Process ancestry is deliberately not required because tmux
+Arc/Codex workspace. Apple Terminal requires Accessibility evidence from the
+actual focused window and fails closed rather than using the visible-window
+fallback. Process ancestry is deliberately not required because tmux
 runs pane processes under its detached server. Target inspection transiently
 reads only the host bundle and focused window title; it does not persist those
 raw values or inspect terminal contents, arguments, environment variables, or

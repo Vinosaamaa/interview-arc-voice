@@ -20,14 +20,24 @@ public struct CaptureRoutingPolicy: Sendable {
 public struct CaptureTargetDescriptor: Equatable, Sendable {
     public let bundleIdentifier: String?
     public let windowTitle: String?
+    public let windowEvidence: CaptureTargetWindowEvidence
 
     public init(
         bundleIdentifier: String?,
-        windowTitle: String? = nil
+        windowTitle: String? = nil,
+        windowEvidence: CaptureTargetWindowEvidence? = nil
     ) {
         self.bundleIdentifier = bundleIdentifier
         self.windowTitle = windowTitle
+        self.windowEvidence = windowEvidence
+            ?? (windowTitle == nil ? .missing : .focusedAccessibility)
     }
+}
+
+public enum CaptureTargetWindowEvidence: Equatable, Sendable {
+    case focusedAccessibility
+    case visibleWindowFallback
+    case missing
 }
 
 public enum CaptureTargetKind: String, Codable, Equatable, Sendable {
@@ -41,6 +51,7 @@ public enum CaptureTargetDecisionReason: String, Codable, Equatable, Sendable {
     case verifiedCodexCLIProcess
     case verifiedCodexWorkspace
     case terminalWithoutCodexProcess
+    case terminalWithoutFocusedWindowEvidence
     case terminalWithoutWorkspaceEvidence
     case unsupportedApplication
     case missingApplication
@@ -126,8 +137,10 @@ public struct CaptureRouteEvaluationPolicy: Sendable {
 public enum CaptureTargetApplicationPolicy {
     public static let codexBundleIdentifier = "com.openai.codex"
     public static let voiceBundleIdentifier = "app.interviewarc.voice"
+    private static let appleTerminalBundleIdentifier = "com.apple.Terminal"
 
     private static let codexTerminalBundleIdentifiers: Set<String> = [
+        appleTerminalBundleIdentifier,
         "com.cmuxterm.app",
         "dev.warp.Warp-Stable",
     ]
@@ -170,6 +183,14 @@ public enum CaptureTargetApplicationPolicy {
                 canAttach: false,
                 kind: .other,
                 reason: .unsupportedApplication
+            )
+        }
+        if bundleIdentifier == appleTerminalBundleIdentifier,
+           descriptor.windowEvidence != .focusedAccessibility {
+            return CaptureTargetDecision(
+                canAttach: false,
+                kind: .other,
+                reason: .terminalWithoutFocusedWindowEvidence
             )
         }
         let title = descriptor.windowTitle?
