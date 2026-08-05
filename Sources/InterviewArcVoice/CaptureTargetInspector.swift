@@ -10,13 +10,18 @@ enum CaptureTargetInspector {
         for application: NSRunningApplication
     ) -> CaptureTargetDescriptor {
         let bundleIdentifier = application.bundleIdentifier
+        let focusedTitle = focusedWindowTitle(
+            applicationPID: application.processIdentifier
+        )
+        let fallbackTitle = focusedTitle == nil
+            ? visibleWindowTitle(applicationPID: application.processIdentifier)
+            : nil
         return CaptureTargetDescriptor(
             bundleIdentifier: bundleIdentifier,
-            windowTitle: focusedWindowTitle(
-                applicationPID: application.processIdentifier
-            ) ?? visibleWindowTitle(
-                applicationPID: application.processIdentifier
-            )
+            windowTitle: focusedTitle ?? fallbackTitle,
+            windowEvidence: focusedTitle != nil
+                ? .focusedAccessibility
+                : (fallbackTitle != nil ? .visibleWindowFallback : .missing)
         )
     }
 

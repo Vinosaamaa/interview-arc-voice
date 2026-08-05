@@ -269,6 +269,9 @@ not.
    activity context is fresh, that approved host-and-window combination enters
    the linked flow even under tmux, whose detached server breaks terminal
    process ancestry. Ordinary terminal windows remain General Dictation.
+   Apple Terminal must expose its actual focused-window title through macOS
+   Accessibility; Voice fails closed instead of trusting a visible-window
+   fallback for that host.
 
 For privacy-safe packaged-artifact diagnostics, pass a supported terminal PID
 to `InterviewArcVoice --capture-target-status <pid>`. The command reports only

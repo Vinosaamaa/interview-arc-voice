@@ -52,6 +52,13 @@ import Testing
             windowTitle: "zsh — 80×24"
         )
     )
+    let appleTerminalFallback = CaptureTargetApplicationPolicy.decision(
+        for: CaptureTargetDescriptor(
+            bundleIdentifier: "com.apple.Terminal",
+            windowTitle: "Interview Arc — Codex",
+            windowEvidence: .visibleWindowFallback
+        )
+    )
     let shell = CaptureTargetApplicationPolicy.decision(
         for: CaptureTargetDescriptor(
             bundleIdentifier: "com.cmuxterm.app",
@@ -80,6 +87,8 @@ import Testing
 
     #expect(!appleTerminalShell.canAttach)
     #expect(appleTerminalShell.reason == .terminalWithoutWorkspaceEvidence)
+    #expect(!appleTerminalFallback.canAttach)
+    #expect(appleTerminalFallback.reason == .terminalWithoutFocusedWindowEvidence)
     #expect(!shell.canAttach)
     #expect(shell.reason == .terminalWithoutWorkspaceEvidence)
     #expect(titledShellWithoutCodex.canAttach)
