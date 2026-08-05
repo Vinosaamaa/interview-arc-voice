@@ -515,7 +515,7 @@ public actor VoicePipeline {
                 continue
             }
             if capture.localState == .needsAttention
-                && (!force || capture.lastErrorRetryable != true) {
+                && (!force || !VoiceLegacyDeliveryRecoveryPolicy().permitsForcedRetry(capture)) {
                 continue
             }
             guard let intent = byID[capture.id] else { continue }

@@ -97,3 +97,10 @@ Voice classifies response-decode failures as bounded retryable work and treats
 that dedicated signal as one forced idempotent attempt. True source loss and
 explicitly non-retryable API conflicts remain terminal. Production identities,
 transcripts, local paths, and audio remain excluded.
+
+Installed verification then found that this prevention did not migrate the
+five records already terminalized by the old generic catch. Their exact legacy
+shape is now eligible for a forced retry only when it remains at
+`transcript_pending`; unrelated terminal failures and later delivery stages
+remain ineligible. Scheduled background reconciliation still does not restart
+`needs_attention` work.

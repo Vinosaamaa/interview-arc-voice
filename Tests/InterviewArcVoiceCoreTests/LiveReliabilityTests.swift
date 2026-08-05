@@ -243,6 +243,29 @@ private enum LiveReliabilityCodingKey: String, CodingKey {
     #expect(VoiceDeliveryErrorPolicy().retryableAPIError(for: CocoaError(.fileNoSuchFile)) == nil)
 }
 
+@Test func forcedRetryRecoversLegacyTranscriptPendingDecodeFailuresOnly() {
+    let policy = VoiceLegacyDeliveryRecoveryPolicy()
+    var legacyDecodeFailure = pendingCapture()
+    legacyDecodeFailure.localState = .needsAttention
+    legacyDecodeFailure.lastErrorCode = "terminal_delivery_validation_failure"
+    legacyDecodeFailure.lastErrorRetryable = false
+    legacyDecodeFailure.deliveryStage = .transcriptPending
+
+    var terminalAudioFailure = legacyDecodeFailure
+    terminalAudioFailure.deliveryStage = .audioPending
+
+    var permanentConflict = legacyDecodeFailure
+    permanentConflict.lastErrorCode = "voice_response_group_conflict"
+
+    var currentRetryableFailure = permanentConflict
+    currentRetryableFailure.lastErrorRetryable = true
+
+    #expect(policy.permitsForcedRetry(legacyDecodeFailure))
+    #expect(!policy.permitsForcedRetry(terminalAudioFailure))
+    #expect(!policy.permitsForcedRetry(permanentConflict))
+    #expect(policy.permitsForcedRetry(currentRetryableFailure))
+}
+
 @Test func needsAttentionDoesNotRestartBackgroundReconciliation() {
     var capture = pendingCapture()
     capture.localState = .needsAttention
