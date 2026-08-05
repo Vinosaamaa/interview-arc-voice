@@ -128,6 +128,7 @@ public enum CaptureTargetApplicationPolicy {
     public static let voiceBundleIdentifier = "app.interviewarc.voice"
 
     private static let codexTerminalBundleIdentifiers: Set<String> = [
+        "com.apple.Terminal",
         "com.cmuxterm.app",
         "dev.warp.Warp-Stable",
     ]
