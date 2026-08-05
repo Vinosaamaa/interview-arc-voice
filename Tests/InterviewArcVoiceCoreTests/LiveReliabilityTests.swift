@@ -140,6 +140,151 @@ import Testing
     #expect(!VoiceCaptureRetryPolicy().isDue(capture))
 }
 
+@Test func deliveryRetryScheduleStartsAtFifteenSecondsAndIsBounded() {
+    let policy = VoiceCaptureRetryPolicy()
+    let now = Date(timeIntervalSince1970: 1_000)
+
+    #expect(policy.nextAttempt(attempt: 1, now: now).timeIntervalSince(now) == 15)
+    #expect(policy.nextAttempt(attempt: 2, now: now).timeIntervalSince(now) == 30)
+    #expect(policy.nextAttempt(attempt: 7, now: now).timeIntervalSince(now) == 3_600)
+    #expect(policy.nextAttempt(attempt: 50, now: now).timeIntervalSince(now) == 3_600)
+}
+
+@Test func permanentServerDeliveryConflictQuarantinesWithoutRetry() {
+    let decision = VoiceDeliveryFailurePolicy().decision(
+        error: InterviewArcAPIError(
+            statusCode: 409,
+            message: "Stored group differs.",
+            code: "voice_response_group_conflict",
+            retryable: false
+        ),
+        capture: pendingCapture()
+    )
+
+    #expect(decision == .quarantine(
+        code: "voice_response_group_conflict",
+        statusCode: 409,
+        message: "Stored group differs."
+    ))
+}
+
+@Test func retryableDeliveryEventuallyNeedsAttentionInsteadOfLoopingForever() {
+    var capture = pendingCapture(createdAt: Date(timeIntervalSince1970: 1_000))
+    capture.localState = .acceptedDelivering
+    capture.retryAttempt = VoiceCaptureRetryPolicy.maximumAutomaticAttempts - 1
+    capture.retryStartedAt = Date(timeIntervalSince1970: 1_000)
+    let decision = VoiceDeliveryFailurePolicy().decision(
+        error: InterviewArcAPIError(
+            statusCode: 503,
+            message: "Temporary Worker failure.",
+            code: "worker_unavailable",
+            retryable: true
+        ),
+        capture: capture,
+        now: Date(timeIntervalSince1970: 1_100)
+    )
+
+    #expect(decision == .needsAttention(
+        code: "worker_unavailable",
+        statusCode: 503,
+        message: "Temporary Worker failure."
+    ))
+}
+
+@Test func retryableDeliveryPreservesTheServerErrorAndSchedulesOneStageRetry() {
+    let now = Date(timeIntervalSince1970: 2_000)
+    let decision = VoiceDeliveryFailurePolicy().decision(
+        error: InterviewArcAPIError(
+            statusCode: 503,
+            message: "Temporary Worker failure.",
+            code: "worker_unavailable",
+            retryable: true
+        ),
+        capture: pendingCapture(),
+        now: now
+    )
+
+    #expect(decision == .retry(
+        attempt: 1,
+        retryStartedAt: now,
+        nextAttemptAt: now.addingTimeInterval(15),
+        code: "worker_unavailable",
+        statusCode: 503,
+        message: "Temporary Worker failure."
+    ))
+}
+
+@Test func needsAttentionDoesNotRestartBackgroundReconciliation() {
+    var capture = pendingCapture()
+    capture.localState = .needsAttention
+    capture.lastErrorRetryable = true
+    capture.nextAttemptAt = nil
+
+    #expect(!VoiceCaptureRetryPolicy().isDue(capture))
+    #expect(
+        VoicePendingReconciliationPolicy()
+            .delaySeconds(captures: [capture], attempt: 0) == nil
+    )
+}
+
+@Test func authoritativeDeliveryReceiptPreventsDuplicateTranscriptRetry() {
+    let blocker = VoiceDeliveryBlocker(
+        captureId: "capture-test",
+        turnId: "turn-test",
+        status: "activity_related",
+        responseTurnId: "response-test",
+        memberOrder: 0,
+        memberCount: 3,
+        groupStatus: "provisional",
+        groupDigest: String(repeating: "b", count: 64),
+        canonicalUserTurnPresent: false,
+        canonicalResponseTurnPresent: false,
+        transcriptDeliveryState: "received",
+        audioState: "not_registered",
+        audioLossAcknowledged: false,
+        deletionState: "not_started",
+        lastError: nil,
+        retryable: true,
+        allowedActions: ["retry_delivery", "delete_exact_group"]
+    )
+
+    #expect(VoiceDeliveryReceiptPolicy().action(for: blocker) == .resumeAfterTranscript(
+        responseGroupID: "response-test",
+        responseGroupDigest: String(repeating: "b", count: 64)
+    ))
+}
+
+@Test func authoritativeQuarantineReceiptStopsAutomaticDelivery() {
+    let blocker = VoiceDeliveryBlocker(
+        captureId: "capture-test",
+        turnId: "turn-test",
+        status: "quarantined_conflict",
+        responseTurnId: "response-test",
+        memberOrder: 0,
+        memberCount: 3,
+        groupStatus: "quarantined_conflict",
+        groupDigest: String(repeating: "c", count: 64),
+        canonicalUserTurnPresent: false,
+        canonicalResponseTurnPresent: false,
+        transcriptDeliveryState: "received",
+        audioState: "not_registered",
+        audioLossAcknowledged: false,
+        deletionState: "not_started",
+        lastError: "Canonical group needs repair.",
+        retryable: false,
+        allowedActions: ["restore_exact_group", "delete_exact_group"]
+    )
+
+    #expect(VoiceDeliveryReceiptPolicy().action(for: blocker) == .quarantine(
+        responseGroupID: "response-test",
+        responseGroupDigest: String(repeating: "c", count: 64)
+    ))
+}
+
+@Test func absentDeliveryReceiptUsesNormalTranscriptDelivery() {
+    #expect(VoiceDeliveryReceiptPolicy().action(for: nil) == .deliverTranscript)
+}
+
 @Test func unresolvedLocalCaptureExpiresAfterTwentyFourHours() {
     let capture = pendingCapture(createdAt: Date(timeIntervalSince1970: 1_000))
     let now = Date(timeIntervalSince1970: 1_000 + 86_400)

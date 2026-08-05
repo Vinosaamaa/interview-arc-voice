@@ -80,6 +80,33 @@ The local lifecycle distinguishes:
 Only genuine transient operations have `nextAttemptAt` and a retry count.
 Waiting for a specialist or user is not retry work.
 
+Accepted delivery is persisted by stage: transcript pending/committed, audio
+pending/available or loss awaiting acknowledgement, coach pending/queued/
+complete/failed, then complete. Relaunch resumes only the first incomplete
+stage and reuses the stable capture, turn, clip, analysis, and response-group
+receipt when present. Acknowledged stages are never intentionally replayed.
+
+Delivery preserves `InterviewArcAPIError.code`, HTTP status, safe message, and
+`retryable`. A non-retryable error or an identity, group, deletion,
+authorization, activity, turn, or checksum conflict enters
+`quarantined_conflict` immediately and clears scheduled retry. Genuine
+transient delivery uses 15 seconds, 30 seconds, 60 seconds, 2 minutes, 5
+minutes, 15 minutes, then at most 1 hour. Eight consecutive automatic attempts
+or a six-hour stage window opens `needs_attention` and stops automatic network
+work. Manual Retry performs one attempt and never restarts an unbounded loop.
+Live events, wake, relaunch, and manual refresh are invalidation signals; they
+must not reset a terminal state or stage retry budget.
+
+Before retrying accepted content, Voice reads the activity's authoritative
+delivery blockers once and records the canonical response-group identity and
+digest. A member already reported as `received`, or already present as its
+canonical user turn, advances local transcript state without retransmitting
+content. A provisional group therefore delivers only missing members. A
+quarantined group stops and exposes server repair; deleting/deleted cancels
+local delivery under retention policy. The menu-bar recovery surface reports
+the exact stage and retry state, while the floating widget remains
+uncomplicated.
+
 ## Completion and deletion
 
 Activity finish and specialist finalization reject unresolved `pending`,

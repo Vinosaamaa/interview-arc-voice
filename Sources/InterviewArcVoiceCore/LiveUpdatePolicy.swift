@@ -59,7 +59,8 @@ public struct VoicePendingReconciliationPolicy: Sendable {
             case .acceptedDelivering:
                 return true
             case .excludedGracePeriod, .audioLostNeedsAcknowledgement,
-                 .audioLostAcknowledged, .quarantinedConflict, .complete:
+                 .audioLostAcknowledged, .quarantinedConflict, .needsAttention,
+                 .complete:
                 return false
             }
         }
@@ -74,15 +75,21 @@ public struct VoicePendingReconciliationPolicy: Sendable {
 }
 
 public struct VoiceCaptureRetryPolicy: Sendable {
+    public static let maximumAutomaticAttempts = 8
+    public static let maximumRetryWindow: TimeInterval = 6 * 60 * 60
+
     public init() {}
 
     public func nextAttempt(attempt: Int, now: Date = Date()) -> Date {
-        let seconds = min(3_600, 15 * pow(2, Double(max(0, attempt))))
+        let schedule: [TimeInterval] = [15, 30, 60, 120, 300, 900, 3_600]
+        let index = min(schedule.count - 1, max(0, attempt - 1))
+        let seconds = schedule[index]
         return now.addingTimeInterval(seconds)
     }
 
     public func isDue(_ capture: PendingVoiceCapture, now: Date = Date()) -> Bool {
-        guard capture.localState != .quarantinedConflict else { return false }
+        guard capture.localState != .quarantinedConflict,
+              capture.localState != .needsAttention else { return false }
         return capture.nextAttemptAt.map { $0 <= now }
             ?? (capture.localState == .insertedRegistrationPending)
     }
@@ -91,6 +98,102 @@ public struct VoiceCaptureRetryPolicy: Sendable {
         guard [.insertedRegistrationPending, .waitingForSpecialist, .excludedGracePeriod]
             .contains(capture.localState ?? .insertedRegistrationPending) else { return false }
         return now.timeIntervalSince(capture.createdAt) >= 86_400
+    }
+}
+
+public enum VoiceDeliveryFailureDecision: Equatable, Sendable {
+    case retry(
+        attempt: Int,
+        retryStartedAt: Date,
+        nextAttemptAt: Date,
+        code: String,
+        statusCode: Int,
+        message: String
+    )
+    case quarantine(code: String, statusCode: Int, message: String)
+    case needsAttention(code: String, statusCode: Int, message: String)
+}
+
+public struct VoiceDeliveryFailurePolicy: Sendable {
+    private static let permanentCodes: Set<String> = [
+        "voice_response_group_conflict",
+        "voice_capture_identity_conflict",
+        "voice_capture_not_remediable",
+        "capture_deleted",
+        "capture_tombstoned",
+        "owner_mismatch",
+        "activity_mismatch",
+        "turn_mismatch",
+        "checksum_mismatch",
+        "invalid_authentication",
+        "forbidden",
+    ]
+
+    public init() {}
+
+    public func decision(
+        error: InterviewArcAPIError,
+        capture: PendingVoiceCapture,
+        now: Date = Date()
+    ) -> VoiceDeliveryFailureDecision {
+        let code = error.code ?? "http_\(error.statusCode)"
+        if !error.retryable || Self.permanentCodes.contains(code) {
+            return .quarantine(
+                code: code,
+                statusCode: error.statusCode,
+                message: error.message
+            )
+        }
+        let attempt = (capture.retryAttempt ?? 0) + 1
+        let startedAt = capture.retryStartedAt ?? now
+        if attempt >= VoiceCaptureRetryPolicy.maximumAutomaticAttempts
+            || now.timeIntervalSince(startedAt) >= VoiceCaptureRetryPolicy.maximumRetryWindow {
+            return .needsAttention(
+                code: code,
+                statusCode: error.statusCode,
+                message: error.message
+            )
+        }
+        return .retry(
+            attempt: attempt,
+            retryStartedAt: startedAt,
+            nextAttemptAt: VoiceCaptureRetryPolicy().nextAttempt(
+                attempt: attempt,
+                now: now
+            ),
+            code: code,
+            statusCode: error.statusCode,
+            message: error.message
+        )
+    }
+}
+
+public enum VoiceDeliveryReceiptAction: Equatable, Sendable {
+    case deliverTranscript
+    case resumeAfterTranscript(responseGroupID: String?, responseGroupDigest: String?)
+    case quarantine(responseGroupID: String?, responseGroupDigest: String?)
+}
+
+public struct VoiceDeliveryReceiptPolicy: Sendable {
+    public init() {}
+
+    public func action(for blocker: VoiceDeliveryBlocker?) -> VoiceDeliveryReceiptAction {
+        guard let blocker else { return .deliverTranscript }
+        if blocker.status == "quarantined_conflict"
+            || blocker.groupStatus == "quarantined_conflict" {
+            return .quarantine(
+                responseGroupID: blocker.responseTurnId,
+                responseGroupDigest: blocker.groupDigest
+            )
+        }
+        if blocker.transcriptDeliveryState == "received"
+            || blocker.canonicalUserTurnPresent {
+            return .resumeAfterTranscript(
+                responseGroupID: blocker.responseTurnId,
+                responseGroupDigest: blocker.groupDigest
+            )
+        }
+        return .deliverTranscript
     }
 }
 
