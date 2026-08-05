@@ -702,13 +702,25 @@ public actor VoicePipeline {
                     manualAttempt: force
                 )
             } catch {
-                try? await pendingCaptureStore.update(id: capture.id) {
-                    $0.localState = .needsAttention
-                    $0.nextAttemptAt = nil
-                    $0.lastErrorCode = "terminal_delivery_validation_failure"
-                    $0.lastErrorStatusCode = nil
-                    $0.lastErrorMessage = error.localizedDescription
-                    $0.lastErrorRetryable = false
+                if let retryable = VoiceDeliveryErrorPolicy().retryableAPIError(for: error) {
+                    let latest = (try? await pendingCaptureStore.items().first(where: {
+                        $0.id == capture.id
+                    })) ?? capture
+                    try? await recordDeliveryFailure(
+                        retryable,
+                        capture: latest,
+                        now: now,
+                        manualAttempt: force
+                    )
+                } else {
+                    try? await pendingCaptureStore.update(id: capture.id) {
+                        $0.localState = .needsAttention
+                        $0.nextAttemptAt = nil
+                        $0.lastErrorCode = "terminal_delivery_validation_failure"
+                        $0.lastErrorStatusCode = nil
+                        $0.lastErrorMessage = error.localizedDescription
+                        $0.lastErrorRetryable = false
+                    }
                 }
             }
         }

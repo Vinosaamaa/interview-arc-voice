@@ -2,6 +2,10 @@ import Foundation
 import Testing
 @testable import InterviewArcVoiceCore
 
+private enum LiveReliabilityCodingKey: String, CodingKey {
+    case body
+}
+
 @Test func pendingCaptureReconciliationRegistersOnlyUnknownServerIdentities() {
     let local = ["capture-a", "capture-b", "capture-c"]
     let server = ["capture-a", "capture-c"]
@@ -18,6 +22,15 @@ import Testing
     #expect(policy.delaySeconds(attempt: 0) == 15)
     #expect(policy.delaySeconds(attempt: 1) == 30)
     #expect(policy.delaySeconds(attempt: 9) == 120)
+}
+
+@Test func explicitDeliveryRetrySignalForcesOneNativeRecoveryAttempt() {
+    let policy = VoiceLiveRetryPolicy()
+
+    #expect(policy.mode(for: "voice_delivery_retry") == .forced)
+    #expect(policy.mode(for: "voice_capture") == .scheduled)
+    #expect(policy.mode(for: "voice_intent") == .scheduled)
+    #expect(policy.mode(for: "timer") == .none)
 }
 
 @Test func staleOrDuplicateLiveRevisionsAreIgnored() {
@@ -212,6 +225,18 @@ import Testing
         statusCode: 503,
         message: "Temporary Worker failure."
     ))
+}
+
+@Test func successfulResponseDecodeFailureRemainsBoundedRetryWork() {
+    let decodingError = DecodingError.keyNotFound(
+        LiveReliabilityCodingKey.body,
+        .init(codingPath: [], debugDescription: "Missing body")
+    )
+    let classified = VoiceDeliveryErrorPolicy().retryableAPIError(for: decodingError)
+
+    #expect(classified?.code == "response_decoding_failure")
+    #expect(classified?.retryable == true)
+    #expect(VoiceDeliveryErrorPolicy().retryableAPIError(for: CocoaError(.fileNoSuchFile)) == nil)
 }
 
 @Test func needsAttentionDoesNotRestartBackgroundReconciliation() {

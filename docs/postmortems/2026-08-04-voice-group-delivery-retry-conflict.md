@@ -73,3 +73,27 @@ repair tools made the situation difficult to diagnose safely.
 Roll back the native artifact while preserving migrated local JSON and original
 M4A files. Never clear the pending store as rollback. The backward-compatible
 server receipt and non-destructive conflict behavior remain deployed.
+
+## 2026-08-05 recurrence: successful-response decode failure
+
+Five first members of multi-recording response groups stopped at
+`transcript_pending`, while each later member completed. Every affected local
+record had zero retry attempts, the same missing-data decode failure, and a
+non-empty protected original. The paired server intermediate receipt exposed
+`transcript` instead of the response contract's required `body`, so the client
+failed after HTTP 201 but before audio upload.
+
+The generic native catch then classified the decode error as terminal and
+non-retryable. Consequently, the server's retry wake could not activate the
+preserved originals. The owner explicitly acknowledged the affected recordings
+as unavailable to unblock two completed activities; that was recovery from the
+incident, not proof that the delivery path worked.
+
+The paired correction is tracked by
+[interview-arc-voice#174](https://github.com/Vinosaamaa/interview-arc-voice/issues/174)
+and [interview-arc#172](https://github.com/Vinosaamaa/interview-arc/issues/172).
+The bridge now returns one stable turn schema and emits a dedicated retry scope.
+Voice classifies response-decode failures as bounded retryable work and treats
+that dedicated signal as one forced idempotent attempt. True source loss and
+explicitly non-retryable API conflicts remain terminal. Production identities,
+transcripts, local paths, and audio remain excluded.
