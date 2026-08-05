@@ -3411,12 +3411,20 @@ final class VoiceBridgeModel: ObservableObject {
                             }
                         case .practiceChanged(let update):
                             self.lastLiveRevision = max(self.lastLiveRevision, update.revision)
-                            if ["voice_intent", "voice_capture"].contains(update.scope) {
+                            switch VoiceLiveRetryPolicy().mode(for: update.scope) {
+                            case .forced(let activityID):
+                                await self.retryPendingInBackground(
+                                    force: true,
+                                    activityID: activityID
+                                )
+                            case .scheduled:
                                 await self.retryPendingInBackground()
-                            } else if !self.timerMutationInFlight {
-                                await self.refreshContext(showProgress: false)
-                                if self.plannerPresented {
-                                    await self.refreshPlanning()
+                            case .none:
+                                if !self.timerMutationInFlight {
+                                    await self.refreshContext(showProgress: false)
+                                    if self.plannerPresented {
+                                        await self.refreshPlanning()
+                                    }
                                 }
                             }
                         }
@@ -4319,14 +4327,17 @@ final class VoiceBridgeModel: ObservableObject {
         return application
     }
 
-    private func retryPendingInBackground() async {
+    private func retryPendingInBackground(
+        force: Bool = false,
+        activityID: String? = nil
+    ) async {
         guard linkToInterviewArc, !pendingRetryInFlight else { return }
         if pipeline == nil { pipeline = try? makeLinkedPipeline() }
         guard let pipeline else { return }
         pendingRetryInFlight = true
         defer { pendingRetryInFlight = false }
         let previousPhase = phase
-        _ = await pipeline.retryPending(force: false)
+        _ = await pipeline.retryPending(force: force, activityID: activityID)
         await updateRetryCount()
         await refreshTranscriptHistory()
         if VoiceBackgroundPresentationPolicy.decision(

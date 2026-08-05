@@ -143,9 +143,15 @@ public actor PendingVoiceCaptureStore {
         id: String,
         _ transform: (inout PendingVoiceCapture) -> Void
     ) throws {
-        guard var capture = try items().first(where: { $0.id == id }) else { return }
+        guard var capture = try item(id: id) else { return }
         transform(&capture)
         try save(capture)
+    }
+
+    public func item(id: String) throws -> PendingVoiceCapture? {
+        let url = directory.appending(path: "\(id).json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try decoder.decode(PendingVoiceCapture.self, from: Data(contentsOf: url))
     }
 
     public func items() throws -> [PendingVoiceCapture] {
@@ -162,7 +168,7 @@ public actor PendingVoiceCaptureStore {
 
     public func remove(id: String, deleteAudio: Bool) throws {
         if deleteAudio,
-           let capture = try items().first(where: { $0.id == id }),
+           let capture = try item(id: id),
            FileManager.default.fileExists(atPath: capture.audioURL.path) {
             try FileManager.default.removeItem(at: capture.audioURL)
         }

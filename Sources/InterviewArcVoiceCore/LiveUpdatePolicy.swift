@@ -44,6 +44,28 @@ public struct VoiceLiveUpdateFallbackPolicy: Sendable {
     }
 }
 
+public enum VoiceLiveRetryMode: Equatable, Sendable {
+    case none
+    case scheduled
+    case forced(activityID: String)
+}
+
+public struct VoiceLiveRetryPolicy: Sendable {
+    public init() {}
+
+    public func mode(for scope: String) -> VoiceLiveRetryMode {
+        let prefix = "voice_delivery_retry:"
+        if scope.hasPrefix(prefix) {
+            let activityID = String(scope.dropFirst(prefix.count))
+            if !activityID.isEmpty { return .forced(activityID: activityID) }
+        }
+        switch scope {
+        case "voice_intent", "voice_capture": return .scheduled
+        default: return .none
+        }
+    }
+}
+
 public struct VoicePendingReconciliationPolicy: Sendable {
     public init() {}
 
@@ -164,6 +186,20 @@ public struct VoiceDeliveryFailurePolicy: Sendable {
             code: code,
             statusCode: error.statusCode,
             message: error.message
+        )
+    }
+}
+
+public struct VoiceDeliveryErrorPolicy: Sendable {
+    public init() {}
+
+    public func retryableAPIError(for error: Error) -> InterviewArcAPIError? {
+        guard error is DecodingError else { return nil }
+        return InterviewArcAPIError(
+            statusCode: 0,
+            message: error.localizedDescription,
+            code: "response_decoding_failure",
+            retryable: true
         )
     }
 }
