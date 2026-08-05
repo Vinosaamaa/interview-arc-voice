@@ -47,15 +47,19 @@ public struct VoiceLiveUpdateFallbackPolicy: Sendable {
 public enum VoiceLiveRetryMode: Equatable, Sendable {
     case none
     case scheduled
-    case forced
+    case forced(activityID: String)
 }
 
 public struct VoiceLiveRetryPolicy: Sendable {
     public init() {}
 
     public func mode(for scope: String) -> VoiceLiveRetryMode {
+        let prefix = "voice_delivery_retry:"
+        if scope.hasPrefix(prefix) {
+            let activityID = String(scope.dropFirst(prefix.count))
+            if !activityID.isEmpty { return .forced(activityID: activityID) }
+        }
         switch scope {
-        case "voice_delivery_retry": return .forced
         case "voice_intent", "voice_capture": return .scheduled
         default: return .none
         }

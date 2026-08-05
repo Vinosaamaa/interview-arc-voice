@@ -259,10 +259,17 @@ public actor VoicePipeline {
         )
     }
 
-    public func retryPending(force: Bool = true) async -> Int {
-        var completed = await reconcilePendingCaptures(force: force)
+    public func retryPending(
+        force: Bool = true,
+        activityID: String? = nil
+    ) async -> Int {
+        var completed = await reconcilePendingCaptures(
+            force: force,
+            activityID: activityID
+        )
         guard let items = try? await retryQueue.items() else { return completed }
-        for item in items {
+        for item in items where activityID == nil
+            || item.activity.activityId == activityID {
             do {
                 switch item.kind {
                 case .capturePersistence:
@@ -401,9 +408,7 @@ public actor VoicePipeline {
     }
 
     public func acknowledgeAudioLoss(captureID: String) async throws {
-        guard let capture = try await pendingCaptureStore.items().first(where: {
-            $0.id == captureID
-        }) else {
+        guard let capture = try await pendingCaptureStore.item(id: captureID) else {
             return
         }
         _ = try await api.acknowledgeAudioLoss(
@@ -417,11 +422,17 @@ public actor VoicePipeline {
         }
     }
 
-    private func reconcilePendingCaptures(force: Bool = false) async -> Int {
+    private func reconcilePendingCaptures(
+        force: Bool = false,
+        activityID: String? = nil
+    ) async -> Int {
         let now = Date()
         let retryPolicy = VoiceCaptureRetryPolicy()
-        guard let captures = try? await pendingCaptureStore.items(),
-              !captures.isEmpty else { return 0 }
+        guard let allCaptures = try? await pendingCaptureStore.items() else { return 0 }
+        let captures = allCaptures.filter {
+            activityID == nil || $0.activity.activityId == activityID
+        }
+        guard !captures.isEmpty else { return 0 }
         var completed = 0
         guard var intents = try? await api.retainedIntents() else {
             return completed
@@ -662,9 +673,7 @@ public actor VoicePipeline {
                     break
                 }
             } catch let error as InterviewArcAPIError {
-                let latest = (try? await pendingCaptureStore.items().first(where: {
-                    $0.id == capture.id
-                })) ?? capture
+                let latest = (try? await pendingCaptureStore.item(id: capture.id)) ?? capture
                 try? await recordDeliveryFailure(
                     error,
                     capture: latest,
@@ -672,9 +681,7 @@ public actor VoicePipeline {
                     manualAttempt: force
                 )
             } catch let error as URLError {
-                let latest = (try? await pendingCaptureStore.items().first(where: {
-                    $0.id == capture.id
-                })) ?? capture
+                let latest = (try? await pendingCaptureStore.item(id: capture.id)) ?? capture
                 try? await recordDeliveryFailure(
                     InterviewArcAPIError(
                         statusCode: 0,
@@ -687,9 +694,7 @@ public actor VoicePipeline {
                     manualAttempt: force
                 )
             } catch let error as VoiceBridgeError {
-                let latest = (try? await pendingCaptureStore.items().first(where: {
-                    $0.id == capture.id
-                })) ?? capture
+                let latest = (try? await pendingCaptureStore.item(id: capture.id)) ?? capture
                 try? await recordDeliveryFailure(
                     InterviewArcAPIError(
                         statusCode: 0,
@@ -703,9 +708,7 @@ public actor VoicePipeline {
                 )
             } catch {
                 if let retryable = VoiceDeliveryErrorPolicy().retryableAPIError(for: error) {
-                    let latest = (try? await pendingCaptureStore.items().first(where: {
-                        $0.id == capture.id
-                    })) ?? capture
+                    let latest = (try? await pendingCaptureStore.item(id: capture.id)) ?? capture
                     try? await recordDeliveryFailure(
                         retryable,
                         capture: latest,
@@ -764,9 +767,7 @@ public actor VoicePipeline {
         _ capture: PendingVoiceCapture
     ) async throws {
         do {
-            var current = (try await pendingCaptureStore.items().first(where: {
-                $0.id == capture.id
-            })) ?? capture
+            var current = (try await pendingCaptureStore.item(id: capture.id)) ?? capture
             let analysisID = "delivery-\(capture.id)"
             if current.audioAvailableAt == nil {
                 if let loss = Self.localAudioSourceLoss(capture.audioURL) {

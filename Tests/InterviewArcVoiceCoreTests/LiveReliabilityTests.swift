@@ -27,7 +27,11 @@ private enum LiveReliabilityCodingKey: String, CodingKey {
 @Test func explicitDeliveryRetrySignalForcesOneNativeRecoveryAttempt() {
     let policy = VoiceLiveRetryPolicy()
 
-    #expect(policy.mode(for: "voice_delivery_retry") == .forced)
+    #expect(
+        policy.mode(for: "voice_delivery_retry:activity-a")
+            == .forced(activityID: "activity-a")
+    )
+    #expect(policy.mode(for: "voice_delivery_retry") == .none)
     #expect(policy.mode(for: "voice_capture") == .scheduled)
     #expect(policy.mode(for: "voice_intent") == .scheduled)
     #expect(policy.mode(for: "timer") == .none)
