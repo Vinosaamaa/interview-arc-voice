@@ -466,7 +466,7 @@ public actor VoicePipeline {
         }
         let byID = Dictionary(uniqueKeysWithValues: intents.map { ($0.captureId, $0) })
         let receiptStatuses = Set([
-            "activity_related", "accepted", "quarantined_conflict",
+            "activity_related", "accepted",
         ])
         let receiptActivityIDs = Set(intents.compactMap { intent in
             receiptStatuses.contains(intent.status) ? intent.activityId : nil
@@ -508,6 +508,15 @@ public actor VoicePipeline {
                 continue
             }
             guard let intent = byID[capture.id] else { continue }
+            if intent.status == "quarantined_conflict" {
+                try? await pendingCaptureStore.update(id: capture.id) {
+                    $0.localState = .quarantinedConflict
+                    $0.nextAttemptAt = nil
+                    $0.lastErrorCode = "voice_response_group_conflict"
+                    $0.lastErrorRetryable = false
+                }
+                continue
+            }
             if receiptStatuses.contains(intent.status),
                let receiptError = blockerErrorsByActivity[intent.activityId] {
                 try? await recordDeliveryFailure(
@@ -671,6 +680,21 @@ public actor VoicePipeline {
                         statusCode: 0,
                         message: error.localizedDescription,
                         code: "network_transport_failure",
+                        retryable: true
+                    ),
+                    capture: latest,
+                    now: now,
+                    manualAttempt: force
+                )
+            } catch let error as VoiceBridgeError {
+                let latest = (try? await pendingCaptureStore.items().first(where: {
+                    $0.id == capture.id
+                })) ?? capture
+                try? await recordDeliveryFailure(
+                    InterviewArcAPIError(
+                        statusCode: 0,
+                        message: error.localizedDescription,
+                        code: "codex_unavailable",
                         retryable: true
                     ),
                     capture: latest,
