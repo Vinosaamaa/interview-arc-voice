@@ -34,8 +34,11 @@ classifies the capture.
 ## Pending capture lifecycle
 
 1. Voice transcribes locally from its protected recording file.
-2. Voice creates stable `captureId`, `turnId`, and `clipId` values and a
-   SHA-256 transcript checksum.
+2. Voice removes boundary whitespace once, then creates stable `captureId`,
+   `turnId`, and `clipId` values and a SHA-256 checksum from that exact
+   canonical transcript. The same text is inserted, retained locally,
+   registered, and delivered. A pre-network guard rejects any divergent local
+   transcript/checksum pair.
 3. Voice writes a permission-`0600` pending JSON record and retains the M4A
    locally.
 4. Voice inserts the exact transcript and the `interview-arc-voice:v2`

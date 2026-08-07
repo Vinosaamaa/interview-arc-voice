@@ -1,6 +1,22 @@
 import CryptoKit
 import Foundation
 
+struct VoiceTranscriptIdentity: Equatable, Sendable {
+    let transcript: String
+    let checksum: String
+
+    init(_ source: String) {
+        transcript = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        checksum = SHA256.hash(data: Data(transcript.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    func validates(transcript candidate: String, checksum candidateChecksum: String) -> Bool {
+        candidate == transcript && candidateChecksum == checksum
+    }
+}
+
 private enum LocalAudioSourceLoss: Error {
     case missing
     case unreadable
@@ -19,10 +35,8 @@ enum RecoveryPendingCaptureFactory {
         context: LinkedTranscriptRecoveryContext,
         audioURL: URL
     ) -> PendingVoiceCapture {
-        let text = record.transcript
-        let checksum = SHA256.hash(data: Data(text.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
+        let identity = VoiceTranscriptIdentity(record.transcript)
+        let text = identity.transcript
         let original = context.transcription
         let transcription = original.text == text
             ? original
@@ -42,7 +56,7 @@ enum RecoveryPendingCaptureFactory {
             id: context.captureID,
             turnID: context.turnID,
             clipID: context.clipID,
-            checksum: checksum,
+            checksum: identity.checksum,
             activity: context.activity,
             transcript: text,
             audioURL: audioURL,
@@ -168,20 +182,18 @@ public actor VoicePipeline {
             speechEvidence: speechEvidence,
             protectionMode: protectionMode
         )
+        let identity = VoiceTranscriptIdentity(reliable.transcription.text)
         let transcription = reliable.transcription
         let captureID = "capture-\(UUID().uuidString.lowercased())"
         let turnID = "voice-\(UUID().uuidString.lowercased())"
         let requestedClipID = "clip-\(UUID().uuidString.lowercased())"
-        let checksum = SHA256.hash(data: Data(transcription.text.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
         let pending = PendingVoiceCapture(
             id: captureID,
             turnID: turnID,
             clipID: requestedClipID,
-            checksum: checksum,
+            checksum: identity.checksum,
             activity: activity,
-            transcript: transcription.text,
+            transcript: identity.transcript,
             audioURL: recordingURL,
             durationSeconds: durationSeconds,
             occurredAt: occurredAt,
@@ -195,7 +207,7 @@ public actor VoicePipeline {
             captureID: captureID,
             activityID: activity.activityId,
             turnID: turnID,
-            transcript: transcription.text
+            transcript: identity.transcript
         ))
         try? await pendingCaptureStore.update(id: captureID) {
             $0.transcriptInsertedAt = Date()
@@ -209,7 +221,7 @@ public actor VoicePipeline {
         return VoicePipelineResult(
             captureID: captureID,
             turnID: turnID,
-            transcript: transcription.text,
+            transcript: identity.transcript,
             clipID: nil,
             capturePersisted: true,
             audioUploaded: false,
@@ -255,7 +267,7 @@ public actor VoicePipeline {
             captureID: context.captureID,
             activityID: context.activity.activityId,
             turnID: context.turnID,
-            transcript: record.transcript
+            transcript: pending.transcript
         )
     }
 

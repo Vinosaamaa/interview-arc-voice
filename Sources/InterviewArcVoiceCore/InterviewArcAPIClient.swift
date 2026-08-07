@@ -200,6 +200,17 @@ public actor InterviewArcAPIClient {
         captureID: String? = nil,
         checksum: String? = nil
     ) async throws -> VoiceCaptureResponse {
+        if let captureID, let checksum {
+            let identity = VoiceTranscriptIdentity(transcript)
+            guard identity.validates(transcript: transcript, checksum: checksum) else {
+                throw InterviewArcAPIError(
+                    statusCode: 0,
+                    message: "Local transcript identity is inconsistent for \(captureID).",
+                    code: "local_transcript_checksum_mismatch",
+                    retryable: false
+                )
+            }
+        }
         struct Body: Encodable {
             let protocolVersion: Int
             let activityId: String
@@ -224,6 +235,18 @@ public actor InterviewArcAPIClient {
     }
 
     public func registerIntent(_ capture: PendingVoiceCapture) async throws -> VoiceCaptureIntentResponse {
+        let identity = VoiceTranscriptIdentity(capture.transcript)
+        guard identity.validates(
+            transcript: capture.transcript,
+            checksum: capture.checksum
+        ) else {
+            throw InterviewArcAPIError(
+                statusCode: 0,
+                message: "Local transcript identity is inconsistent for \(capture.id).",
+                code: "local_transcript_checksum_mismatch",
+                retryable: false
+            )
+        }
         struct Body: Encodable {
             let protocolVersion: Int
             let captureId: String
