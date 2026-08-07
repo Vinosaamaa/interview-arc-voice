@@ -488,7 +488,7 @@ public actor ReliableSpeechTranscriber {
         speechEvidence: SpeechEvidenceResult?,
         protectionMode: SpeechProtectionMode
     ) throws -> ReliableTranscription {
-        if let candidate = recoverableCoverageCandidate(checkedCandidates),
+        if let candidate = recoverableCandidate(checkedCandidates),
            let candidateCheck = checkedCandidates.first(where: {
                $0.0 == candidate
            })?.1 {
@@ -504,7 +504,7 @@ public actor ReliableSpeechTranscriber {
         throw integrityFailure(
             retryCheck,
             timing: timing,
-            recoveryCandidate: recoverableCoverageCandidate(checkedCandidates)
+            recoveryCandidate: recoverableCandidate(checkedCandidates)
         )
     }
 
@@ -783,25 +783,51 @@ public actor ReliableSpeechTranscriber {
     ) -> TranscriptionResult? {
         candidates
             .filter { transcription, check in
+                !transcription.text
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .isEmpty
+                    && check.result.reasons.contains(.missingSpeechCoverage)
+                    && !check.result.reasons.contains(.promptLeakage)
+                    && !check.result.reasons.contains(.emptyTranscript)
+            }
+            .map(\.0)
+            .max(by: preferredRecoveryCandidate)
+    }
+
+    private func recoverablePromptLeakageCandidate(
+        _ candidates: [(TranscriptionResult, IntegrityCheck)]
+    ) -> TranscriptionResult? {
+        candidates
+            .filter { transcription, check in
                 let reasons = check.result.reasons
                 return !transcription.text
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                     .isEmpty
-                    && !check.result.reasons.contains(.emptyTranscript)
-                    && reasons.contains(where: {
-                        $0 == .missingSpeechCoverage || $0 == .promptLeakage
-                    })
+                    && !reasons.contains(.emptyTranscript)
+                    && reasons.contains(.promptLeakage)
                     && reasons.allSatisfy {
                         $0 == .missingSpeechCoverage || $0 == .promptLeakage
                     }
             }
             .map(\.0)
-            .max { lhs, rhs in
-                let lhsWords = lhs.text.split(whereSeparator: \.isWhitespace).count
-                let rhsWords = rhs.text.split(whereSeparator: \.isWhitespace).count
-                if lhsWords != rhsWords { return lhsWords < rhsWords }
-                return lhs.text.count < rhs.text.count
-            }
+            .max(by: preferredRecoveryCandidate)
+    }
+
+    private func recoverableCandidate(
+        _ candidates: [(TranscriptionResult, IntegrityCheck)]
+    ) -> TranscriptionResult? {
+        recoverableCoverageCandidate(candidates)
+            ?? recoverablePromptLeakageCandidate(candidates)
+    }
+
+    private func preferredRecoveryCandidate(
+        _ lhs: TranscriptionResult,
+        _ rhs: TranscriptionResult
+    ) -> Bool {
+        let lhsWords = lhs.text.split(whereSeparator: \.isWhitespace).count
+        let rhsWords = rhs.text.split(whereSeparator: \.isWhitespace).count
+        if lhsWords != rhsWords { return lhsWords < rhsWords }
+        return lhs.text.count < rhs.text.count
     }
 
     private func combinedTiming(
