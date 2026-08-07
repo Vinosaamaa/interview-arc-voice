@@ -506,3 +506,24 @@ installed app is recording-ready and its approved Warp/tmux target is verified.
 A naturally occurring installed coverage-uncertain capture remains the final
 product-level evidence for the quiet warning and linked envelope path; no
 private recording is rewritten to manufacture that state.
+
+## 2026-08-06 prompt-leakage recurrence
+
+A retained ten-minute linked recording produced nonempty initial and retry
+transcripts, but both candidates carried `missingSpeechCoverage` and
+`promptLeakage`. The best-candidate predicate admitted coverage uncertainty
+only when prompt leakage was absent, so Voice discarded all reviewable text
+and presented a hard failure. The original audio remained protected.
+
+The containment for issue #179 broadens only that existing recovery boundary:
+a nonempty candidate is eligible when all of its integrity reasons are
+`missingSpeechCoverage`, `promptLeakage`, or both. Empty output, no-speech,
+missing chunks, provider-duration mismatch, and other recording failures still
+fail closed. Candidate ranking, one-time insertion, stable linked identity,
+audio retention, and the existing uncertainty warning remain unchanged.
+
+A separate six-minute recording observed during recovery contained only one
+short spoken fragment followed by a near-empty AAC payload. No transcription
+policy can reconstruct speech that was not recorded; that evidence remains a
+recording-input failure and is not used to justify weakening the no-speech or
+audio-integrity gates.

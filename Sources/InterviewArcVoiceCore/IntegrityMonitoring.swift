@@ -783,12 +783,17 @@ public actor ReliableSpeechTranscriber {
     ) -> TranscriptionResult? {
         candidates
             .filter { transcription, check in
-                !transcription.text
+                let reasons = check.result.reasons
+                return !transcription.text
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                     .isEmpty
-                    && check.result.reasons.contains(.missingSpeechCoverage)
-                    && !check.result.reasons.contains(.promptLeakage)
                     && !check.result.reasons.contains(.emptyTranscript)
+                    && reasons.contains(where: {
+                        $0 == .missingSpeechCoverage || $0 == .promptLeakage
+                    })
+                    && reasons.allSatisfy {
+                        $0 == .missingSpeechCoverage || $0 == .promptLeakage
+                    }
             }
             .map(\.0)
             .max { lhs, rhs in
