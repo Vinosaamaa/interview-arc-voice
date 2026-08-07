@@ -487,6 +487,72 @@ import Testing
     #expect(pending.transcription.words.isEmpty)
 }
 
+@Test func transcriptIdentityCanonicalizesBoundaryWhitespaceOnce() {
+    let identity = VoiceTranscriptIdentity("  Reviewed transcript\r\n")
+    let unchanged = VoiceTranscriptIdentity("Already canonical")
+    let expected = SHA256.hash(data: Data("Reviewed transcript".utf8))
+        .map { String(format: "%02x", $0) }
+        .joined()
+
+    #expect(identity.transcript == "Reviewed transcript")
+    #expect(unchanged.transcript == "Already canonical")
+    #expect(identity.checksum == expected)
+    #expect(identity.validates(
+        transcript: "Reviewed transcript",
+        checksum: expected
+    ))
+    #expect(!identity.validates(
+        transcript: "Reviewed transcript\n",
+        checksum: expected
+    ))
+}
+
+@Test func recoveryPromotionUsesCanonicalTranscriptIdentity() {
+    let context = LinkedTranscriptRecoveryContext(
+        captureID: "capture-boundary",
+        turnID: "voice-boundary",
+        clipID: "clip-boundary",
+        checksum: String(repeating: "a", count: 64),
+        activity: FocusedVoiceActivity(
+            activityId: "activity-boundary",
+            questionId: nil,
+            specialty: .coding,
+            interviewArcSpecialty: "leetcode",
+            title: "Boundary recovery",
+            prompt: nil,
+            topics: [],
+            tags: [],
+            companies: [],
+            projects: [],
+            vocabularyPackIds: [],
+            speechTerms: []
+        ),
+        transcription: TranscriptionResult(
+            text: "Recovered answer\n",
+            words: [],
+            durationSeconds: 2,
+            chunkCount: 1
+        ),
+        occurredAt: Date(timeIntervalSince1970: 800)
+    )
+    let record = LocalTranscriptRecord(
+        createdAt: Date(timeIntervalSince1970: 801),
+        transcript: "Recovered answer\n",
+        editorText: "Recovered answer\n",
+        durationSeconds: 2,
+        recoveryStatus: .coverageUncertain,
+        linkedRecoveryContext: context
+    )
+    let pending = RecoveryPendingCaptureFactory.make(
+        record: record,
+        context: context,
+        audioURL: URL(fileURLWithPath: "/tmp/recovery.m4a")
+    )
+
+    #expect(pending.transcript == "Recovered answer")
+    #expect(VoiceTranscriptIdentity(pending.transcript).checksum == pending.checksum)
+}
+
 @Test func promotedLinkedRecoveryAudioCannotBePrunedOrClearedWhilePending() async throws {
     let root = FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString, directoryHint: .isDirectory)
