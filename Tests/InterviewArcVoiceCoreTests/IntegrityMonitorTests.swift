@@ -571,6 +571,66 @@ import Testing
     #expect(result.reasons.contains(.promptLeakage))
 }
 
+@Test func repeatedPromptLeakageStillDeliversTheBestNonemptyCandidate() async throws {
+    let shorter = TranscriptionResult(
+        text: "Thank you for watching.",
+        words: [],
+        durationSeconds: 30,
+        chunkCount: 1
+    )
+    let longerText = "Preserve punctuation, names, acronyms, and technical terminology."
+    let longer = TranscriptionResult(
+        text: longerText,
+        words: [],
+        durationSeconds: 30,
+        chunkCount: 1
+    )
+    let transcriber = CountingTranscriber(results: [shorter, longer])
+    let reliable = ReliableSpeechTranscriber(base: transcriber)
+
+    let result = try await reliable.transcribe(
+        fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+        prompt: "Context vocabulary",
+        temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+        audioDurationSeconds: 30,
+        protectionMode: .off
+    )
+
+    #expect(result.coverageUncertain)
+    #expect(result.transcription.text == longerText)
+    #expect(await transcriber.callCount == 2)
+}
+
+@Test func contaminatedCandidateSurvivesAnEmptyInitialResult() async throws {
+    let empty = TranscriptionResult(
+        text: "",
+        words: [],
+        durationSeconds: 30,
+        chunkCount: 1
+    )
+    let recoveredText = "Thank you for watching."
+    let recovered = TranscriptionResult(
+        text: recoveredText,
+        words: [],
+        durationSeconds: 30,
+        chunkCount: 1
+    )
+    let transcriber = CountingTranscriber(results: [empty, recovered])
+    let reliable = ReliableSpeechTranscriber(base: transcriber)
+
+    let result = try await reliable.transcribe(
+        fileURL: URL(fileURLWithPath: "/tmp/answer.m4a"),
+        prompt: "Context vocabulary",
+        temporaryDirectory: URL(fileURLWithPath: "/tmp"),
+        audioDurationSeconds: 30,
+        protectionMode: .off
+    )
+
+    #expect(result.coverageUncertain)
+    #expect(result.transcription.text == recoveredText)
+    #expect(await transcriber.callCount == 2)
+}
+
 @Test func sparseWordTimestampsAloneDoNotMakeTranscriptSuspicious() {
     let result = TranscriptionIntegrityEvaluator.evaluate(
         TranscriptionIntegrityEvidence(

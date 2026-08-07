@@ -261,13 +261,14 @@ complete-file request and changes only the experimental coverage path:
 7. a linked best-provider candidate follows the ordinary protocol-v2 envelope,
    specialist decision, D1, and R2 lifecycle exactly once.
 
-The best-candidate rule remains safety-scoped: a candidate must be nonempty,
-must include the missing-speech-coverage signal, and must not contain prompt
-leakage or known hallucination boilerplate. Other incompleteness diagnostics
-may remain on the visibly uncertain result because preserving partial user text
-is safer than silently discarding it. This bounded provider path is distinct
-from a legacy recovery record whose user must still explicitly choose
-**Use this transcript**.
+The best-candidate rule remains safety-scoped and is defined by the latest
+containment below. The original rule required nonempty text with the
+missing-speech-coverage signal and excluded prompt leakage; issue #179
+supersedes only that prompt-leakage exclusion. Other incompleteness diagnostics
+may remain on the established visibly uncertain coverage result because
+preserving partial user text is safer than silently discarding it. This bounded
+provider path is distinct from a legacy recovery record whose user must still
+explicitly choose **Use this transcript**.
 
 Implementation ownership is split deliberately: alternate provider windows
 and request concurrency live in
@@ -506,3 +507,29 @@ installed app is recording-ready and its approved Warp/tmux target is verified.
 A naturally occurring installed coverage-uncertain capture remains the final
 product-level evidence for the quiet warning and linked envelope path; no
 private recording is rewritten to manufacture that state.
+
+## 2026-08-06 prompt-leakage recurrence
+
+A retained ten-minute linked recording produced nonempty initial and retry
+transcripts, but both candidates carried `missingSpeechCoverage` and
+`promptLeakage`. The best-candidate predicate admitted coverage uncertainty
+only when prompt leakage was absent, so Voice discarded all reviewable text
+and presented a hard failure. The original audio remained protected.
+
+The containment for issue #179 keeps two explicit eligibility paths:
+
+- the established coverage path accepts nonempty text carrying
+  `missingSpeechCoverage` without `promptLeakage`; its existing mixed-warning
+  behavior is unchanged; and
+- the new prompt-leakage path accepts nonempty text only when every integrity
+  reason is `missingSpeechCoverage`, `promptLeakage`, or both.
+
+Empty output and candidates satisfying neither path still fail closed.
+Candidate ranking, one-time insertion, stable linked identity, audio retention,
+and the existing uncertainty warning remain unchanged.
+
+A separate six-minute recording observed during recovery contained only one
+short spoken fragment followed by a near-empty AAC payload. No transcription
+policy can reconstruct speech that was not recorded; that evidence remains a
+recording-input failure and is not used to justify weakening the no-speech or
+audio-integrity gates.
