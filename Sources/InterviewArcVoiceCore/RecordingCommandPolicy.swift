@@ -31,10 +31,8 @@ public enum RecordingPreparationPolicy {
 
 public enum RecordingStartupPresentationPolicy {
     public static func shouldBeginPresentation(
-        captureBackendIsReady: Bool,
-        widgetSizeMode: VoiceWidgetSizeMode
+        captureBackendIsReady: Bool
     ) -> Bool {
-        _ = widgetSizeMode
         return captureBackendIsReady
     }
 }

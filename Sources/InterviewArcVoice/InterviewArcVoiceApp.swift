@@ -3538,8 +3538,7 @@ final class VoiceBridgeModel: ObservableObject {
             // resize out of the audio-critical path so it cannot delay capture
             // startup or discard the user's opening words.
             if RecordingStartupPresentationPolicy.shouldBeginPresentation(
-                captureBackendIsReady: true,
-                widgetSizeMode: widgetSizeMode
+                captureBackendIsReady: true
             ) {
                 beginRecordingPresentation()
             }
@@ -3658,6 +3657,8 @@ final class VoiceBridgeModel: ObservableObject {
                 .timeIntervalSince(integrityInspectionStartedAt)
             let recovery = RecordingRecoveryPolicy.action(for: evidence)
             let recordingMayBeIncomplete = recovery == .transcribePlayablePortion
+            let transcriptionDurationSeconds = RecordingRecoveryPolicy
+                .transcriptionDurationSeconds(action: recovery, evidence: evidence)
             voiceBridgeLogger.info(
                 "Capture finalized: wall=\(evidence.wallDurationSeconds, privacy: .public)s decoded=\(evidence.decodedDurationSeconds, privacy: .public)s bytes=\(evidence.fileSizeBytes, privacy: .public) audioBytes=\(evidence.encodedAudioBytes ?? -1, privacy: .public) frames=\(evidence.decodedFrameCount, privacy: .public) recovery=\(String(describing: recovery), privacy: .public)"
             )
@@ -3672,7 +3673,7 @@ final class VoiceBridgeModel: ObservableObject {
             let diagnosticSeed = CaptureDiagnosticSeed(
                 id: UUID(),
                 startedAt: diagnosticStartedAt,
-                recordingDurationSeconds: recording.duration,
+                recordingDurationSeconds: transcriptionDurationSeconds,
                 fileFinalizationSeconds: fileFinalizationSeconds,
                 integrityInspectionSeconds: integrityInspectionSeconds,
                 localSpeechScanSeconds: localSpeechScanSeconds,
@@ -3751,7 +3752,8 @@ final class VoiceBridgeModel: ObservableObject {
                         generation: generation,
                         speechEvidence: speechEvidence,
                         diagnosticSeed: diagnosticSeed,
-                        recordingMayBeIncomplete: recordingMayBeIncomplete
+                        recordingMayBeIncomplete: recordingMayBeIncomplete,
+                        recordingDurationSeconds: transcriptionDurationSeconds
                     )
                 case .general:
                     await processGeneral(
@@ -3759,7 +3761,8 @@ final class VoiceBridgeModel: ObservableObject {
                         rememberAudio: false,
                         speechEvidence: speechEvidence,
                         diagnosticSeed: diagnosticSeed,
-                        recordingMayBeIncomplete: recordingMayBeIncomplete
+                        recordingMayBeIncomplete: recordingMayBeIncomplete,
+                        recordingDurationSeconds: transcriptionDurationSeconds
                     )
                 }
             }
@@ -3795,7 +3798,8 @@ final class VoiceBridgeModel: ObservableObject {
         isRetry: Bool = false,
         speechEvidence: SpeechEvidenceResult? = nil,
         diagnosticSeed: CaptureDiagnosticSeed? = nil,
-        recordingMayBeIncomplete: Bool = false
+        recordingMayBeIncomplete: Bool = false,
+        recordingDurationSeconds: Double? = nil
     ) async {
         guard let recordingStore else {
             endProcessing()
@@ -3815,6 +3819,7 @@ final class VoiceBridgeModel: ObservableObject {
             return
         }
         currentInsertionDurationSeconds = 0
+        let effectiveDurationSeconds = recordingDurationSeconds ?? recording.duration
         do {
             let generalPipeline = GeneralDictationPipeline(
                 transcriber: GroqTranscriber(apiKey: groqKeyDraft),
@@ -3823,7 +3828,7 @@ final class VoiceBridgeModel: ObservableObject {
             )
             let result = try await generalPipeline.process(
                 recordingURL: recording.url,
-                durationSeconds: recording.duration,
+                durationSeconds: effectiveDurationSeconds,
                 speechEvidence: speechEvidence,
                 protectionMode: diagnosticSeed?.protectionMode
                     ?? speechProtectionMode
@@ -3848,7 +3853,7 @@ final class VoiceBridgeModel: ObservableObject {
                 await rememberTranscriptHistory(
                     transcript: transcript,
                     editorText: transcript,
-                    durationSeconds: recording.duration,
+                    durationSeconds: effectiveDurationSeconds,
                     activityTitle: nil,
                     recoveryStatus: result.coverageUncertain || recordingMayBeIncomplete
                         ? .coverageUncertain
@@ -3934,7 +3939,8 @@ final class VoiceBridgeModel: ObservableObject {
         isRetry: Bool = false,
         speechEvidence: SpeechEvidenceResult? = nil,
         diagnosticSeed: CaptureDiagnosticSeed? = nil,
-        recordingMayBeIncomplete: Bool = false
+        recordingMayBeIncomplete: Bool = false,
+        recordingDurationSeconds: Double? = nil
     ) async {
         do {
             try validateRecording(
@@ -3949,13 +3955,14 @@ final class VoiceBridgeModel: ObservableObject {
             return
         }
         currentInsertionDurationSeconds = 0
+        let effectiveDurationSeconds = recordingDurationSeconds ?? recording.duration
         do {
             lastInsertionSucceeded = false
             let builtPipeline = try makeLinkedPipeline()
             pipeline = builtPipeline
             let result = try await builtPipeline.process(
                 recordingURL: recording.url,
-                durationSeconds: recording.duration,
+                durationSeconds: effectiveDurationSeconds,
                 activity: activity,
                 occurredAt: startedAt,
                 speechEvidence: speechEvidence,
@@ -3964,7 +3971,7 @@ final class VoiceBridgeModel: ObservableObject {
                 transcriptReady: { capture in
                     await self.handleLinkedTranscriptReady(
                         capture,
-                        recordingDuration: recording.duration,
+                        recordingDuration: effectiveDurationSeconds,
                         activityTitle: activity.title,
                         isRetry: isRetry,
                         recordingMayBeIncomplete: recordingMayBeIncomplete

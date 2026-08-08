@@ -75,12 +75,25 @@ public enum RecordingRecoveryPolicy {
     ) -> Bool {
         switch action {
         case .transcribePlayablePortion:
+            // Early finalization can truncate the evidence used by local VAD.
+            // Empty, undecodable, and insufficient-signal captures have already
+            // failed closed in action(for:), so preserve the user's best
+            // available transcript instead of trusting a possible false negative.
             return true
         case .transcribe:
             return !speechProtectionEnabled || localSpeechDetected
         case .recordAgain:
             return false
         }
+    }
+
+    public static func transcriptionDurationSeconds(
+        action: RecordingRecoveryAction,
+        evidence: RecordingIntegrityEvidence
+    ) -> Double {
+        action == .transcribePlayablePortion
+            ? evidence.decodedDurationSeconds
+            : evidence.wallDurationSeconds
     }
 }
 

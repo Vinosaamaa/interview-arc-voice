@@ -59,6 +59,16 @@ import Testing
     )
 
     #expect(recovery == .transcribePlayablePortion)
+    #expect(RecordingRecoveryPolicy.transcriptionDurationSeconds(
+        action: recovery,
+        evidence: RecordingIntegrityEvidence(
+            wallDurationSeconds: 30,
+            decodedDurationSeconds: 8,
+            fileSizeBytes: 64_000,
+            decodedFrameCount: 128_000,
+            writeErrorDescription: "The audio device disconnected."
+        )
+    ) == 8)
 }
 
 @Test func durationMismatchWithPlayableFramesStillProducesATranscript() {
