@@ -47,7 +47,7 @@ import Testing
     #expect(recovery == .recordAgain)
 }
 
-@Test func interruptedButPlayableRecordingIsPreservedWithoutOfferingRetranscription() {
+@Test func interruptedButPlayableRecordingTranscribesItsPreservedPortion() {
     let recovery = RecordingRecoveryPolicy.action(
         for: RecordingIntegrityEvidence(
             wallDurationSeconds: 30,
@@ -58,7 +58,28 @@ import Testing
         )
     )
 
-    #expect(recovery == .preserveWithoutRetry)
+    #expect(recovery == .transcribePlayablePortion)
+}
+
+@Test func durationMismatchWithPlayableFramesStillProducesATranscript() {
+    let recovery = RecordingRecoveryPolicy.action(
+        for: RecordingIntegrityEvidence(
+            wallDurationSeconds: 60,
+            decodedDurationSeconds: 12,
+            fileSizeBytes: 72_000,
+            decodedFrameCount: 192_000,
+            writeErrorDescription: nil,
+            encodedAudioBytes: 70_000,
+            peakPowerDecibels: -18
+        )
+    )
+
+    #expect(recovery == .transcribePlayablePortion)
+    #expect(RecordingRecoveryPolicy.shouldAttemptTranscription(
+        action: recovery,
+        speechProtectionEnabled: true,
+        localSpeechDetected: false
+    ))
 }
 
 @Test func completeRecordingContinuesToTranscription() {
@@ -89,6 +110,11 @@ import Testing
     )
 
     #expect(recovery == .recordAgain)
+    #expect(!RecordingRecoveryPolicy.shouldAttemptTranscription(
+        action: recovery,
+        speechProtectionEnabled: false,
+        localSpeechDetected: true
+    ))
 }
 
 @Test func shortSilentCaptureNeverReachesTheTranscriptionProvider() {

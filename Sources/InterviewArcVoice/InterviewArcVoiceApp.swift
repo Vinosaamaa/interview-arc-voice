@@ -3520,17 +3520,13 @@ final class VoiceBridgeModel: ObservableObject {
         case nil: return
         }
         do {
+            let microphonePreparationStartedAt = Date()
             outputVolumeController.prepareForRecording(
                 mode: backgroundAudioMode,
                 relativeLevel: backgroundAudioRelativeLevel
             )
             phase = .preparingMicrophone
             contextMessage = "Preparing the microphone route…"
-            // Begin the visible collapse immediately. Waiting for Bluetooth or
-            // microphone readiness used to start this resize alongside audio
-            // state publication, producing a brief stall that the explicit
-            // collapse control did not have.
-            beginRecordingPresentation()
             try await recorder.start(
                 at: destination,
                 captureBackendDidStart: { [weak self] in
@@ -3538,6 +3534,18 @@ final class VoiceBridgeModel: ObservableObject {
                 }
             )
             try Task.checkCancellation()
+            // Standard mode can collapse a large Focus/Plan surface. Keep that
+            // resize out of the audio-critical path so it cannot delay capture
+            // startup or discard the user's opening words.
+            if RecordingStartupPresentationPolicy.shouldBeginPresentation(
+                captureBackendIsReady: true,
+                widgetSizeMode: widgetSizeMode
+            ) {
+                beginRecordingPresentation()
+            }
+            voiceBridgeLogger.info(
+                "Microphone ready in \(Date().timeIntervalSince(microphonePreparationStartedAt), privacy: .public)s; widget=\(self.widgetSizeMode.rawValue, privacy: .public)"
+            )
             let readyAt = Date()
             switch captureDestination {
             case .linked(let activity, _):
@@ -3649,12 +3657,13 @@ final class VoiceBridgeModel: ObservableObject {
             let integrityInspectionSeconds = Date()
                 .timeIntervalSince(integrityInspectionStartedAt)
             let recovery = RecordingRecoveryPolicy.action(for: evidence)
+            let recordingMayBeIncomplete = recovery == .transcribePlayablePortion
             voiceBridgeLogger.info(
                 "Capture finalized: wall=\(evidence.wallDurationSeconds, privacy: .public)s decoded=\(evidence.decodedDurationSeconds, privacy: .public)s bytes=\(evidence.fileSizeBytes, privacy: .public) audioBytes=\(evidence.encodedAudioBytes ?? -1, privacy: .public) frames=\(evidence.decodedFrameCount, privacy: .public) recovery=\(String(describing: recovery), privacy: .public)"
             )
             var speechEvidence: SpeechEvidenceResult?
             var localSpeechScanSeconds = 0.0
-            if recovery == .transcribe {
+            if recovery != .recordAgain {
                 let localSpeechScanStartedAt = Date()
                 speechEvidence = try LocalSpeechEvidenceAnalyzer.inspect(recording.url)
                 localSpeechScanSeconds = Date()
@@ -3680,13 +3689,16 @@ final class VoiceBridgeModel: ObservableObject {
             )
 
             switch recovery {
-            case .transcribe:
+            case .transcribe, .transcribePlayablePortion:
                 if let speechEvidence {
                     voiceBridgeLogger.info(
                         "Local speech evidence: speech=\(speechEvidence.containsSpeech, privacy: .public) duration=\(speechEvidence.analyzedDurationSeconds, privacy: .public)s frames=\(speechEvidence.speechLikeFrameCount, privacy: .public) run=\(speechEvidence.longestSpeechRunFrames, privacy: .public) vadFrames=\(speechEvidence.vadSpeechFrameCount, privacy: .public) vadRun=\(speechEvidence.vadLongestSpeechRunFrames, privacy: .public) floor=\(speechEvidence.noiseFloorDecibels, privacy: .public)dB peak=\(speechEvidence.peakFrameDecibels, privacy: .public)dB"
                     )
-                    guard speechProtectionMode == .off
-                        || speechEvidence.containsSpeech else {
+                    guard RecordingRecoveryPolicy.shouldAttemptTranscription(
+                        action: recovery,
+                        speechProtectionEnabled: speechProtectionMode != .off,
+                        localSpeechDetected: speechEvidence.containsSpeech
+                    ) else {
                         Task {
                             await recordDiagnostic(
                                 seed: diagnosticSeed,
@@ -3711,20 +3723,6 @@ final class VoiceBridgeModel: ObservableObject {
                     recording,
                     activityTitle: memoActivityTitle
                 )
-            case .preserveWithoutRetry:
-                rememberLastAudio(
-                    recording,
-                    activityTitle: memoActivityTitle
-                )
-                canRetryLastTranscription = false
-                reportFailure(
-                    kind: .recording,
-                    title: "Recording ended early",
-                    message: "Playable audio preserved · record again for a complete answer",
-                    detail: recordingDiagnosticDetail(evidence),
-                    actions: [.recordAgain, .playRecording, .saveRecording]
-                )
-                return
             case .recordAgain:
                 rememberLastAudio(
                     recording,
@@ -3752,14 +3750,16 @@ final class VoiceBridgeModel: ObservableObject {
                         startedAt: startedAt,
                         generation: generation,
                         speechEvidence: speechEvidence,
-                        diagnosticSeed: diagnosticSeed
+                        diagnosticSeed: diagnosticSeed,
+                        recordingMayBeIncomplete: recordingMayBeIncomplete
                     )
                 case .general:
                     await processGeneral(
                         recording: recording,
                         rememberAudio: false,
                         speechEvidence: speechEvidence,
-                        diagnosticSeed: diagnosticSeed
+                        diagnosticSeed: diagnosticSeed,
+                        recordingMayBeIncomplete: recordingMayBeIncomplete
                     )
                 }
             }
@@ -3794,7 +3794,8 @@ final class VoiceBridgeModel: ObservableObject {
         rememberAudio: Bool = true,
         isRetry: Bool = false,
         speechEvidence: SpeechEvidenceResult? = nil,
-        diagnosticSeed: CaptureDiagnosticSeed? = nil
+        diagnosticSeed: CaptureDiagnosticSeed? = nil,
+        recordingMayBeIncomplete: Bool = false
     ) async {
         guard let recordingStore else {
             endProcessing()
@@ -3803,7 +3804,10 @@ final class VoiceBridgeModel: ObservableObject {
         }
         if rememberAudio { rememberLastAudio(recording) }
         do {
-            try validateRecording(recording)
+            try validateRecording(
+                recording,
+                allowPlayablePortion: recordingMayBeIncomplete
+            )
         } catch {
             canRetryLastTranscription = false
             endProcessing()
@@ -3846,7 +3850,7 @@ final class VoiceBridgeModel: ObservableObject {
                     editorText: transcript,
                     durationSeconds: recording.duration,
                     activityTitle: nil,
-                    recoveryStatus: result.coverageUncertain
+                    recoveryStatus: result.coverageUncertain || recordingMayBeIncomplete
                         ? .coverageUncertain
                         : nil,
                     recordingURL: recording.url
@@ -3861,7 +3865,8 @@ final class VoiceBridgeModel: ObservableObject {
                 clearFailureAfterSuccess()
                 phase = .delivered
                 coverageUncertainNoticePresented = result.coverageUncertain
-                contextMessage = result.coverageUncertain
+                    || recordingMayBeIncomplete
+                contextMessage = result.coverageUncertain || recordingMayBeIncomplete
                     ? "Best available transcript inserted · may be incomplete"
                     : "Dictation inserted at the cursor. Press Send when ready."
             } else {
@@ -3928,10 +3933,14 @@ final class VoiceBridgeModel: ObservableObject {
         generation: UUID,
         isRetry: Bool = false,
         speechEvidence: SpeechEvidenceResult? = nil,
-        diagnosticSeed: CaptureDiagnosticSeed? = nil
+        diagnosticSeed: CaptureDiagnosticSeed? = nil,
+        recordingMayBeIncomplete: Bool = false
     ) async {
         do {
-            try validateRecording(recording)
+            try validateRecording(
+                recording,
+                allowPlayablePortion: recordingMayBeIncomplete
+            )
         } catch {
             guard generation == captureGeneration else { return }
             canRetryLastTranscription = false
@@ -3957,14 +3966,15 @@ final class VoiceBridgeModel: ObservableObject {
                         capture,
                         recordingDuration: recording.duration,
                         activityTitle: activity.title,
-                        isRetry: isRetry
+                        isRetry: isRetry,
+                        recordingMayBeIncomplete: recordingMayBeIncomplete
                     )
                 },
                 progress: { update in
                     await self.applyDeliveryUpdate(update, generation: generation)
                 }
             )
-            if result.coverageUncertain,
+            if result.coverageUncertain || recordingMayBeIncomplete,
                let transcriptHistoryStore {
                 _ = try? await transcriptHistoryStore.markCoverageUncertain(
                     captureID: result.captureID
@@ -3984,7 +3994,8 @@ final class VoiceBridgeModel: ObservableObject {
                 clearFailureAfterSuccess()
                 phase = .delivered
                 coverageUncertainNoticePresented = result.coverageUncertain
-                contextMessage = result.coverageUncertain
+                    || recordingMayBeIncomplete
+                contextMessage = result.coverageUncertain || recordingMayBeIncomplete
                     ? "Best available transcript inserted · may be incomplete"
                     : "Inserted at the cursor · waiting for specialist permission."
             }
@@ -4044,7 +4055,8 @@ final class VoiceBridgeModel: ObservableObject {
         _ capture: VoiceCaptureEnvelope,
         recordingDuration: Double,
         activityTitle: String,
-        isRetry: Bool
+        isRetry: Bool,
+        recordingMayBeIncomplete: Bool = false
     ) async {
         if isRetry,
            let recordID = lastCoverageRecoveryRecordID,
@@ -4063,7 +4075,10 @@ final class VoiceBridgeModel: ObservableObject {
                 editorText: capture.editorText,
                 durationSeconds: recordingDuration,
                 activityTitle: activityTitle,
-                captureID: capture.captureID
+                captureID: capture.captureID,
+                recoveryStatus: recordingMayBeIncomplete
+                    ? .coverageUncertain
+                    : nil
             )
         }
         lastCoverageRecoveryRecordID = nil
@@ -4614,10 +4629,15 @@ final class VoiceBridgeModel: ObservableObject {
         showProcessingIndicator = false
     }
 
-    private func validateRecording(_ recording: RecordedCapture) throws {
+    private func validateRecording(
+        _ recording: RecordedCapture,
+        allowPlayablePortion: Bool = false
+    ) throws {
         let evidence = try RecordingFileInspector.inspect(recording)
         let recovery = RecordingRecoveryPolicy.action(for: evidence)
-        guard recovery == .transcribe else {
+        guard recovery == .transcribe
+                || (allowPlayablePortion
+                    && recovery == .transcribePlayablePortion) else {
             let integrity = RecordingIntegrityEvaluator.evaluate(evidence)
             throw VoiceBridgeError.incompleteRecording(integrity.reasons)
         }
