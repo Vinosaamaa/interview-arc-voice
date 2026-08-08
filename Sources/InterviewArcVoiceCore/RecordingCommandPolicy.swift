@@ -29,6 +29,14 @@ public enum RecordingPreparationPolicy {
     }
 }
 
+public enum RecordingStartupPresentationPolicy {
+    public static func shouldBeginPresentation(
+        captureBackendIsReady: Bool
+    ) -> Bool {
+        return captureBackendIsReady
+    }
+}
+
 public enum MicrophoneStartupReadinessDecision: Equatable, Sendable {
     case wait
     case ready

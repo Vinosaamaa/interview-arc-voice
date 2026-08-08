@@ -45,7 +45,7 @@ public struct RecordingIntegrityResult: Equatable, Sendable {
 
 public enum RecordingRecoveryAction: Equatable, Sendable {
     case transcribe
-    case preserveWithoutRetry
+    case transcribePlayablePortion
     case recordAgain
 }
 
@@ -63,9 +63,37 @@ public enum RecordingRecoveryPolicy {
         if evidence.fileSizeBytes >= 512,
            evidence.decodedFrameCount > 0,
            evidence.decodedDurationSeconds > 0 {
-            return .preserveWithoutRetry
+            return .transcribePlayablePortion
         }
         return .recordAgain
+    }
+
+    public static func shouldAttemptTranscription(
+        action: RecordingRecoveryAction,
+        speechProtectionEnabled: Bool,
+        localSpeechDetected: Bool
+    ) -> Bool {
+        switch action {
+        case .transcribePlayablePortion:
+            // Early finalization can truncate the evidence used by local VAD.
+            // Empty, undecodable, and insufficient-signal captures have already
+            // failed closed in action(for:), so preserve the user's best
+            // available transcript instead of trusting a possible false negative.
+            return true
+        case .transcribe:
+            return !speechProtectionEnabled || localSpeechDetected
+        case .recordAgain:
+            return false
+        }
+    }
+
+    public static func transcriptionDurationSeconds(
+        action: RecordingRecoveryAction,
+        evidence: RecordingIntegrityEvidence
+    ) -> Double {
+        action == .transcribePlayablePortion
+            ? evidence.decodedDurationSeconds
+            : evidence.wallDurationSeconds
     }
 }
 
