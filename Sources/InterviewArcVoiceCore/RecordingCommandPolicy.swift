@@ -35,7 +35,7 @@ public enum RecordingStartupPresentationPolicy {
         widgetSizeMode: VoiceWidgetSizeMode
     ) -> Bool {
         _ = widgetSizeMode
-        captureBackendIsReady
+        return captureBackendIsReady
     }
 }
 
