@@ -73,4 +73,41 @@ final class MicrophoneSignalPolicyTests: XCTestCase {
             )
         )
     }
+
+    func testHistoricalSpeechDoesNotMaskMidCaptureStreamLoss() {
+        var monitor = MicrophoneStreamContinuityMonitor(
+            dropoutDelaySeconds: 2.5,
+            livenessThresholdDecibels: -100
+        )
+
+        monitor.observe(elapsedSeconds: 0, powerDecibels: -42)
+        monitor.observe(elapsedSeconds: 3.5, powerDecibels: -38)
+        XCTAssertEqual(monitor.health(elapsedSeconds: 4), .detected)
+
+        monitor.observe(elapsedSeconds: 4, powerDecibels: -160)
+        monitor.observe(elapsedSeconds: 5, powerDecibels: -160)
+        monitor.observe(elapsedSeconds: 6, powerDecibels: -160)
+
+        XCTAssertEqual(monitor.health(elapsedSeconds: 6), .absent)
+    }
+
+    func testRecentQuietLiveInputKeepsStreamHealthy() {
+        var monitor = MicrophoneStreamContinuityMonitor(
+            dropoutDelaySeconds: 2.5,
+            livenessThresholdDecibels: -100
+        )
+
+        monitor.observe(elapsedSeconds: 0, powerDecibels: -90)
+        monitor.observe(elapsedSeconds: 2, powerDecibels: -92)
+        monitor.observe(elapsedSeconds: 4, powerDecibels: -88)
+
+        XCTAssertEqual(monitor.health(elapsedSeconds: 5), .detected)
+    }
+
+    func testMeterFloorCannotBeClassifiedAsLiveInput() {
+        XCTAssertLessThan(
+            MicrophoneStreamContinuityMonitor.minimumMeterPowerDecibels,
+            MicrophoneStreamContinuityMonitor.defaultLivenessThresholdDecibels
+        )
+    }
 }

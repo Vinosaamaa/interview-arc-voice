@@ -36,7 +36,10 @@ private final class VoiceProcessedAudioTap: @unchecked Sendable {
             sum += value * value
         }
         let rootMeanSquare = sqrt(sum / Float(sampleCount))
-        return max(-60, 20 * log10(max(rootMeanSquare, 0.000_001)))
+        return max(
+            MicrophoneStreamContinuityMonitor.minimumMeterPowerDecibels,
+            20 * log10(max(rootMeanSquare, 0.000_000_01))
+        )
     }
 }
 
@@ -107,7 +110,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
     private var startedAt: Date?
     private var signalAttemptStartedAt: Date?
     private var peakPower: Float = -160
-    private let signalPolicy = MicrophoneSignalPolicy()
+    private var streamContinuityMonitor = MicrophoneStreamContinuityMonitor()
     private let streamRecoveryPolicy = MicrophoneStreamRecoveryPolicy()
     private var recorderErrorDescription: String?
     private var expectedRecorderCompletion: AVAudioRecorder?
@@ -139,6 +142,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         powerHistory = []
         peakPower = -160
         signalHealth = .warmingUp
+        streamContinuityMonitor.reset()
         automaticRecoveryCount = 0
         isRecoveringSignal = false
         expectedRecorderCompletion = nil
@@ -168,9 +172,8 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
                     recorder.updateMeters()
                     self.recordPower(recorder.averagePower(forChannel: 0))
                 }
-                self.signalHealth = self.signalPolicy.health(
-                    elapsedSeconds: Date().timeIntervalSince(signalAttemptStartedAt),
-                    peakPowerDecibels: self.peakPower
+                self.signalHealth = self.streamContinuityMonitor.health(
+                    elapsedSeconds: Date().timeIntervalSince(signalAttemptStartedAt)
                 )
                 if self.streamRecoveryPolicy.shouldRestart(
                     health: self.signalHealth,
@@ -305,6 +308,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
             try? FileManager.default.removeItem(at: url)
             destinationURL = recoveredURL
             signalAttemptStartedAt = Date()
+            streamContinuityMonitor.reset()
             averagePower = -60
             powerHistory = []
             peakPower = -160
@@ -418,6 +422,12 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
             powerHistory.removeFirst(powerHistory.count - 72)
         }
         peakPower = max(peakPower, power)
+        if let signalAttemptStartedAt {
+            streamContinuityMonitor.observe(
+                elapsedSeconds: Date().timeIntervalSince(signalAttemptStartedAt),
+                powerDecibels: power
+            )
+        }
     }
 
     public nonisolated func audioRecorderEncodeErrorDidOccur(

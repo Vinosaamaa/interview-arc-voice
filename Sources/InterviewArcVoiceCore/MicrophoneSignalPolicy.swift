@@ -51,3 +51,48 @@ public struct MicrophoneStreamRecoveryPolicy: Equatable, Sendable {
             && completedRestarts < maximumAutomaticRestarts
     }
 }
+
+/// Tracks recent microphone-stream liveness independently from the
+/// capture-wide peak used by final integrity diagnostics. A historical speech
+/// peak must not hide a stream that later stops delivering input.
+public struct MicrophoneStreamContinuityMonitor: Equatable, Sendable {
+    public static let minimumMeterPowerDecibels: Float = -160
+    public static let defaultLivenessThresholdDecibels: Float = -100
+
+    public let dropoutDelaySeconds: TimeInterval
+    public let livenessThresholdDecibels: Float
+
+    private var lastLiveSignalElapsedSeconds: TimeInterval?
+
+    public init(
+        dropoutDelaySeconds: TimeInterval = 2.5,
+        livenessThresholdDecibels: Float = Self.defaultLivenessThresholdDecibels
+    ) {
+        self.dropoutDelaySeconds = dropoutDelaySeconds
+        self.livenessThresholdDecibels = livenessThresholdDecibels
+    }
+
+    public mutating func observe(
+        elapsedSeconds: TimeInterval,
+        powerDecibels: Float
+    ) {
+        guard powerDecibels >= livenessThresholdDecibels else { return }
+        lastLiveSignalElapsedSeconds = elapsedSeconds
+    }
+
+    public func health(
+        elapsedSeconds: TimeInterval
+    ) -> MicrophoneSignalHealth {
+        if let lastLiveSignalElapsedSeconds {
+            return elapsedSeconds - lastLiveSignalElapsedSeconds
+                >= dropoutDelaySeconds
+                ? .absent
+                : .detected
+        }
+        return elapsedSeconds >= dropoutDelaySeconds ? .absent : .warmingUp
+    }
+
+    public mutating func reset() {
+        lastLiveSignalElapsedSeconds = nil
+    }
+}
