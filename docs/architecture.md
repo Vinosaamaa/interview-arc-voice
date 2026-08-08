@@ -38,7 +38,10 @@ the next capture silently takes the General Dictation route.
    a second timeout fails visibly. The system recorder owns file finalization,
    and a capture is not eligible for transcription until the finalized file
    reopens with decoded frames.
-   After the live state begins, sustained absent signal may perform two bounded
+   After the live state begins, a rolling continuity monitor detects sustained
+   absent input from recent meter samples; an earlier speech peak cannot keep a
+   later dead stream healthy. System-recorder and audio-engine silence share a
+   true sub-threshold meter floor. Sustained loss may perform two bounded
    recovery transitions: first from the system recorder to an independent
    audio-engine input tap, then one clean engine rebind after releasing the
    first tap if the Bluetooth route was still dead. A third restart is never

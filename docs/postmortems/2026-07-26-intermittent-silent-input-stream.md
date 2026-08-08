@@ -306,3 +306,28 @@ fallback rate. Release completion still requires the exact merged-main signed
 artifact to pass both a silent AirPods capture with zero provider wait and a
 genuine short spoken AirPods capture. Until then, issues #58 and #33 remain
 open.
+
+## Sixth recurrence: initial speech masked a later AirPods dropout
+
+On 2026-08-07, current installed-app diagnostics showed AirPods input working
+for roughly four seconds and then disappearing while the visible recording
+continued. One 181.5-second finalized file contained only 36,832 audio bytes,
+about 1.6 kilobits per second, 104 VAD-positive 20 ms frames, and zero recorder
+recoveries. Two shorter reproductions ended provider lexical coverage at 3.16
+and 3.96 seconds.
+
+The recovery state machine was reachable only when a capture-wide maximum
+power stayed below the signal threshold. Once opening speech raised that
+maximum, it could never decrease, so later stream loss could not become
+`absent`. The independent audio-engine meter had a related defect: it clamped
+silence to -60 dB while the detector threshold was -65 dB, classifying digital
+silence as signal.
+
+The repair separates final capture-peak evidence from stream continuity.
+Continuity now records only recent live meter evidence, declares a dropout
+after the bounded silence window, and resets for each recovery attempt. The
+audio-engine meter preserves a true -160 dB floor so both backends can enter
+the same bounded recovery path. Deterministic coverage exercises initial
+speech followed by a dead stream, quiet-but-live input, and the meter-floor
+threshold invariant. Final resolution still requires the exact merged-main
+signed artifact and a real AirPods capture lasting beyond the prior cutoff.
