@@ -110,6 +110,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
     private var startedAt: Date?
     private var signalAttemptStartedAt: Date?
     private var peakPower: Float = -160
+    private var captureGeneration: UInt = 0
     private var streamContinuityMonitor = MicrophoneStreamContinuityMonitor()
     private let streamRecoveryPolicy = MicrophoneStreamRecoveryPolicy()
     private var recorderErrorDescription: String?
@@ -142,7 +143,8 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         powerHistory = []
         peakPower = -160
         signalHealth = .warmingUp
-        streamContinuityMonitor.reset()
+        captureGeneration &+= 1
+        streamContinuityMonitor.reset(generation: captureGeneration)
         automaticRecoveryCount = 0
         isRecoveringSignal = false
         expectedRecorderCompletion = nil
@@ -170,11 +172,17 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
                 self.elapsedSeconds = Date().timeIntervalSince(startedAt)
                 if let recorder = self.recorder {
                     recorder.updateMeters()
-                    self.recordPower(recorder.averagePower(forChannel: 0))
+                    self.recordPower(
+                        recorder.averagePower(forChannel: 0),
+                        generation: self.captureGeneration
+                    )
                 }
-                self.signalHealth = self.streamContinuityMonitor.health(
+                let updatedHealth = self.streamContinuityMonitor.health(
                     elapsedSeconds: Date().timeIntervalSince(signalAttemptStartedAt)
                 )
+                if updatedHealth != self.signalHealth {
+                    self.signalHealth = updatedHealth
+                }
                 if self.streamRecoveryPolicy.shouldRestart(
                     health: self.signalHealth,
                     completedRestarts: self.automaticRecoveryCount,
@@ -301,14 +309,19 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
             // Start an independent capture backend before releasing the
             // stalled AVAudioRecorder. Reopening the same recorder immediately
             // can reacquire the same silent Bluetooth/default-input stream.
-            try startEngineRecoveryCapture(at: recoveredURL)
+            captureGeneration &+= 1
+            let recoveryGeneration = captureGeneration
+            try startEngineRecoveryCapture(
+                at: recoveredURL,
+                generation: recoveryGeneration
+            )
             expectedRecorderCompletion = recorder
             recorder?.stop()
             recorder = nil
             try? FileManager.default.removeItem(at: url)
             destinationURL = recoveredURL
             signalAttemptStartedAt = Date()
-            streamContinuityMonitor.reset()
+            streamContinuityMonitor.reset(generation: recoveryGeneration)
             averagePower = -60
             powerHistory = []
             peakPower = -160
@@ -319,7 +332,10 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         }
     }
 
-    private func startEngineRecoveryCapture(at url: URL) throws {
+    private func startEngineRecoveryCapture(
+        at url: URL,
+        generation: UInt
+    ) throws {
         let engine = AVAudioEngine()
         let input = engine.inputNode
 
@@ -348,7 +364,7 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         let writeState = AudioWriteState()
         let tap = VoiceProcessedAudioTap(file: file, writeState: writeState) { [weak self] power in
             Task { @MainActor [weak self] in
-                self?.recordPower(power)
+                self?.recordPower(power, generation: generation)
             }
         }
         input.installTap(
@@ -415,7 +431,8 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         isRecoveringSignal = false
     }
 
-    private func recordPower(_ power: Float) {
+    private func recordPower(_ power: Float, generation: UInt) {
+        guard generation == captureGeneration else { return }
         averagePower = power
         powerHistory.append(power)
         if powerHistory.count > 72 {
@@ -425,7 +442,8 @@ public final class AnswerRecorder: NSObject, ObservableObject, AVAudioRecorderDe
         if let signalAttemptStartedAt {
             streamContinuityMonitor.observe(
                 elapsedSeconds: Date().timeIntervalSince(signalAttemptStartedAt),
-                powerDecibels: power
+                powerDecibels: power,
+                generation: generation
             )
         }
     }

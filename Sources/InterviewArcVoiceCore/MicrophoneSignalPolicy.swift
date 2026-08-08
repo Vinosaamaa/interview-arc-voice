@@ -62,6 +62,7 @@ public struct MicrophoneStreamContinuityMonitor: Equatable, Sendable {
     public let dropoutDelaySeconds: TimeInterval
     public let livenessThresholdDecibels: Float
 
+    private var generation: UInt = 0
     private var lastLiveSignalElapsedSeconds: TimeInterval?
 
     public init(
@@ -74,8 +75,10 @@ public struct MicrophoneStreamContinuityMonitor: Equatable, Sendable {
 
     public mutating func observe(
         elapsedSeconds: TimeInterval,
-        powerDecibels: Float
+        powerDecibels: Float,
+        generation: UInt = 0
     ) {
+        guard generation == self.generation else { return }
         guard powerDecibels >= livenessThresholdDecibels else { return }
         lastLiveSignalElapsedSeconds = elapsedSeconds
     }
@@ -92,7 +95,8 @@ public struct MicrophoneStreamContinuityMonitor: Equatable, Sendable {
         return elapsedSeconds >= dropoutDelaySeconds ? .absent : .warmingUp
     }
 
-    public mutating func reset() {
+    public mutating func reset(generation: UInt = 0) {
+        self.generation = generation
         lastLiveSignalElapsedSeconds = nil
     }
 }

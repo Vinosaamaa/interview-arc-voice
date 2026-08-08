@@ -110,4 +110,20 @@ final class MicrophoneSignalPolicyTests: XCTestCase {
             MicrophoneStreamContinuityMonitor.defaultLivenessThresholdDecibels
         )
     }
+
+    func testSampleFromPreviousBackendCannotRefreshRecoveryAttempt() {
+        var monitor = MicrophoneStreamContinuityMonitor(
+            dropoutDelaySeconds: 2.5,
+            livenessThresholdDecibels: -100
+        )
+        monitor.reset(generation: 2)
+
+        monitor.observe(
+            elapsedSeconds: 2.4,
+            powerDecibels: -30,
+            generation: 1
+        )
+
+        XCTAssertEqual(monitor.health(elapsedSeconds: 2.5), .absent)
+    }
 }
