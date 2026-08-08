@@ -81,6 +81,21 @@ import Testing
     )
 }
 
+@Test func standardWidgetPresentationNeverPrecedesCaptureReadiness() {
+    #expect(!RecordingStartupPresentationPolicy.shouldBeginPresentation(
+        captureBackendIsReady: false,
+        widgetSizeMode: .standard
+    ))
+    #expect(RecordingStartupPresentationPolicy.shouldBeginPresentation(
+        captureBackendIsReady: true,
+        widgetSizeMode: .standard
+    ))
+    #expect(!RecordingStartupPresentationPolicy.shouldBeginPresentation(
+        captureBackendIsReady: false,
+        widgetSizeMode: .mini
+    ))
+}
+
 @Test func recordCommandStopsAnActiveCapture() {
     #expect(
         RecordingCommandPolicy.action(
