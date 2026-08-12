@@ -194,6 +194,20 @@ class EngineeringImpactPolicyTests(unittest.TestCase):
 """
         self.assertEqual(MODULE.selected_classifications(body), [("capability-dossier", "")])
 
+    def test_shorter_nested_fence_does_not_escape_outer_fence(self):
+        body = """````markdown
+## Engineering impact
+- [x] ADR
+```
+- [x] Postmortem
+````
+
+## Engineering impact
+
+- [x] Capability Dossier
+"""
+        self.assertEqual(MODULE.selected_classifications(body), [("capability-dossier", "")])
+
     def test_requires_exactly_one_numbered_receipt(self):
         receipt = {
             "path": "docs/engineering/changes/pr-192.md",

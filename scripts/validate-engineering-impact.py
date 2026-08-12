@@ -58,10 +58,13 @@ def selected_classifications(body: str):
     in_engineering_impact = False
     fence = None
     for line in body.splitlines():
-        fence_match = re.match(r"^\s*(`{3,}|~{3,})", line)
+        fence_match = re.match(r"^\s*(`{3,}|~{3,})(.*)$", line)
         if fence_match:
-            marker = fence_match.group(1)[0]
-            fence = marker if fence is None else None if fence == marker else fence
+            delimiter = fence_match.group(1)
+            if fence is None:
+                fence = (delimiter[0], len(delimiter))
+            elif delimiter[0] == fence[0] and len(delimiter) >= fence[1] and not fence_match.group(2).strip():
+                fence = None
             continue
         if fence is not None:
             continue
