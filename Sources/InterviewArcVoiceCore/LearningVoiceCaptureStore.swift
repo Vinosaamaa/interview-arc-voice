@@ -104,9 +104,36 @@ public actor LearningVoiceCaptureStore {
         self.directory = directory
         encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode(date.timeIntervalSinceReferenceDate)
+        }
         decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            if let referenceSeconds = try? container.decode(Double.self) {
+                return Date(timeIntervalSinceReferenceDate: referenceSeconds)
+            }
+
+            let legacyValue = try container.decode(String.self)
+            let fractionalFormatter = ISO8601DateFormatter()
+            fractionalFormatter.formatOptions = [
+                .withInternetDateTime,
+                .withFractionalSeconds,
+            ]
+            if let date = fractionalFormatter.date(from: legacyValue) {
+                return date
+            }
+            let legacyFormatter = ISO8601DateFormatter()
+            legacyFormatter.formatOptions = [.withInternetDateTime]
+            guard let date = legacyFormatter.date(from: legacyValue) else {
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Invalid Learning Voice recovery date."
+                )
+            }
+            return date
+        }
     }
 
     public func saveNew(_ capture: PendingLearningVoiceCapture) throws {

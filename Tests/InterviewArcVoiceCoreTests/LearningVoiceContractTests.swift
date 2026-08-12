@@ -93,6 +93,29 @@ import Testing
     #expect(FileManager.default.fileExists(atPath: audio.path))
 }
 
+@Test func learningRecoveryStoreReadsLegacyISO8601Dates() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(
+        path: "learning-voice-legacy-store-\(UUID().uuidString)"
+    )
+    let pendingDirectory = root.appending(path: "Pending")
+    try FileManager.default.createDirectory(
+        at: pendingDirectory,
+        withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let audio = root.appending(path: "protected.m4a")
+    try Data("transient audio".utf8).write(to: audio)
+    let capture = pendingLearningCapture(audioURL: audio)
+    let legacyEncoder = JSONEncoder()
+    legacyEncoder.dateEncodingStrategy = .iso8601
+    try legacyEncoder.encode(capture).write(
+        to: pendingDirectory.appending(path: "\(capture.id).json")
+    )
+    let store = LearningVoiceCaptureStore(directory: pendingDirectory)
+
+    #expect(try await store.item(id: capture.id) == capture)
+}
+
 @Test func successfulLearningCaptureInsertsVerbatimCommitsTextAndDisposesAudio() async throws {
     let root = FileManager.default.temporaryDirectory.appending(
         path: "learning-voice-pipeline-\(UUID().uuidString)"
