@@ -315,6 +315,52 @@ import Testing
     )
 }
 
+@Test func aGeneralCaptureMayLateBindToAnExactLearningSessionAlreadyRunning() {
+    let session = FocusedLearningVoiceSession(
+        sessionId: "learning-session-1",
+        scopeType: "course",
+        courseId: "course-architecture",
+        blueprintRevision: 3,
+        courseTitle: "Interview Arc Architecture",
+        moduleId: "module-runtime",
+        moduleTitle: "Runtime",
+        lessonId: "lesson-voice-boundary",
+        lessonRevision: 2,
+        lessonTitle: "Voice boundary",
+        state: "running",
+        transcriptRevision: 4,
+        nextTranscriptSequence: 7,
+        startedAt: 500,
+        runningSince: 1_000,
+        evidencePolicy: .transcriptOnly
+    )
+    let context = VoiceContextResponse(
+        protocolVersion: 2,
+        date: "2026-08-12",
+        captureTarget: .learning,
+        focusedActivity: nil,
+        focusedLearningSession: session,
+        timerInstrument: nil,
+        specialist: nil,
+        message: nil
+    )
+
+    #expect(
+        LateCaptureBindingPolicy().capture(
+            initiallyLinked: false,
+            recordingStartedAtMilliseconds: 2_000,
+            refreshedContext: context
+        ) == .learning(session)
+    )
+    #expect(
+        LateCaptureBindingPolicy().capture(
+            initiallyLinked: true,
+            recordingStartedAtMilliseconds: 2_000,
+            refreshedContext: context
+        ) == nil
+    )
+}
+
 @Test func anAlreadyLinkedCaptureNeverMovesWhenFocusChanges() {
     let activity = focusedActivity(
         id: "new-problem",
