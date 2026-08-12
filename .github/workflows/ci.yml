@@ -15,11 +15,15 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Capture immutable Git identity
         id: identity
         run: |
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+      - name: Validate Engineering impact classification
+        run: python3 scripts/validate-engineering-impact.py "$GITHUB_EVENT_PATH"
       - name: Validate and package
         uses: ./.github/actions/package-voice
       - name: Record artifact provenance

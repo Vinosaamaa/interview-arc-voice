@@ -13,6 +13,9 @@ runs:
     - name: Test artifact promotion policy
       shell: bash
       run: Tests/ArtifactPromotionPolicyTests.sh
+    - name: Test Engineering impact policy
+      shell: bash
+      run: python3 Tests/EngineeringImpactPolicyTests.py
     - name: Test
       shell: bash
       run: swift test
