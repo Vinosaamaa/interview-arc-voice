@@ -2,6 +2,47 @@ import Foundation
 import Testing
 @testable import InterviewArcVoiceCore
 
+@Test func quickStudyVoiceContextDecodesWithoutCourseModuleIdentity() throws {
+    let response = try JSONDecoder().decode(
+        VoiceContextResponse.self,
+        from: Data(#"""
+        {
+          "protocolVersion": 2,
+          "date": "2026-08-12",
+          "captureTarget": "learning",
+          "focusedActivity": null,
+          "focusedLearningSession": {
+            "sessionId": "quick-study-session",
+            "scopeType": "quick_study",
+            "courseId": null,
+            "blueprintRevision": null,
+            "courseTitle": null,
+            "moduleId": null,
+            "moduleTitle": null,
+            "lessonId": "voice-release-verification",
+            "lessonRevision": 1,
+            "lessonTitle": "Voice release verification",
+            "state": "running",
+            "transcriptRevision": 0,
+            "nextTranscriptSequence": 0,
+            "startedAt": 1786566000000,
+            "runningSince": 1786566000000,
+            "evidencePolicy": "transcript_only"
+          },
+          "timerInstrument": null,
+          "specialist": null,
+          "message": null
+        }
+        """#.utf8)
+    )
+
+    let session = try #require(response.focusedLearningSession)
+    #expect(response.captureTarget == .learning)
+    #expect(session.scopeType == "quick_study")
+    #expect(session.moduleId == nil)
+    #expect(session.evidencePolicy == .transcriptOnly)
+}
+
 @Test func learningTranscriptUsesTheNarrowChecksumBoundServerContract() async throws {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [LearningVoiceURLProtocol.self]
