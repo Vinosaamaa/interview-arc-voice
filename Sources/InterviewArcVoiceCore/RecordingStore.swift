@@ -8,6 +8,7 @@ public struct RecordingStore: Sendable {
     public let temporaryDirectory: URL
     public let queueDirectory: URL
     public let pendingCapturesDirectory: URL
+    public let learningCapturesDirectory: URL
     public let diagnosticsDirectory: URL
     public let transcriptHistoryDirectory: URL
     public let recoveryDirectory: URL
@@ -46,6 +47,10 @@ public struct RecordingStore: Sendable {
         temporaryDirectory = root.appending(path: "Transcription", directoryHint: .isDirectory)
         queueDirectory = root.appending(path: "RetryQueue", directoryHint: .isDirectory)
         pendingCapturesDirectory = linkedPendingDirectory
+        learningCapturesDirectory = root.appending(
+            path: "LearningPending",
+            directoryHint: .isDirectory
+        )
         let legacyPendingCapturesDirectory = root.appending(
             path: "PendingCaptures",
             directoryHint: .isDirectory
@@ -70,6 +75,7 @@ public struct RecordingStore: Sendable {
             temporaryDirectory,
             queueDirectory,
             pendingCapturesDirectory,
+            learningCapturesDirectory,
             diagnosticsDirectory,
             transcriptHistoryDirectory,
             recoveryDirectory,

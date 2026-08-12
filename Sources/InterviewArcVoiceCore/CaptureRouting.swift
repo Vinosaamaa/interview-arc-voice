@@ -5,6 +5,42 @@ public enum CaptureRouteKind: Equatable, Sendable {
     case general
 }
 
+public enum LinkedVoiceCaptureContext: Equatable, Sendable {
+    case interview(FocusedVoiceActivity)
+    case learning(FocusedLearningVoiceSession)
+}
+
+public struct VoiceCaptureContextPolicy: Sendable {
+    public init() {}
+
+    public func selection(
+        for context: VoiceContextResponse?
+    ) -> LinkedVoiceCaptureContext? {
+        guard let context else { return nil }
+        switch context.captureTarget {
+        case .interview:
+            guard let activity = context.focusedActivity,
+                  context.focusedLearningSession == nil else { return nil }
+            return .interview(activity)
+        case .learning:
+            guard context.focusedActivity == nil,
+                  let session = context.focusedLearningSession,
+                  session.state == "running",
+                  session.runningSince != nil,
+                  session.evidencePolicy == .transcriptOnly else { return nil }
+            return .learning(session)
+        case .ambiguous:
+            return nil
+        case nil:
+            // Compatibility for the pre-Learn v2 context contract. This may
+            // infer only the historical Interview route, never Learning.
+            guard let activity = context.focusedActivity,
+                  context.focusedLearningSession == nil else { return nil }
+            return .interview(activity)
+        }
+    }
+}
+
 public struct CaptureRoutingPolicy: Sendable {
     public init() {}
 

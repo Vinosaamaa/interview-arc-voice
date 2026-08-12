@@ -154,6 +154,7 @@ final class VoiceBridgeModel: ObservableObject {
 
     private enum CaptureDestination {
         case linked(FocusedVoiceActivity, startedAt: Date)
+        case learning(FocusedLearningVoiceSession, startedAt: Date)
         case general(startedAt: Date)
     }
 
@@ -248,6 +249,8 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var codexPath: String
     @Published var pendingRetryCount = 0
     @Published private(set) var pendingVoiceCaptures: [PendingVoiceCapture] = []
+    @Published private(set) var pendingLearningVoiceCaptures:
+        [PendingLearningVoiceCapture] = []
     @Published private(set) var legacyVoiceOrphans: [LegacyVoiceCapture] = []
     @Published var linkToInterviewArc: Bool
     @Published var widgetTheme: VoiceWidgetTheme
@@ -315,6 +318,7 @@ final class VoiceBridgeModel: ObservableObject {
 
     private let keychain = KeychainStore()
     private let routeEvaluationPolicy = CaptureRouteEvaluationPolicy()
+    private let captureContextPolicy = VoiceCaptureContextPolicy()
     private let contextRetentionPolicy = VoiceContextRetentionPolicy()
     private let contextFreshnessPolicy = CaptureContextFreshnessPolicy()
     private let lateBindingPolicy = LateCaptureBindingPolicy()
@@ -421,8 +425,14 @@ final class VoiceBridgeModel: ObservableObject {
         case .connectedIdle:
             return "CONNECTED · GENERAL DICTATION"
         case .linked:
-            guard let activity = context?.focusedActivity else { return "LINKED" }
-            return specialtyLabel(activity.specialty).uppercased() + " · LINKED"
+            switch captureContextPolicy.selection(for: context) {
+            case .interview(let activity):
+                return specialtyLabel(activity.specialty).uppercased() + " · LINKED"
+            case .learning:
+                return "LEARNING · TRANSCRIPT ONLY"
+            case nil:
+                return "LINKED"
+            }
         }
     }
     var floatingTitle: String {
@@ -741,10 +751,19 @@ final class VoiceBridgeModel: ObservableObject {
         miniSessionTimerExpanded.toggle()
     }
     private var compactLinkPresentation: CompactVoicePresentation {
-        compactPresentationPolicy.presentation(
+        let activeTitle: String?
+        switch captureContextPolicy.selection(for: context) {
+        case .interview(let activity):
+            activeTitle = activity.title
+        case .learning(let session):
+            activeTitle = session.lessonTitle
+        case nil:
+            activeTitle = nil
+        }
+        return compactPresentationPolicy.presentation(
             linkEnabled: linkToInterviewArc,
             activeActivityTitle: currentTargetDecision.canAttach
-                ? context?.focusedActivity?.title
+                ? activeTitle
                 : nil,
             hasOpenSession: timerInstrument?.session != nil,
             sessionIsRunning: timerInstrument?.session?.timer.isRunning == true
@@ -1989,6 +2008,16 @@ final class VoiceBridgeModel: ObservableObject {
                     await processLinked(
                         recording: recording,
                         activity: activity,
+                        startedAt: startedAt,
+                        generation: generation,
+                        isRetry: true,
+                        speechEvidence: speechEvidence,
+                        diagnosticSeed: diagnosticSeed
+                    )
+                case .learning(let session, let startedAt):
+                    await processLearning(
+                        recording: recording,
+                        session: session,
                         startedAt: startedAt,
                         generation: generation,
                         isRetry: true,
@@ -3308,14 +3337,22 @@ final class VoiceBridgeModel: ObservableObject {
             }
             contextLastVerifiedAt = Date()
             applyLateCaptureBinding(from: loaded)
-            if let activity = loaded.focusedActivity {
+            if let selection = captureContextPolicy.selection(for: loaded) {
                 if !isRecording && !isBusy {
+                    let title = switch selection {
+                    case .interview(let activity): activity.title
+                    case .learning(let session): session.lessonTitle
+                    }
                     contextMessage = currentTargetDecision.canAttach
-                        ? "Linked to \(activity.title)"
-                        : "Activity ready · current app uses general dictation."
+                        ? "Linked to \(title)"
+                        : "Target ready · current app uses general dictation."
                 }
             } else {
-                if !isRecording && !isBusy { contextMessage = "No focused activity — using general dictation." }
+                if !isRecording && !isBusy {
+                    contextMessage = loaded.captureTarget == .ambiguous
+                        ? (loaded.message ?? "Multiple linked targets are active — using general dictation.")
+                        : "No focused activity — using general dictation."
+                }
             }
             // Focus refresh is intentionally read-only. Capture reconciliation
             // is driven by Voice events, startup/wake, or an explicit retry.
@@ -3326,9 +3363,9 @@ final class VoiceBridgeModel: ObservableObject {
             ) else { return }
             context = contextRetentionPolicy.context(previous: context, refreshed: nil)
             if !isRecording && !isBusy {
-                contextMessage = context?.focusedActivity == nil
+                contextMessage = captureContextPolicy.selection(for: context) == nil
                     ? "Interview Arc is unavailable — using general dictation."
-                    : "Interview Arc refresh delayed — keeping the last verified activity."
+                    : "Interview Arc refresh delayed — keeping the last verified target."
             }
         }
         settlePhaseAfterContextRefresh(force: showProgress)
@@ -3488,10 +3525,11 @@ final class VoiceBridgeModel: ObservableObject {
         // microphone must not wait for a network round trip because that
         // loses the first words of an answer.
         let recordingStartedAt = Date()
+        let captureSelection = captureContextPolicy.selection(for: context)
         let routeEvaluation = routeEvaluationPolicy.evaluate(
             linkEnabled: linkToInterviewArc,
             target: currentTargetDecision,
-            hasFocusedActivity: context?.focusedActivity != nil,
+            hasFocusedActivity: captureSelection != nil,
             contextIsFresh: contextIsFreshForCapture
         )
         captureRouteReason = routeEvaluation.reason
@@ -3500,8 +3538,13 @@ final class VoiceBridgeModel: ObservableObject {
         )
         switch routeEvaluation.route {
         case .linked:
-            guard let activity = context?.focusedActivity else { return }
-            captureDestination = .linked(activity, startedAt: recordingStartedAt)
+            guard let captureSelection else { return }
+            switch captureSelection {
+            case .interview(let activity):
+                captureDestination = .linked(activity, startedAt: recordingStartedAt)
+            case .learning(let session):
+                captureDestination = .learning(session, startedAt: recordingStartedAt)
+            }
         case .general:
             captureDestination = .general(startedAt: recordingStartedAt)
         }
@@ -3516,6 +3559,7 @@ final class VoiceBridgeModel: ObservableObject {
         let destination: URL
         switch captureDestination {
         case .linked(let activity, _): destination = recordingStore.nextRecordingURL(activityID: activity.activityId)
+        case .learning(let session, _): destination = recordingStore.nextRecordingURL(activityID: session.sessionId)
         case .general: destination = recordingStore.nextTemporaryRecordingURL()
         case nil: return
         }
@@ -3549,6 +3593,8 @@ final class VoiceBridgeModel: ObservableObject {
             switch captureDestination {
             case .linked(let activity, _):
                 captureDestination = .linked(activity, startedAt: readyAt)
+            case .learning(let session, _):
+                captureDestination = .learning(session, startedAt: readyAt)
             case .general:
                 captureDestination = .general(startedAt: readyAt)
             case nil:
@@ -3625,6 +3671,14 @@ final class VoiceBridgeModel: ObservableObject {
                     recording = try recordingStore.promoteToLinkedRecording(
                         recording,
                         activityID: activity.activityId
+                    )
+                }
+            case .learning(let session, _):
+                memoActivityTitle = session.lessonTitle
+                if let recordingStore {
+                    recording = try recordingStore.promoteToLinkedRecording(
+                        recording,
+                        activityID: session.sessionId
                     )
                 }
             case .general:
@@ -3748,6 +3802,17 @@ final class VoiceBridgeModel: ObservableObject {
                     await processLinked(
                         recording: recording,
                         activity: activity,
+                        startedAt: startedAt,
+                        generation: generation,
+                        speechEvidence: speechEvidence,
+                        diagnosticSeed: diagnosticSeed,
+                        recordingMayBeIncomplete: recordingMayBeIncomplete,
+                        recordingDurationSeconds: transcriptionDurationSeconds
+                    )
+                case .learning(let session, let startedAt):
+                    await processLearning(
+                        recording: recording,
+                        session: session,
                         startedAt: startedAt,
                         generation: generation,
                         speechEvidence: speechEvidence,
@@ -4058,6 +4123,177 @@ final class VoiceBridgeModel: ObservableObject {
         }
     }
 
+    private func processLearning(
+        recording: RecordedCapture,
+        session: FocusedLearningVoiceSession,
+        startedAt: Date,
+        generation: UUID,
+        isRetry: Bool = false,
+        speechEvidence: SpeechEvidenceResult? = nil,
+        diagnosticSeed: CaptureDiagnosticSeed? = nil,
+        recordingMayBeIncomplete: Bool = false,
+        recordingDurationSeconds: Double? = nil
+    ) async {
+        do {
+            try validateRecording(
+                recording,
+                allowPlayablePortion: recordingMayBeIncomplete
+            )
+        } catch {
+            guard generation == captureGeneration else { return }
+            canRetryLastTranscription = false
+            endProcessing()
+            reportFailure(
+                error,
+                stage: .recording,
+                hasRecoverableAudio: hasLastAudio
+            )
+            return
+        }
+        currentInsertionDurationSeconds = 0
+        let effectiveDurationSeconds = recordingDurationSeconds
+            ?? recording.duration
+        do {
+            lastInsertionSucceeded = false
+            let builtPipeline = try makeLinkedPipeline()
+            pipeline = builtPipeline
+            let insert: @Sendable (String) async -> Bool = { transcript in
+                await self.insertTranscript(
+                    transcript,
+                    editorText: transcript,
+                    showDeliveryStep: true
+                )
+            }
+            let resumed = isRetry
+                ? try await builtPipeline.resumePendingLearningCapture(
+                    recordingURL: recording.url,
+                    transcriptReady: insert,
+                    progress: { update in
+                        await self.applyDeliveryUpdate(
+                            update,
+                            generation: generation
+                        )
+                    }
+                )
+                : nil
+            let result = if let resumed {
+                resumed
+            } else {
+                try await builtPipeline.processLearning(
+                    recordingURL: recording.url,
+                    durationSeconds: effectiveDurationSeconds,
+                    session: session,
+                    occurredAt: startedAt,
+                    speechEvidence: speechEvidence,
+                    protectionMode: diagnosticSeed?.protectionMode
+                        ?? speechProtectionMode,
+                    transcriptReady: insert,
+                    progress: { update in
+                        await self.applyDeliveryUpdate(
+                            update,
+                            generation: generation
+                        )
+                    }
+                )
+            }
+            await updateRetryCount()
+            guard generation == captureGeneration else { return }
+            let transcript = result.transcript
+            try? recoverableRecordingStore?.clear()
+            clearLastMemo()
+            lastTranscript = transcript
+            lastInsertionText = transcript
+            canRetryLastTranscription = false
+            endProcessing()
+            clearFailureAfterSuccess()
+            phase = .delivered
+            coverageUncertainNoticePresented = result.transcription.coverageUncertain
+                || recordingMayBeIncomplete
+            contextMessage = "Learning transcript saved · transient audio removed."
+            if let diagnosticSeed {
+                await recordDiagnostic(
+                    seed: diagnosticSeed,
+                    insertionSeconds: currentInsertionDurationSeconds,
+                    transcription: TranscriptionDiagnosticMetadata(
+                        timing: result.transcription.transcription.timing,
+                        segmentValidationSeconds:
+                            result.transcription.segmentValidationSeconds,
+                        omittedUnsupportedSegmentCount:
+                            result.transcription.omittedUnsupportedSegmentCount,
+                        omittedUnsupportedWordCount:
+                            result.transcription.omittedUnsupportedWordCount,
+                        wordAlignmentComplete:
+                            result.transcription.wordAlignmentComplete,
+                        evaluatedSegmentCount:
+                            result.transcription.evaluatedSegmentCount,
+                        wordTimestampCount:
+                            result.transcription.wordTimestampCount,
+                        providerRetryOccurred:
+                            result.transcription.wasRetried,
+                        lexicalCoverageEndSeconds:
+                            result.transcription.providerLexicalCoverageEndSeconds,
+                        trailingSpeechLikeFrameCount:
+                            result.transcription.trailingSpeechLikeFrameCount,
+                        trailingSpeechLikeFraction:
+                            result.transcription.trailingSpeechLikeFraction,
+                        integrityReasons: result.transcription.coverageUncertain
+                            ? [.missingSpeechCoverage]
+                            : nil,
+                        engine: result.transcription.engine,
+                        model: result.transcription.model,
+                        localInferenceSeconds:
+                            result.transcription.localInferenceSeconds,
+                        localPromptTokenCount:
+                            result.transcription.localPromptTokenCount,
+                        localFallbackAttempted:
+                            result.transcription.engine == "whisperkit"
+                    ),
+                    outcome: .delivered
+                )
+            }
+        } catch let error as InterviewArcAPIError {
+            guard generation == captureGeneration else { return }
+            endProcessing()
+            canRetryLastTranscription = error.retryable
+            reportFailure(
+                error,
+                stage: .interviewArc,
+                hasRecoverableAudio: hasLastAudio
+            )
+        } catch let error as VoiceBridgeError {
+            guard generation == captureGeneration else { return }
+            endProcessing()
+            canRetryLastTranscription = true
+            switch error {
+            case .codexUnavailable:
+                reportFailure(
+                    error,
+                    stage: .insertion,
+                    hasRecoverableAudio: hasLastAudio
+                )
+            default:
+                await preserveCoverageRecoveryCandidate(
+                    from: error,
+                    recording: recording,
+                    activity: nil
+                )
+                await reportTranscriptionFailure(
+                    error,
+                    diagnosticSeed: diagnosticSeed
+                )
+            }
+        } catch {
+            guard generation == captureGeneration else { return }
+            endProcessing()
+            canRetryLastTranscription = true
+            reportFailure(
+                error,
+                stage: .interviewArc,
+                hasRecoverableAudio: hasLastAudio
+            )
+        }
+    }
+
     private func handleLinkedTranscriptReady(
         _ capture: VoiceCaptureEnvelope,
         recordingDuration: Double,
@@ -4108,6 +4344,8 @@ final class VoiceBridgeModel: ObservableObject {
             )
         }
         pendingVoiceCaptures = await pipeline?.pendingCaptures() ?? []
+        pendingLearningVoiceCaptures = await pipeline?
+            .pendingLearningCaptures() ?? []
         legacyVoiceOrphans = await pipeline?.legacyVoiceOrphans() ?? []
         let transientCaptureCount = pendingVoiceCaptures.filter {
             $0.nextAttemptAt != nil
@@ -4117,15 +4355,22 @@ final class VoiceBridgeModel: ObservableObject {
                 && $0.localState != .quarantinedConflict
                 && $0.localState != .needsAttention
         }.count
-        pendingRetryCount = legacyCount + transientCaptureCount
+        pendingRetryCount = legacyCount
+            + transientCaptureCount
+            + pendingLearningVoiceCaptures.count
         synchronizePendingReconciliationLoop()
     }
 
     private func synchronizePendingReconciliationLoop() {
         let policy = VoicePendingReconciliationPolicy()
+        let hasLearningAcknowledgement = pendingLearningVoiceCaptures.contains {
+            $0.stage == .acknowledgementPending
+                && $0.lastErrorRetryable != false
+        }
         guard
             linkToInterviewArc,
             policy.delaySeconds(captures: pendingVoiceCaptures, attempt: 0) != nil
+                || hasLearningAcknowledgement
         else {
             pendingReconciliationGeneration = UUID()
             pendingReconciliationTask?.cancel()
@@ -4140,10 +4385,21 @@ final class VoiceBridgeModel: ObservableObject {
             var attempt = 0
             while !Task.isCancelled {
                 guard let self else { return }
-                guard let delay = policy.delaySeconds(
+                let interviewDelay = policy.delaySeconds(
                     captures: self.pendingVoiceCaptures,
                     attempt: attempt
-                ) else { break }
+                )
+                let hasLearningAcknowledgement = self
+                    .pendingLearningVoiceCaptures.contains {
+                        $0.stage == .acknowledgementPending
+                            && $0.lastErrorRetryable != false
+                    }
+                let learningDelay: TimeInterval? = hasLearningAcknowledgement
+                    ? TimeInterval(min(300, 15 * (1 << min(attempt, 4))))
+                    : nil
+                let retryDelays: [TimeInterval] = [interviewDelay, learningDelay]
+                    .compactMap { $0 }
+                guard let delay = retryDelays.min() else { break }
                 try? await Task.sleep(for: .seconds(delay))
                 guard !Task.isCancelled else { return }
                 await self.retryPendingInBackground()
@@ -4270,6 +4526,9 @@ final class VoiceBridgeModel: ObservableObject {
             retryQueue: VoiceRetryQueue(directory: recordingStore.queueDirectory),
             pendingCaptureStore: PendingVoiceCaptureStore(
                 directory: recordingStore.pendingCapturesDirectory
+            ),
+            learningCaptureStore: LearningVoiceCaptureStore(
+                directory: recordingStore.learningCapturesDirectory
             ),
             transcriptHistoryStore: transcriptHistoryStore,
             temporaryDirectory: recordingStore.temporaryDirectory,
@@ -4502,6 +4761,8 @@ final class VoiceBridgeModel: ObservableObject {
             return .general(startedAt: startedAt)
         case .linked(let activity, let startedAt):
             return .linked(activity: activity, startedAt: startedAt)
+        case .learning(let session, let startedAt):
+            return .learning(session: session, startedAt: startedAt)
         case nil:
             return nil
         }
@@ -4515,6 +4776,8 @@ final class VoiceBridgeModel: ObservableObject {
             return .general(startedAt: startedAt)
         case .linked(let activity, let startedAt):
             return .linked(activity, startedAt: startedAt)
+        case .learning(let session, let startedAt):
+            return .learning(session, startedAt: startedAt)
         case nil:
             return nil
         }
@@ -4692,14 +4955,25 @@ final class VoiceBridgeModel: ObservableObject {
         guard linkToInterviewArc,
               captureStartedInCodex,
               case .general(let recordingStartedAt) = captureDestination,
-              let activity = lateBindingPolicy.activity(
-                initiallyLinkedActivityID: nil,
+              let selection = lateBindingPolicy.capture(
+                initiallyLinked: false,
                 recordingStartedAtMilliseconds: Int64(recordingStartedAt.timeIntervalSince1970 * 1_000),
-                refreshedActivity: refreshed.focusedActivity
+                refreshedContext: refreshed
               ) else {
             return
         }
-        captureDestination = .linked(activity, startedAt: recordingStartedAt)
+        switch selection {
+        case .interview(let activity):
+            captureDestination = .linked(
+                activity,
+                startedAt: recordingStartedAt
+            )
+        case .learning(let session):
+            captureDestination = .learning(
+                session,
+                startedAt: recordingStartedAt
+            )
+        }
         captureRouteReason = routeEvaluationPolicy.linkedEvaluation(
             phase: .contextRefresh
         ).reason

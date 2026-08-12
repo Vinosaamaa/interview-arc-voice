@@ -7,13 +7,100 @@ public struct SpecialistRoute: Codable, Equatable, Sendable {
     public let title: String
 }
 
+public enum VoiceCaptureTarget: String, Codable, Equatable, Sendable {
+    case interview
+    case learning
+    case ambiguous
+}
+
+public enum LearningVoiceEvidencePolicy: String, Codable, Equatable, Sendable {
+    case transcriptOnly = "transcript_only"
+}
+
+public struct FocusedLearningVoiceSession: Codable, Equatable, Sendable {
+    public let sessionId: String
+    public let scopeType: String
+    public let courseId: String?
+    public let blueprintRevision: Int?
+    public let courseTitle: String?
+    public let moduleId: String
+    public let moduleTitle: String?
+    public let lessonId: String
+    public let lessonRevision: Int
+    public let lessonTitle: String
+    public let state: String
+    public let transcriptRevision: Int
+    public let nextTranscriptSequence: Int
+    public let startedAt: Int64?
+    public let runningSince: Int64?
+    public let evidencePolicy: LearningVoiceEvidencePolicy
+
+    public init(
+        sessionId: String,
+        scopeType: String,
+        courseId: String?,
+        blueprintRevision: Int?,
+        courseTitle: String?,
+        moduleId: String,
+        moduleTitle: String?,
+        lessonId: String,
+        lessonRevision: Int,
+        lessonTitle: String,
+        state: String,
+        transcriptRevision: Int,
+        nextTranscriptSequence: Int,
+        startedAt: Int64?,
+        runningSince: Int64?,
+        evidencePolicy: LearningVoiceEvidencePolicy
+    ) {
+        self.sessionId = sessionId
+        self.scopeType = scopeType
+        self.courseId = courseId
+        self.blueprintRevision = blueprintRevision
+        self.courseTitle = courseTitle
+        self.moduleId = moduleId
+        self.moduleTitle = moduleTitle
+        self.lessonId = lessonId
+        self.lessonRevision = lessonRevision
+        self.lessonTitle = lessonTitle
+        self.state = state
+        self.transcriptRevision = transcriptRevision
+        self.nextTranscriptSequence = nextTranscriptSequence
+        self.startedAt = startedAt
+        self.runningSince = runningSince
+        self.evidencePolicy = evidencePolicy
+    }
+}
+
 public struct VoiceContextResponse: Codable, Equatable, Sendable {
     public let protocolVersion: Int
     public let date: String
+    public let captureTarget: VoiceCaptureTarget?
     public let focusedActivity: FocusedVoiceActivity?
+    public let focusedLearningSession: FocusedLearningVoiceSession?
     public let timerInstrument: VoiceTimerInstrument?
     public let specialist: SpecialistRoute?
     public let message: String?
+
+    public init(
+        protocolVersion: Int,
+        date: String,
+        captureTarget: VoiceCaptureTarget? = nil,
+        focusedActivity: FocusedVoiceActivity?,
+        focusedLearningSession: FocusedLearningVoiceSession? = nil,
+        timerInstrument: VoiceTimerInstrument?,
+        specialist: SpecialistRoute?,
+        message: String?
+    ) {
+        self.protocolVersion = protocolVersion
+        self.date = date
+        self.captureTarget = captureTarget
+        self.focusedActivity = focusedActivity
+        self.focusedLearningSession = focusedLearningSession
+        self.timerInstrument = timerInstrument
+        self.specialist = specialist
+        self.message = message
+    }
 }
 
 public struct VoiceTimerState: Codable, Equatable, Sendable {
@@ -181,6 +268,48 @@ public struct PersistedVoiceTurn: Codable, Equatable, Sendable {
 public struct VoiceCaptureResponse: Codable, Equatable, Sendable {
     public let protocolVersion: Int
     public let turn: PersistedVoiceTurn
+}
+
+public struct LearningVoiceTranscriptRequest: Codable, Equatable, Sendable {
+    public let protocolVersion: Int
+    public let operationId: String
+    public let sessionId: String
+    public let expectedTranscriptRevision: Int
+    public let turnId: String
+    public let sequence: Int
+    public let transcript: String
+    public let checksum: String
+    public let occurredAt: Int64
+
+    public init(
+        protocolVersion: Int = InterviewArcAPIClient.protocolVersion,
+        operationId: String,
+        sessionId: String,
+        expectedTranscriptRevision: Int,
+        turnId: String,
+        sequence: Int,
+        transcript: String,
+        checksum: String,
+        occurredAt: Int64
+    ) {
+        self.protocolVersion = protocolVersion
+        self.operationId = operationId
+        self.sessionId = sessionId
+        self.expectedTranscriptRevision = expectedTranscriptRevision
+        self.turnId = turnId
+        self.sequence = sequence
+        self.transcript = transcript
+        self.checksum = checksum
+        self.occurredAt = occurredAt
+    }
+}
+
+public struct LearningVoiceTranscriptResponse: Codable, Equatable, Sendable {
+    public let protocolVersion: Int
+    public let transcriptRevision: Int
+    public let turnIds: [String]
+    public let evidencePolicy: LearningVoiceEvidencePolicy
+    public let duplicate: Bool
 }
 
 public struct VoiceCaptureEnvelope: Equatable, Sendable {

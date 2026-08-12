@@ -684,6 +684,7 @@ public enum RecoverableTranscriptionDestination:
 {
     case general(startedAt: Date)
     case linked(activity: FocusedVoiceActivity, startedAt: Date)
+    case learning(session: FocusedLearningVoiceSession, startedAt: Date)
 }
 
 public struct LocalRecoverableRecordingReference:
