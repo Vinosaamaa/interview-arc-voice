@@ -54,10 +54,9 @@ import Testing
     let sent = try #require(observedRequest.value)
     #expect(sent.url?.path == "/voice/learning-transcripts")
     #expect(sent.httpMethod == "POST")
-    let object = try #require(
-        JSONSerialization.jsonObject(with: try #require(sent.httpBody))
-            as? [String: Any]
-    )
+    let sentBody = try #require(sent.httpBody)
+    let decodedObject = try JSONSerialization.jsonObject(with: sentBody)
+    let object = try #require(decodedObject as? [String: Any])
     #expect(object["sessionId"] as? String == request.sessionId)
     #expect(object["operationId"] as? String == request.operationId)
     #expect(object["turnId"] as? String == request.turnId)
