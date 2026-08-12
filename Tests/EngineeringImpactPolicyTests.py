@@ -68,10 +68,20 @@ def receipt_markdown(
     pr: int = 192,
     classification: str = "none",
     refs=None,
+    unknowns=None,
+    sources=None,
+    evidence_refs=None,
     title: str = "Adopt complete pull request receipts",
     summary: str = "Adds the versioned compact receipt contract and enforces one numbered receipt in the required Voice pull-request workflow.",
 ):
     refs = [] if refs is None else refs
+    unknowns = [] if unknowns is None else unknowns
+    sources = sources or [{
+        "label": f"Pull request #{pr}",
+        "url": f"https://github.com/Vinosaamaa/interview-arc-voice/pull/{pr}",
+        "kind": "pull-request",
+    }]
+    evidence_refs = [f"pull-request:{pr}"] if evidence_refs is None else evidence_refs
     return f"""---
 schemaVersion: 1
 repository: interview-arc-voice
@@ -81,12 +91,12 @@ classification: {classification}
 richRecordRefs: {json.dumps(refs, separators=(',', ':'))}
 reconstructed: false
 confidence: verified
-unknowns: []
+unknowns: {json.dumps(unknowns, separators=(',', ':'))}
 headCommit: null
 mergeCommit: null
 mergedAt: null
-sources: [{{"label":"Pull request #{pr}","url":"https://github.com/Vinosaamaa/interview-arc-voice/pull/{pr}","kind":"pull-request"}}]
-verification: {{"state":"verified","evidenceRefs":["pull-request:{pr}"]}}
+sources: {json.dumps(sources, separators=(',', ':'))}
+verification: {json.dumps({"state": "verified", "evidenceRefs": evidence_refs}, separators=(',', ':'))}
 visibility: public-safe
 publicationEligibility: eligible
 ---
@@ -157,8 +167,16 @@ def workflow_steps(workflow: str, job_name: str):
 class EngineeringImpactPolicyTests(unittest.TestCase):
     def test_contract_schema_and_protocol_are_versioned(self):
         schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+        self.assertEqual(schema["$id"], "urn:interview-arc:contracts:engineering-pull-request-receipt:1")
         self.assertEqual(schema["properties"]["schemaVersion"]["const"], 1)
         self.assertIn("richRecordRefs", schema["required"])
+        self.assertEqual(schema["properties"]["sources"]["maxItems"], 32)
+        self.assertEqual(schema["properties"]["sources"]["items"]["properties"]["label"]["maxLength"], 160)
+        self.assertEqual(schema["properties"]["sources"]["items"]["properties"]["url"]["maxLength"], 2048)
+        self.assertEqual(schema["$defs"]["stringList"]["maxItems"], 32)
+        self.assertEqual(schema["$defs"]["stringList"]["items"]["maxLength"], 512)
+        self.assertEqual(schema["$defs"]["recordRefs"]["maxItems"], 16)
+        self.assertEqual(schema["$defs"]["recordRefs"]["items"]["maxLength"], 180)
         protocol = PROTOCOL.read_text(encoding="utf-8")
         self.assertIn("one compact receipt for every merged pull request", protocol.lower())
         self.assertIn("does not need to request a separate Journal operation", protocol)
@@ -384,6 +402,58 @@ type: capability-dossier
                 receipt_markdown(summary="x" * 281),
                 "docs/engineering/changes/pr-192.md",
             )
+
+    def test_receipt_parser_enforces_exact_v1_collection_and_string_bounds(self):
+        max_refs = [f"record-{index}@1" for index in range(15)] + [("a" * 178) + "@1"]
+        max_unknowns = [f"{index:02d}" + ("u" * 510) for index in range(32)]
+        max_sources = [
+            {
+                "label": ("l" * 160) if index == 0 else f"Source {index}",
+                "url": ("https://" + ("a" * 2040)) if index == 0 else f"https://example.com/{index}",
+                "kind": "documentation",
+            }
+            for index in range(32)
+        ]
+        max_evidence = [f"{index:02d}" + ("e" * 510) for index in range(32)]
+        parsed = MODULE.parse_receipt(
+            receipt_markdown(
+                classification="capability-dossier",
+                refs=max_refs,
+                unknowns=max_unknowns,
+                sources=max_sources,
+                evidence_refs=max_evidence,
+            ),
+            "docs/engineering/changes/pr-192.md",
+        )
+        self.assertEqual(len(parsed["richRecordRefs"]), 16)
+
+        cases = {
+            "richRecordRefs count": receipt_markdown(
+                classification="capability-dossier",
+                refs=[f"record-{index}@1" for index in range(17)],
+            ),
+            "richRecordRefs length": receipt_markdown(
+                classification="capability-dossier",
+                refs=[("a" * 179) + "@1"],
+            ),
+            "unknowns count": receipt_markdown(unknowns=[f"unknown-{index}" for index in range(33)]),
+            "unknowns length": receipt_markdown(unknowns=["u" * 513]),
+            "sources count": receipt_markdown(sources=[
+                {"label": f"Source {index}", "url": f"https://example.com/{index}", "kind": "documentation"}
+                for index in range(33)
+            ]),
+            "source label length": receipt_markdown(sources=[
+                {"label": "l" * 161, "url": "https://example.com", "kind": "documentation"}
+            ]),
+            "source URL length": receipt_markdown(sources=[
+                {"label": "Source", "url": "https://" + ("a" * 2041), "kind": "documentation"}
+            ]),
+            "evidence count": receipt_markdown(evidence_refs=[f"evidence-{index}" for index in range(33)]),
+            "evidence length": receipt_markdown(evidence_refs=["e" * 513]),
+        }
+        for label, markdown in cases.items():
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                MODULE.parse_receipt(markdown, "docs/engineering/changes/pr-192.md")
 
 
 if __name__ == "__main__":

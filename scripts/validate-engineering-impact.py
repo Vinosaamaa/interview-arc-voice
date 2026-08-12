@@ -29,6 +29,13 @@ MERGED_AT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 RECORD_PATH = re.compile(r"^docs/engineering/records/[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
 SOURCE_KINDS = {"issue", "pull-request", "commit", "release", "run", "documentation"}
 CONFIDENCE_VALUES = {"verified", "high", "medium", "low", "unknown"}
+MAX_STRING_LIST_ITEMS = 32
+MAX_STRING_ITEM_LENGTH = 512
+MAX_RECORD_REFS = 16
+MAX_RECORD_REF_LENGTH = 180
+MAX_SOURCES = 32
+MAX_SOURCE_LABEL_LENGTH = 160
+MAX_SOURCE_URL_LENGTH = 2048
 RECEIPT_FIELDS = {
     "schemaVersion",
     "repository",
@@ -104,10 +111,17 @@ def json_value(raw: str, field: str):
         raise ValueError(f"The canonical Pull Request Receipt has an invalid `{field}` field.") from error
 
 
-def string_list(value, field: str):
+def string_list(
+    value,
+    field: str,
+    *,
+    max_items: int = MAX_STRING_LIST_ITEMS,
+    max_length: int = MAX_STRING_ITEM_LENGTH,
+):
     if (
         not isinstance(value, list)
-        or any(not isinstance(item, str) or not item for item in value)
+        or len(value) > max_items
+        or any(not isinstance(item, str) or not item or len(item) > max_length for item in value)
         or len(value) != len(set(value))
     ):
         raise ValueError(f"The canonical Pull Request Receipt has an invalid `{field}` field.")
@@ -127,7 +141,12 @@ def parse_receipt_identity(fields: dict[str, str]):
     classification = fields["classification"]
     if classification not in CLASSIFICATION_VALUES:
         raise ValueError("The canonical Pull Request Receipt has an invalid classification.")
-    rich_record_refs = string_list(json_value(fields["richRecordRefs"], "richRecordRefs"), "richRecordRefs")
+    rich_record_refs = string_list(
+        json_value(fields["richRecordRefs"], "richRecordRefs"),
+        "richRecordRefs",
+        max_items=MAX_RECORD_REFS,
+        max_length=MAX_RECORD_REF_LENGTH,
+    )
     if any(not RECORD_REF.fullmatch(ref) for ref in rich_record_refs):
         raise ValueError("The canonical Pull Request Receipt has invalid rich Engineering record references.")
     if fields["visibility"] != "public-safe" or fields["publicationEligibility"] != "eligible":
@@ -157,7 +176,7 @@ def validate_receipt_history(fields: dict[str, str]):
         raise ValueError("The canonical Pull Request Receipt has an invalid `mergedAt` field.")
     factual_values.append(merged_at)
     sources = json_value(fields["sources"], "sources")
-    if not isinstance(sources, list) or not sources:
+    if not isinstance(sources, list) or not sources or len(sources) > MAX_SOURCES:
         raise ValueError("The canonical Pull Request Receipt has an invalid `sources` field.")
     for source in sources:
         if (
@@ -165,8 +184,10 @@ def validate_receipt_history(fields: dict[str, str]):
             or set(source) != {"label", "url", "kind"}
             or not isinstance(source["label"], str)
             or not source["label"]
+            or len(source["label"]) > MAX_SOURCE_LABEL_LENGTH
             or not isinstance(source["url"], str)
             or not source["url"].startswith("https://")
+            or len(source["url"]) > MAX_SOURCE_URL_LENGTH
             or source["kind"] not in SOURCE_KINDS
         ):
             raise ValueError("The canonical Pull Request Receipt has an invalid `sources` field.")
