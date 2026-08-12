@@ -106,17 +106,26 @@ publicationEligibility: eligible
 """
 
 
-def run_validator(cwd: Path, base: str, head: str, number: int, body: str):
+def run_validator(
+    cwd: Path,
+    base: str,
+    head: str,
+    number: int,
+    body: str,
+    title: str = "Adopt complete pull request receipts",
+):
     event_path = cwd / "event.json"
     event_path.write_text(
         json.dumps(
             {
                 "pull_request": {
                     "number": number,
+                    "title": title,
                     "body": body,
                     "base": {"sha": base},
                     "head": {"sha": head},
-                }
+                },
+                "repository": {"name": "interview-arc-voice"},
             }
         ),
         encoding="utf-8",
@@ -180,6 +189,10 @@ class EngineeringImpactPolicyTests(unittest.TestCase):
         protocol = PROTOCOL.read_text(encoding="utf-8")
         self.assertIn("one compact receipt for every merged pull request", protocol.lower())
         self.assertIn("does not need to request a separate Journal operation", protocol)
+        self.assertIn("Version 1 uses restricted one-line frontmatter, not general YAML", protocol)
+        self.assertIn("reuse an exact existing rich record", protocol)
+        self.assertIn("An accepted rich record is never deleted", protocol)
+        self.assertIn("reviewed amendment or superseding revision", protocol)
 
     def test_validator_runs_inside_existing_required_package_job(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -258,6 +271,24 @@ class EngineeringImpactPolicyTests(unittest.TestCase):
                 192,
                 {**receipt, "classification": "capability-dossier", "richRecordRefs": [DOSSIER_REF]},
                 {},
+            )
+        with self.assertRaisesRegex(ValueError, "title must match"):
+            MODULE.validate(
+                NONE_BODY,
+                [receipt["path"]],
+                192,
+                {**receipt, "title": "Different title", "reconstructed": False},
+                {},
+                "Canonical title",
+            )
+        with self.assertRaisesRegex(ValueError, "reconstructed"):
+            MODULE.validate(
+                NONE_BODY,
+                [receipt["path"]],
+                192,
+                {**receipt, "title": "Canonical title", "reconstructed": True},
+                {},
+                "Canonical title",
             )
 
     def test_none_requires_reason_and_cannot_hide_rich_records(self):
@@ -405,6 +436,30 @@ type: capability-dossier
                 "docs/engineering/changes/pr-192.md",
             )
 
+    def test_receipt_parser_uses_restricted_json_compatible_scalars(self):
+        markdown = receipt_markdown()
+        quoted = markdown.replace(
+            "title: Adopt complete pull request receipts",
+            'title: "Adopt complete pull request receipts"',
+        )
+        self.assertEqual(
+            MODULE.parse_receipt(quoted, "docs/engineering/changes/pr-192.md")["title"],
+            "Adopt complete pull request receipts",
+        )
+        for prefix in ("'", "|", ">", "&", "*", "!"):
+            with self.subTest(prefix=prefix), self.assertRaisesRegex(ValueError, "YAML-only"):
+                MODULE.parse_receipt(
+                    markdown.replace(
+                        "title: Adopt complete pull request receipts",
+                        f"title: {prefix}unsupported",
+                    ),
+                    "docs/engineering/changes/pr-192.md",
+                )
+        with self.assertRaisesRegex(ValueError, "frontmatter is invalid"):
+            MODULE.parse_receipt(
+                markdown.replace("title: Adopt complete pull request receipts", "title:"),
+                "docs/engineering/changes/pr-192.md",
+            )
     def test_receipt_parser_enforces_exact_v1_collection_and_string_bounds(self):
         max_refs = [f"record-{index}@1" for index in range(15)] + [("a" * 178) + "@1"]
         max_unknowns = [f"{index:02d}" + ("u" * 510) for index in range(32)]

@@ -9,6 +9,8 @@ Engineering history has two deliberately separate layers. The separation keeps t
 
 The Pull Request Receipt contract is versioned by `docs/contracts/engineering-pull-request-receipt.schema.json`. The six rich record types remain Change Note, ADR, Architecture Review, Feature Retrospective, Postmortem, and Capability Dossier. A future contract change requires an explicit schema version; tooling must not silently reinterpret accepted version 1 documents.
 
+Version 1 uses restricted one-line frontmatter, not general YAML. Each nonempty line has one unique key and a nonempty value separated at the first colon. A value beginning with `"`, `[`, or `{`, the exact lowercase values `true`, `false`, or `null`, and exact integers are JSON-decoded; other values are plain strings unless they begin with the YAML-only characters `'`, `|`, `>`, `&`, `*`, or `!`. Block lists, multiline scalars, anchors, aliases, tags, duplicate keys, and empty values are rejected. This keeps the parser identical and deterministic across the three repositories.
+
 ## Forward authoring protocol
 
 The implementation coordinator owns the receipt as part of the pull request. The user does not need to request a separate Journal operation.
@@ -17,7 +19,7 @@ The implementation coordinator owns the receipt as part of the pull request. The
 2. Add exactly one compact receipt at `docs/engineering/changes/pr-<number>.md`.
 3. Record a public-safe title and one factual summary paragraph of at most 280 characters.
 4. Classify a small or non-material pull request as `none` and leave `richRecordRefs` empty.
-5. For a material pull request, add the appropriate rich record or link an exact existing rich record that explicitly covers the same reviewed PR cluster; record its exact `id@revision` in `richRecordRefs`.
+5. For a material pull request, add the appropriate rich record or reuse an exact existing rich record that explicitly covers the same reviewed PR cluster. Put every linked `id@revision` in `richRecordRefs`; a reviewed multi-PR case study may be shared by several receipts.
 6. Let CI validate both layers. Arc's deterministic build projects them into separate receipt and rich-record collections, search indexes, backlinks, Statistics, and standalone HTML.
 7. Merge and release through the repository's normal workflow.
 
@@ -87,3 +89,5 @@ A backfill coordinator uses the same contracts; it does not author into a local 
 7. Commit canonical Markdown and repository-native diagram sources. Regenerate JSON and HTML through the standard build, then ingest other repositories from reviewed commit pins.
 
 Backfill batches should be bounded and reviewable. Existing accepted history is corrected by a new reviewed Git change; published rich records continue to use their amendment and supersession model rather than silent narrative replacement.
+
+An accepted rich record is never deleted. Corrections add a reviewed amendment or superseding revision so existing immutable links, receipts, and backlinks keep resolving to the evidence originally accepted.

@@ -98,17 +98,19 @@ def leading_frontmatter(markdown: str, document_kind: str):
     fields = {}
     for line in lines[1:end]:
         match = re.match(r"^([A-Za-z][A-Za-z0-9]*):(?:[ \t]*(.*))?$", line)
-        if not match or match.group(1) in fields:
+        if not match or match.group(1) in fields or not (match.group(2) or "").strip():
             raise ValueError(f"The canonical {document_kind} frontmatter is invalid.")
-        fields[match.group(1)] = match.group(2) or ""
+        raw_value = match.group(2).strip()
+        if raw_value.startswith(("'", "|", ">", "&", "*", "!")):
+            raise ValueError(f"The canonical {document_kind} frontmatter uses unsupported YAML-only syntax.")
+        if raw_value[0] in '[{"' or raw_value in {"true", "false", "null"} or re.fullmatch(r"-?\d+", raw_value):
+            try:
+                fields[match.group(1)] = json.loads(raw_value)
+            except json.JSONDecodeError as error:
+                raise ValueError(f"The canonical {document_kind} frontmatter has invalid JSON-compatible values.") from error
+        else:
+            fields[match.group(1)] = raw_value
     return fields, "\n".join(lines[end + 1 :]).strip()
-
-
-def json_value(raw: str, field: str):
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as error:
-        raise ValueError(f"The canonical Pull Request Receipt has an invalid `{field}` field.") from error
 
 
 def string_list(
@@ -128,21 +130,21 @@ def string_list(
     return value
 
 
-def parse_receipt_identity(fields: dict[str, str]):
+def parse_receipt_identity(fields: dict[str, object]):
     if set(fields) != RECEIPT_FIELDS:
         raise ValueError("The canonical Pull Request Receipt frontmatter does not match schema version 1.")
-    if fields["schemaVersion"] != "1" or fields["repository"] != "interview-arc-voice":
+    if type(fields["schemaVersion"]) is not int or fields["schemaVersion"] != 1 or fields["repository"] != "interview-arc-voice":
         raise ValueError("The canonical Pull Request Receipt has invalid schema or repository identity.")
-    if not re.fullmatch(r"[1-9]\d*", fields["pr"]):
+    if type(fields["pr"]) is not int or fields["pr"] < 1:
         raise ValueError("The canonical Pull Request Receipt has an invalid `pr` field.")
-    title = fields["title"].strip()
-    if not title or len(title) > 160:
+    title = fields["title"]
+    if not isinstance(title, str) or not title or len(title) > 160:
         raise ValueError("The canonical Pull Request Receipt has an invalid `title` field.")
     classification = fields["classification"]
-    if classification not in CLASSIFICATION_VALUES:
+    if not isinstance(classification, str) or classification not in CLASSIFICATION_VALUES:
         raise ValueError("The canonical Pull Request Receipt has an invalid classification.")
     rich_record_refs = string_list(
-        json_value(fields["richRecordRefs"], "richRecordRefs"),
+        fields["richRecordRefs"],
         "richRecordRefs",
         max_items=MAX_RECORD_REFS,
         max_length=MAX_RECORD_REF_LENGTH,
@@ -155,27 +157,27 @@ def parse_receipt_identity(fields: dict[str, str]):
         raise ValueError("Engineering impact `None` must not link rich Engineering records.")
     if classification != "none" and not rich_record_refs:
         raise ValueError("A material Pull Request Receipt must link a rich Engineering record.")
-    return int(fields["pr"]), title, classification, rich_record_refs
+    return fields["pr"], title, classification, rich_record_refs
 
 
-def validate_receipt_history(fields: dict[str, str]):
-    reconstructed = json_value(fields["reconstructed"], "reconstructed")
+def validate_receipt_history(fields: dict[str, object]):
+    reconstructed = fields["reconstructed"]
     if not isinstance(reconstructed, bool):
         raise ValueError("The canonical Pull Request Receipt has an invalid `reconstructed` field.")
-    if fields["confidence"] not in CONFIDENCE_VALUES:
+    if not isinstance(fields["confidence"], str) or fields["confidence"] not in CONFIDENCE_VALUES:
         raise ValueError("The canonical Pull Request Receipt has an invalid `confidence` field.")
-    string_list(json_value(fields["unknowns"], "unknowns"), "unknowns")
+    string_list(fields["unknowns"], "unknowns")
     factual_values = []
     for field in ("headCommit", "mergeCommit"):
-        value = json_value(fields[field], field)
+        value = fields[field]
         if value is not None and (not isinstance(value, str) or not COMMIT.fullmatch(value)):
             raise ValueError(f"The canonical Pull Request Receipt has an invalid `{field}` field.")
         factual_values.append(value)
-    merged_at = json_value(fields["mergedAt"], "mergedAt")
+    merged_at = fields["mergedAt"]
     if merged_at is not None and (not isinstance(merged_at, str) or not MERGED_AT.fullmatch(merged_at)):
         raise ValueError("The canonical Pull Request Receipt has an invalid `mergedAt` field.")
     factual_values.append(merged_at)
-    sources = json_value(fields["sources"], "sources")
+    sources = fields["sources"]
     if not isinstance(sources, list) or not sources or len(sources) > MAX_SOURCES:
         raise ValueError("The canonical Pull Request Receipt has an invalid `sources` field.")
     for source in sources:
@@ -188,17 +190,18 @@ def validate_receipt_history(fields: dict[str, str]):
             or not isinstance(source["url"], str)
             or not source["url"].startswith("https://")
             or len(source["url"]) > MAX_SOURCE_URL_LENGTH
+            or not isinstance(source["kind"], str)
             or source["kind"] not in SOURCE_KINDS
         ):
             raise ValueError("The canonical Pull Request Receipt has an invalid `sources` field.")
     return factual_values
 
 
-def validate_receipt_verification(fields: dict[str, str], factual_values: list):
-    verification = json_value(fields["verification"], "verification")
+def validate_receipt_verification(fields: dict[str, object], factual_values: list):
+    verification = fields["verification"]
     if not isinstance(verification, dict) or set(verification) != {"state", "evidenceRefs"}:
         raise ValueError("The canonical Pull Request Receipt has an invalid `verification` field.")
-    if verification["state"] not in {"verified", "not-recorded"}:
+    if not isinstance(verification["state"], str) or verification["state"] not in {"verified", "not-recorded"}:
         raise ValueError("The canonical Pull Request Receipt has an invalid `verification` field.")
     evidence_refs = string_list(verification["evidenceRefs"], "verification")
     if any(value is not None for value in factual_values) and (
@@ -225,8 +228,10 @@ def parse_receipt(markdown: str, path: str):
     return {
         "path": path,
         "pr": pull_request_number,
+        "title": title,
         "classification": classification,
         "richRecordRefs": rich_record_refs,
+        "reconstructed": fields["reconstructed"],
     }
 
 
@@ -236,8 +241,11 @@ def parse_record(markdown: str):
     revision = fields.get("revision", "")
     record_type = fields.get("type", "")
     if (
-        not RECORD_ID.fullmatch(record_id)
-        or not re.fullmatch(r"[1-9]\d*", revision)
+        not isinstance(record_id, str)
+        or not RECORD_ID.fullmatch(record_id)
+        or type(revision) is not int
+        or revision < 1
+        or not isinstance(record_type, str)
         or record_type not in CLASSIFICATION_VALUES - {"none"}
     ):
         raise ValueError("A canonical Engineering record has invalid identity frontmatter.")
@@ -344,7 +352,14 @@ def records_for_validation(head: str, changed_paths: list[str], linked_refs: lis
     return records
 
 
-def validate(body: str, changed_files: list[str], pull_request_number: int, receipt, head_records: dict):
+def validate(
+    body: str,
+    changed_files: list[str],
+    pull_request_number: int,
+    receipt,
+    head_records: dict,
+    pull_request_title: str | None = None,
+):
     selected = selected_classifications(body or "")
     if len(selected) != 1:
         raise ValueError("Select exactly one Engineering impact classification in the pull request body.")
@@ -357,6 +372,10 @@ def validate(body: str, changed_files: list[str], pull_request_number: int, rece
         raise ValueError("Every pull request must change exactly one canonical Pull Request Receipt at its numbered path.")
     if receipt["path"] != expected_receipt_path or receipt["pr"] != pull_request_number:
         raise ValueError("The canonical Pull Request Receipt path and `pr` field must match the pull request number.")
+    if pull_request_title is not None and receipt.get("title") != pull_request_title:
+        raise ValueError("The canonical Pull Request Receipt title must match the pull request title.")
+    if receipt.get("reconstructed", False) is not False:
+        raise ValueError("A forward Pull Request Receipt must set `reconstructed` to false.")
     if receipt["classification"] != classification:
         raise ValueError("The canonical Pull Request Receipt classification must match the pull request body.")
 
@@ -405,8 +424,19 @@ def main():
     base = pull_request.get("base", {}).get("sha")
     head = pull_request.get("head", {}).get("sha")
     number = pull_request.get("number")
-    if not base or not head or not isinstance(number, int) or isinstance(number, bool) or number < 1:
-        raise ValueError("Pull request base, head, and number are required.")
+    title = pull_request.get("title")
+    repository = event.get("repository", {}).get("name") or pull_request.get("base", {}).get("repo", {}).get("name")
+    if (
+        not base
+        or not head
+        or not isinstance(number, int)
+        or isinstance(number, bool)
+        or number < 1
+        or not isinstance(title, str)
+        or not title
+        or repository != "interview-arc-voice"
+    ):
+        raise ValueError("Pull request base, head, number, title, and repository are required.")
     ensure_commit(base)
     ensure_commit(head)
     changed = changed_files_between(base, head)
@@ -425,6 +455,7 @@ def main():
         number,
         receipt,
         records_for_validation(head, changed_record_paths, linked_refs),
+        title,
     )
     print(f"Engineering impact: {classification}; {len(changed)} changed file(s).")
 
