@@ -20,6 +20,8 @@ jobs:
         run: |
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+      - name: Validate Engineering impact classification
+        run: python3 scripts/validate-engineering-impact.py "$GITHUB_EVENT_PATH"
       - name: Validate and package
         uses: ./.github/actions/package-voice
       - name: Record artifact provenance
