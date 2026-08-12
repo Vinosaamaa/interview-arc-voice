@@ -23,7 +23,7 @@ public struct FocusedLearningVoiceSession: Codable, Equatable, Sendable {
     public let courseId: String?
     public let blueprintRevision: Int?
     public let courseTitle: String?
-    public let moduleId: String
+    public let moduleId: String?
     public let moduleTitle: String?
     public let lessonId: String
     public let lessonRevision: Int
@@ -41,7 +41,7 @@ public struct FocusedLearningVoiceSession: Codable, Equatable, Sendable {
         courseId: String?,
         blueprintRevision: Int?,
         courseTitle: String?,
-        moduleId: String,
+        moduleId: String?,
         moduleTitle: String?,
         lessonId: String,
         lessonRevision: Int,
