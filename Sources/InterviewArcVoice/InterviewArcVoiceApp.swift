@@ -760,7 +760,7 @@ final class VoiceBridgeModel: ObservableObject {
         case nil:
             activeTitle = nil
         }
-        compactPresentationPolicy.presentation(
+        return compactPresentationPolicy.presentation(
             linkEnabled: linkToInterviewArc,
             activeActivityTitle: currentTargetDecision.canAttach
                 ? activeTitle
@@ -4394,12 +4394,12 @@ final class VoiceBridgeModel: ObservableObject {
                         $0.stage == .acknowledgementPending
                             && $0.lastErrorRetryable != false
                     }
-                let learningDelay = hasLearningAcknowledgement
-                    ? min(300, 15 * (1 << min(attempt, 4)))
+                let learningDelay: TimeInterval? = hasLearningAcknowledgement
+                    ? TimeInterval(min(300, 15 * (1 << min(attempt, 4))))
                     : nil
-                guard let delay = [interviewDelay, learningDelay]
-                    .compactMap({ $0 })
-                    .min() else { break }
+                let retryDelays: [TimeInterval] = [interviewDelay, learningDelay]
+                    .compactMap { $0 }
+                guard let delay = retryDelays.min() else { break }
                 try? await Task.sleep(for: .seconds(delay))
                 guard !Task.isCancelled else { return }
                 await self.retryPendingInBackground()
