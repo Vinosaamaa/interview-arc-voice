@@ -19,8 +19,10 @@ import Testing
         occurredAt: 1_786_507_200_000
     )
     let observedRequest = LockedBox<URLRequest?>(nil)
+    let observedBody = LockedBox<Data?>(nil)
     LearningVoiceURLProtocol.handler = { received in
         observedRequest.set(received)
+        observedBody.set(try requestBodyData(received))
         let response = HTTPURLResponse(
             url: try #require(received.url),
             statusCode: 200,
@@ -54,7 +56,7 @@ import Testing
     let sent = try #require(observedRequest.value)
     #expect(sent.url?.path == "/voice/learning-transcripts")
     #expect(sent.httpMethod == "POST")
-    let sentBody = try #require(sent.httpBody)
+    let sentBody = try #require(observedBody.value)
     let decodedObject = try JSONSerialization.jsonObject(with: sentBody)
     let object = try #require(decodedObject as? [String: Any])
     #expect(object["sessionId"] as? String == request.sessionId)
@@ -109,7 +111,7 @@ import Testing
     LearningVoicePipelineURLProtocol.handler = { request in
         let path = try #require(request.url).path
         observedPaths.mutate { $0.append(path) }
-        let body = try #require(request.httpBody)
+        let body = try requestBodyData(request)
         let object = try #require(
             JSONSerialization.jsonObject(with: body) as? [String: Any]
         )
@@ -186,7 +188,7 @@ import Testing
     )
     let requestBodies = LockedBox<[Data]>([])
     LearningVoiceFailureURLProtocol.handler = { request in
-        let body = try #require(request.httpBody)
+        let body = try requestBodyData(request)
         requestBodies.mutate { $0.append(body) }
         if requestBodies.value.count > 1 {
             let object = try #require(
@@ -257,13 +259,16 @@ import Testing
     #expect(try await learningStore.items().count == 1)
 
     #expect(await pipeline.retryPendingLearningAcknowledgements() == 1)
-    #expect(requestBodies.value.count == 2)
+    let bodies = requestBodies.value
+    #expect(bodies.count == 2)
+    let firstBody = try #require(bodies.first)
+    let secondBody = try #require(bodies.dropFirst().first)
     let first = try #require(
-        JSONSerialization.jsonObject(with: requestBodies.value[0])
+        JSONSerialization.jsonObject(with: firstBody)
             as? NSDictionary
     )
     let second = try #require(
-        JSONSerialization.jsonObject(with: requestBodies.value[1])
+        JSONSerialization.jsonObject(with: secondBody)
             as? NSDictionary
     )
     #expect(first == second)
@@ -376,6 +381,35 @@ private final class LockedBox<Value>: @unchecked Sendable {
 
     func mutate(_ mutation: (inout Value) throws -> Void) rethrows {
         try lock.withLock { try mutation(&storage) }
+    }
+}
+
+private enum RequestBodyReadError: Error {
+    case missingBody
+    case streamReadFailed
+}
+
+private func requestBodyData(_ request: URLRequest) throws -> Data {
+    if let body = request.httpBody {
+        return body
+    }
+    guard let stream = request.httpBodyStream else {
+        throw RequestBodyReadError.missingBody
+    }
+
+    stream.open()
+    defer { stream.close() }
+    var body = Data()
+    var buffer = [UInt8](repeating: 0, count: 4_096)
+    while true {
+        let bytesRead = stream.read(&buffer, maxLength: buffer.count)
+        if bytesRead < 0 {
+            throw stream.streamError ?? RequestBodyReadError.streamReadFailed
+        }
+        if bytesRead == 0 {
+            return body
+        }
+        body.append(contentsOf: buffer.prefix(bytesRead))
     }
 }
 
