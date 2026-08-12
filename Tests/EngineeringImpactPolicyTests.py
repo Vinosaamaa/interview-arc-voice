@@ -183,6 +183,8 @@ class EngineeringImpactPolicyTests(unittest.TestCase):
 
     def test_validator_runs_inside_existing_required_package_job(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
+        pull_request_trigger = yaml_mapping_block(workflow.splitlines(), "pull_request", 2)
+        self.assertIn("    types: [opened, synchronize, reopened, edited]", pull_request_trigger)
         validation_steps = [
             step
             for step in workflow_steps(workflow, "test-and-package")
