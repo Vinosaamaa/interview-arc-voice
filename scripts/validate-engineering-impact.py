@@ -111,8 +111,7 @@ def string_list(value, field: str):
     return value
 
 
-def parse_receipt(markdown: str, path: str):
-    fields, body = leading_frontmatter(markdown, "Pull Request Receipt")
+def parse_receipt_identity(fields: dict[str, str]):
     if set(fields) != RECEIPT_FIELDS:
         raise ValueError("The canonical Pull Request Receipt frontmatter does not match schema version 1.")
     if fields["schemaVersion"] != "1" or fields["repository"] != "interview-arc-voice":
@@ -128,6 +127,16 @@ def parse_receipt(markdown: str, path: str):
     rich_record_refs = string_list(json_value(fields["richRecordRefs"], "richRecordRefs"), "richRecordRefs")
     if any(not RECORD_REF.fullmatch(ref) for ref in rich_record_refs):
         raise ValueError("The canonical Pull Request Receipt has invalid rich Engineering record references.")
+    if fields["visibility"] != "public-safe" or fields["publicationEligibility"] != "eligible":
+        raise ValueError("The canonical Pull Request Receipt is not publication eligible and public-safe.")
+    if classification == "none" and rich_record_refs:
+        raise ValueError("Engineering impact `None` must not link rich Engineering records.")
+    if classification != "none" and not rich_record_refs:
+        raise ValueError("A material Pull Request Receipt must link a rich Engineering record.")
+    return int(fields["pr"]), title, classification, rich_record_refs
+
+
+def validate_receipt_history(fields: dict[str, str]):
     reconstructed = json_value(fields["reconstructed"], "reconstructed")
     if not isinstance(reconstructed, bool):
         raise ValueError("The canonical Pull Request Receipt has an invalid `reconstructed` field.")
@@ -158,6 +167,10 @@ def parse_receipt(markdown: str, path: str):
             or source["kind"] not in SOURCE_KINDS
         ):
             raise ValueError("The canonical Pull Request Receipt has an invalid `sources` field.")
+    return factual_values
+
+
+def validate_receipt_verification(fields: dict[str, str], factual_values: list):
     verification = json_value(fields["verification"], "verification")
     if not isinstance(verification, dict) or set(verification) != {"state", "evidenceRefs"}:
         raise ValueError("The canonical Pull Request Receipt has an invalid `verification` field.")
@@ -168,13 +181,9 @@ def parse_receipt(markdown: str, path: str):
         verification["state"] != "verified" or not evidence_refs
     ):
         raise ValueError("Verified evidence is required for supplied historical Pull Request facts.")
-    if fields["visibility"] != "public-safe" or fields["publicationEligibility"] != "eligible":
-        raise ValueError("The canonical Pull Request Receipt is not publication eligible and public-safe.")
-    if classification == "none" and rich_record_refs:
-        raise ValueError("Engineering impact `None` must not link rich Engineering records.")
-    if classification != "none" and not rich_record_refs:
-        raise ValueError("A material Pull Request Receipt must link a rich Engineering record.")
 
+
+def validate_receipt_body(body: str, title: str):
     blocks = [block.strip() for block in re.split(r"\n\s*\n", body) if block.strip()]
     if len(blocks) != 2 or blocks[0] != f"# {title}":
         raise ValueError("The canonical Pull Request Receipt must contain its title and one summary paragraph.")
@@ -182,9 +191,16 @@ def parse_receipt(markdown: str, path: str):
     if not summary or len(summary) > 280 or summary.startswith("#"):
         raise ValueError("The canonical Pull Request Receipt summary must contain 1 to 280 characters.")
 
+
+def parse_receipt(markdown: str, path: str):
+    fields, body = leading_frontmatter(markdown, "Pull Request Receipt")
+    pull_request_number, title, classification, rich_record_refs = parse_receipt_identity(fields)
+    factual_values = validate_receipt_history(fields)
+    validate_receipt_verification(fields, factual_values)
+    validate_receipt_body(body, title)
     return {
         "path": path,
-        "pr": int(fields["pr"]),
+        "pr": pull_request_number,
         "classification": classification,
         "richRecordRefs": rich_record_refs,
     }
@@ -201,7 +217,7 @@ def parse_record(markdown: str):
         or record_type not in CLASSIFICATION_VALUES - {"none"}
     ):
         raise ValueError("A canonical Engineering record has invalid identity frontmatter.")
-    return {"type": record_type, "ref": f"{record_id}@{revision}"}
+    return {"id": record_id, "type": record_type, "ref": f"{record_id}@{revision}"}
 
 
 def run_git(args, *, text=True, input_data=None):
@@ -235,32 +251,72 @@ def changed_files_between(base: str, head: str):
     return [path for path in result.stdout.split("\0") if path]
 
 
-def blob_at(revision: str, path: str):
-    result = run_git(["cat-file", "blob", f"{revision}:{path}"])
-    if result.returncode == 0:
-        return result.stdout
-    return None
-
-
-def record_paths_at(revision: str):
-    result = run_git(["ls-tree", "-r", "--name-only", "-z", revision, "--", "docs/engineering/records"])
+def blobs_at(revision: str, paths: list[str]):
+    if not paths:
+        return []
+    requests = [f"{revision}:{path}" for path in paths]
+    result = run_git(
+        ["cat-file", "--batch"],
+        text=False,
+        input_data=("\n".join(requests) + "\n").encode("utf-8"),
+    )
     if result.returncode != 0:
-        raise ValueError("Unable to inspect canonical Engineering records.")
-    return [path for path in result.stdout.split("\0") if path.endswith(".md")]
+        raise ValueError("Unable to inspect canonical Engineering documents.")
+    output = result.stdout
+    documents = []
+    offset = 0
+    for request in requests:
+        header_end = output.find(b"\n", offset)
+        if header_end < 0:
+            raise ValueError("Git returned an invalid canonical Engineering document response.")
+        header = output[offset:header_end].decode("utf-8")
+        offset = header_end + 1
+        if header == f"{request} missing":
+            documents.append(None)
+            continue
+        match = re.fullmatch(r"[0-9a-f]{40} blob (0|[1-9]\d*)", header)
+        if not match:
+            raise ValueError("Git returned an invalid canonical Engineering document response.")
+        size = int(match.group(1))
+        end = offset + size
+        if end >= len(output) or output[end] != 0x0A:
+            raise ValueError("Git returned an invalid canonical Engineering document response.")
+        try:
+            documents.append(output[offset:end].decode("utf-8"))
+        except UnicodeDecodeError as error:
+            raise ValueError("A canonical Engineering document is not valid UTF-8.") from error
+        offset = end + 1
+    if offset != len(output):
+        raise ValueError("Git returned an invalid canonical Engineering document response.")
+    return documents
 
 
-def records_at_head(head: str):
-    records = {}
-    for path in record_paths_at(head):
+def record_path_for_ref(record_ref: str):
+    record_id, _ = record_ref.rsplit("@", 1)
+    return f"docs/engineering/records/{record_id}.md"
+
+
+def records_for_validation(head: str, changed_paths: list[str], linked_refs: list[str]):
+    for path in changed_paths:
         if not RECORD_PATH.fullmatch(path):
-            raise ValueError("Canonical Engineering records must use a lowercase repository-root filename.")
-        markdown = blob_at(head, path)
+            raise ValueError("Changed canonical Engineering records must use a lowercase repository-root filename.")
+    linked_paths = [record_path_for_ref(record_ref) for record_ref in linked_refs]
+    paths = list(dict.fromkeys([*changed_paths, *linked_paths]))
+    documents = blobs_at(head, paths)
+    records = {}
+    for path, markdown in zip(paths, documents):
         if markdown is None:
-            raise ValueError("Unable to inspect a canonical Engineering record.")
+            if path in changed_paths:
+                raise ValueError("Every changed canonical Engineering record must exist at the pull request head.")
+            raise ValueError("A material Pull Request Receipt must link exact rich Engineering record revisions at the pull request head.")
         record = parse_record(markdown)
+        if path != f'docs/engineering/records/{record["id"]}.md':
+            raise ValueError("A canonical Engineering record path must match its exact record identity.")
         if record["ref"] in records:
             raise ValueError("Canonical Engineering record references must be unique.")
         records[record["ref"]] = {**record, "path": path}
+    if any(record_ref not in records for record_ref in linked_refs):
+        raise ValueError("A material Pull Request Receipt must link exact rich Engineering record revisions at the pull request head.")
     return records
 
 
@@ -334,15 +390,17 @@ def main():
     receipt_paths = [path for path in changed if path.startswith("docs/engineering/changes/")]
     receipt = None
     if receipt_paths == [expected_receipt_path]:
-        markdown = blob_at(head, expected_receipt_path)
+        [markdown] = blobs_at(head, [expected_receipt_path])
         if markdown is not None:
             receipt = parse_receipt(markdown, expected_receipt_path)
+    changed_record_paths = [path for path in changed if path.startswith("docs/engineering/records/")]
+    linked_refs = receipt["richRecordRefs"] if receipt else []
     classification = validate(
         pull_request.get("body") or "",
         changed,
         number,
         receipt,
-        records_at_head(head),
+        records_for_validation(head, changed_record_paths, linked_refs),
     )
     print(f"Engineering impact: {classification}; {len(changed)} changed file(s).")
 

@@ -120,6 +120,40 @@ def run_validator(cwd: Path, base: str, head: str, number: int, body: str):
     )
 
 
+def yaml_mapping_block(lines: list[str], key: str, indent: int):
+    marker = f'{" " * indent}{key}:'
+    try:
+        start = lines.index(marker) + 1
+    except ValueError as error:
+        raise AssertionError(f"Missing workflow mapping: {key}") from error
+    end = len(lines)
+    for index in range(start, len(lines)):
+        stripped = lines[index].strip()
+        if stripped and not stripped.startswith("#") and len(lines[index]) - len(lines[index].lstrip()) <= indent:
+            end = index
+            break
+    return lines[start:end]
+
+
+def workflow_steps(workflow: str, job_name: str):
+    lines = workflow.splitlines()
+    jobs = yaml_mapping_block(lines, "jobs", 0)
+    job = yaml_mapping_block(jobs, job_name, 2)
+    step_lines = yaml_mapping_block(job, "steps", 4)
+    steps = []
+    current = None
+    for line in step_lines:
+        name = re.fullmatch(r" {6}- name: (.+)", line)
+        if name:
+            current = {"name": name.group(1)}
+            steps.append(current)
+            continue
+        run = re.fullmatch(r" {8}run: (.+)", line)
+        if current is not None and run:
+            current["run"] = run.group(1)
+    return steps
+
+
 class EngineeringImpactPolicyTests(unittest.TestCase):
     def test_contract_schema_and_protocol_are_versioned(self):
         schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
@@ -131,8 +165,18 @@ class EngineeringImpactPolicyTests(unittest.TestCase):
 
     def test_validator_runs_inside_existing_required_package_job(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertRegex(workflow, re.compile(r"test-and-package:.*?Validate Engineering impact classification", re.DOTALL))
-        self.assertEqual(workflow.count("python3 scripts/validate-engineering-impact.py"), 1)
+        validation_steps = [
+            step
+            for step in workflow_steps(workflow, "test-and-package")
+            if step.get("name") == "Validate Engineering impact classification"
+        ]
+        self.assertEqual(
+            validation_steps,
+            [{
+                "name": "Validate Engineering impact classification",
+                "run": 'python3 scripts/validate-engineering-impact.py "$GITHUB_EVENT_PATH"',
+            }],
+        )
 
     def test_only_engineering_impact_section_counts(self):
         body = """## Summary
