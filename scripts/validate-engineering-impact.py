@@ -14,13 +14,38 @@ CLASSIFICATIONS = {
     "postmortem": "postmortem",
     "capability dossier": "capability-dossier",
 }
-
+CLASSIFICATION_VALUES = set(CLASSIFICATIONS.values())
 PLACEHOLDER_REASONS = {
     "todo",
     "n/a",
     "na",
     "none",
     "replace with a concrete reason",
+}
+RECORD_REF = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*@[1-9]\d*$")
+RECORD_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+COMMIT = re.compile(r"^[0-9a-f]{40}$")
+MERGED_AT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+RECORD_PATH = re.compile(r"^docs/engineering/records/[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
+SOURCE_KINDS = {"issue", "pull-request", "commit", "release", "run", "documentation"}
+CONFIDENCE_VALUES = {"verified", "high", "medium", "low", "unknown"}
+RECEIPT_FIELDS = {
+    "schemaVersion",
+    "repository",
+    "pr",
+    "title",
+    "classification",
+    "richRecordRefs",
+    "reconstructed",
+    "confidence",
+    "unknowns",
+    "headCommit",
+    "mergeCommit",
+    "mergedAt",
+    "sources",
+    "verification",
+    "visibility",
+    "publicationEligibility",
 }
 
 
@@ -29,62 +54,266 @@ def selected_classifications(body: str):
         r"^\s*-\s*\[[xX]\]\s*(None|Change Note|ADR|Architecture Review|Feature Retrospective|Postmortem|Capability Dossier)(?:\s*[—-]\s*reason:\s*(.*))?\s*$",
         re.IGNORECASE,
     )
-    return [
-        (CLASSIFICATIONS[match.group(1).lower()], (match.group(2) or "").strip())
-        for line in body.splitlines()
-        if (match := pattern.match(line))
-    ]
+    selected = []
+    in_engineering_impact = False
+    fence = None
+    for line in body.splitlines():
+        fence_match = re.match(r"^\s*(`{3,}|~{3,})", line)
+        if fence_match:
+            marker = fence_match.group(1)[0]
+            fence = marker if fence is None else None if fence == marker else fence
+            continue
+        if fence is not None:
+            continue
+        heading = re.match(r"^##\s+(.+?)\s*$", line)
+        if heading:
+            in_engineering_impact = heading.group(1).strip().lower() == "engineering impact"
+            continue
+        if not in_engineering_impact:
+            continue
+        match = pattern.match(line)
+        if match:
+            selected.append((CLASSIFICATIONS[match.group(1).lower()], (match.group(2) or "").strip()))
+    return selected
 
 
-def validate(body: str, record_types: list[str]):
-    selected = selected_classifications(body)
+def leading_frontmatter(markdown: str, document_kind: str):
+    lines = markdown.replace("\r\n", "\n").split("\n")
+    if not lines or lines[0] != "---":
+        raise ValueError(f"The canonical {document_kind} must begin with frontmatter.")
+    try:
+        end = lines.index("---", 1)
+    except ValueError as error:
+        raise ValueError(f"The canonical {document_kind} frontmatter is not closed.") from error
+    fields = {}
+    for line in lines[1:end]:
+        match = re.match(r"^([A-Za-z][A-Za-z0-9]*):(?:[ \t]*(.*))?$", line)
+        if not match or match.group(1) in fields:
+            raise ValueError(f"The canonical {document_kind} frontmatter is invalid.")
+        fields[match.group(1)] = match.group(2) or ""
+    return fields, "\n".join(lines[end + 1 :]).strip()
+
+
+def json_value(raw: str, field: str):
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"The canonical Pull Request Receipt has an invalid `{field}` field.") from error
+
+
+def string_list(value, field: str):
+    if (
+        not isinstance(value, list)
+        or any(not isinstance(item, str) or not item for item in value)
+        or len(value) != len(set(value))
+    ):
+        raise ValueError(f"The canonical Pull Request Receipt has an invalid `{field}` field.")
+    return value
+
+
+def parse_receipt(markdown: str, path: str):
+    fields, body = leading_frontmatter(markdown, "Pull Request Receipt")
+    if set(fields) != RECEIPT_FIELDS:
+        raise ValueError("The canonical Pull Request Receipt frontmatter does not match schema version 1.")
+    if fields["schemaVersion"] != "1" or fields["repository"] != "interview-arc-voice":
+        raise ValueError("The canonical Pull Request Receipt has invalid schema or repository identity.")
+    if not re.fullmatch(r"[1-9]\d*", fields["pr"]):
+        raise ValueError("The canonical Pull Request Receipt has an invalid `pr` field.")
+    title = fields["title"].strip()
+    if not title or len(title) > 160:
+        raise ValueError("The canonical Pull Request Receipt has an invalid `title` field.")
+    classification = fields["classification"]
+    if classification not in CLASSIFICATION_VALUES:
+        raise ValueError("The canonical Pull Request Receipt has an invalid classification.")
+    rich_record_refs = string_list(json_value(fields["richRecordRefs"], "richRecordRefs"), "richRecordRefs")
+    if any(not RECORD_REF.fullmatch(ref) for ref in rich_record_refs):
+        raise ValueError("The canonical Pull Request Receipt has invalid rich Engineering record references.")
+    reconstructed = json_value(fields["reconstructed"], "reconstructed")
+    if not isinstance(reconstructed, bool):
+        raise ValueError("The canonical Pull Request Receipt has an invalid `reconstructed` field.")
+    if fields["confidence"] not in CONFIDENCE_VALUES:
+        raise ValueError("The canonical Pull Request Receipt has an invalid `confidence` field.")
+    string_list(json_value(fields["unknowns"], "unknowns"), "unknowns")
+    factual_values = []
+    for field in ("headCommit", "mergeCommit"):
+        value = json_value(fields[field], field)
+        if value is not None and (not isinstance(value, str) or not COMMIT.fullmatch(value)):
+            raise ValueError(f"The canonical Pull Request Receipt has an invalid `{field}` field.")
+        factual_values.append(value)
+    merged_at = json_value(fields["mergedAt"], "mergedAt")
+    if merged_at is not None and (not isinstance(merged_at, str) or not MERGED_AT.fullmatch(merged_at)):
+        raise ValueError("The canonical Pull Request Receipt has an invalid `mergedAt` field.")
+    factual_values.append(merged_at)
+    sources = json_value(fields["sources"], "sources")
+    if not isinstance(sources, list) or not sources:
+        raise ValueError("The canonical Pull Request Receipt has an invalid `sources` field.")
+    for source in sources:
+        if (
+            not isinstance(source, dict)
+            or set(source) != {"label", "url", "kind"}
+            or not isinstance(source["label"], str)
+            or not source["label"]
+            or not isinstance(source["url"], str)
+            or not source["url"].startswith("https://")
+            or source["kind"] not in SOURCE_KINDS
+        ):
+            raise ValueError("The canonical Pull Request Receipt has an invalid `sources` field.")
+    verification = json_value(fields["verification"], "verification")
+    if not isinstance(verification, dict) or set(verification) != {"state", "evidenceRefs"}:
+        raise ValueError("The canonical Pull Request Receipt has an invalid `verification` field.")
+    if verification["state"] not in {"verified", "not-recorded"}:
+        raise ValueError("The canonical Pull Request Receipt has an invalid `verification` field.")
+    evidence_refs = string_list(verification["evidenceRefs"], "verification")
+    if any(value is not None for value in factual_values) and (
+        verification["state"] != "verified" or not evidence_refs
+    ):
+        raise ValueError("Verified evidence is required for supplied historical Pull Request facts.")
+    if fields["visibility"] != "public-safe" or fields["publicationEligibility"] != "eligible":
+        raise ValueError("The canonical Pull Request Receipt is not publication eligible and public-safe.")
+    if classification == "none" and rich_record_refs:
+        raise ValueError("Engineering impact `None` must not link rich Engineering records.")
+    if classification != "none" and not rich_record_refs:
+        raise ValueError("A material Pull Request Receipt must link a rich Engineering record.")
+
+    blocks = [block.strip() for block in re.split(r"\n\s*\n", body) if block.strip()]
+    if len(blocks) != 2 or blocks[0] != f"# {title}":
+        raise ValueError("The canonical Pull Request Receipt must contain its title and one summary paragraph.")
+    summary = " ".join(line.strip() for line in blocks[1].splitlines()).strip()
+    if not summary or len(summary) > 280 or summary.startswith("#"):
+        raise ValueError("The canonical Pull Request Receipt summary must contain 1 to 280 characters.")
+
+    return {
+        "path": path,
+        "pr": int(fields["pr"]),
+        "classification": classification,
+        "richRecordRefs": rich_record_refs,
+    }
+
+
+def parse_record(markdown: str):
+    fields, _ = leading_frontmatter(markdown, "Engineering record")
+    record_id = fields.get("id", "")
+    revision = fields.get("revision", "")
+    record_type = fields.get("type", "")
+    if (
+        not RECORD_ID.fullmatch(record_id)
+        or not re.fullmatch(r"[1-9]\d*", revision)
+        or record_type not in CLASSIFICATION_VALUES - {"none"}
+    ):
+        raise ValueError("A canonical Engineering record has invalid identity frontmatter.")
+    return {"type": record_type, "ref": f"{record_id}@{revision}"}
+
+
+def run_git(args, *, text=True, input_data=None):
+    return subprocess.run(
+        ["git", *args],
+        input=input_data,
+        text=text,
+        capture_output=True,
+        check=False,
+    )
+
+
+def has_commit(revision: str):
+    return run_git(["cat-file", "-e", f"{revision}^{{commit}}"]).returncode == 0
+
+
+def ensure_commit(revision: str):
+    if not COMMIT.fullmatch(revision):
+        raise ValueError("Pull request revisions must be full commit identifiers.")
+    if has_commit(revision):
+        return
+    fetched = run_git(["fetch", "--no-tags", "--depth=1", "origin", revision])
+    if fetched.returncode != 0 or not has_commit(revision):
+        raise ValueError("Unable to load a required pull request revision from the trusted Git remote.")
+
+
+def changed_files_between(base: str, head: str):
+    result = run_git(["diff", "--name-only", "--no-renames", "-z", base, head])
+    if result.returncode != 0:
+        raise ValueError("Unable to inspect the pull request file set.")
+    return [path for path in result.stdout.split("\0") if path]
+
+
+def blob_at(revision: str, path: str):
+    result = run_git(["cat-file", "blob", f"{revision}:{path}"])
+    if result.returncode == 0:
+        return result.stdout
+    return None
+
+
+def record_paths_at(revision: str):
+    result = run_git(["ls-tree", "-r", "--name-only", "-z", revision, "--", "docs/engineering/records"])
+    if result.returncode != 0:
+        raise ValueError("Unable to inspect canonical Engineering records.")
+    return [path for path in result.stdout.split("\0") if path.endswith(".md")]
+
+
+def records_at_head(head: str):
+    records = {}
+    for path in record_paths_at(head):
+        if not RECORD_PATH.fullmatch(path):
+            raise ValueError("Canonical Engineering records must use a lowercase repository-root filename.")
+        markdown = blob_at(head, path)
+        if markdown is None:
+            raise ValueError("Unable to inspect a canonical Engineering record.")
+        record = parse_record(markdown)
+        if record["ref"] in records:
+            raise ValueError("Canonical Engineering record references must be unique.")
+        records[record["ref"]] = {**record, "path": path}
+    return records
+
+
+def validate(body: str, changed_files: list[str], pull_request_number: int, receipt, head_records: dict):
+    selected = selected_classifications(body or "")
     if len(selected) != 1:
         raise ValueError("Select exactly one Engineering impact classification in the pull request body.")
     classification, reason = selected[0]
+    if not isinstance(pull_request_number, int) or isinstance(pull_request_number, bool) or pull_request_number < 1:
+        raise ValueError("A positive pull request number is required for the canonical Pull Request Receipt.")
+    expected_receipt_path = f"docs/engineering/changes/pr-{pull_request_number}.md"
+    changed_receipt_paths = [path for path in changed_files if path.startswith("docs/engineering/changes/")]
+    if changed_receipt_paths != [expected_receipt_path] or receipt is None:
+        raise ValueError("Every pull request must change exactly one canonical Pull Request Receipt at its numbered path.")
+    if receipt["path"] != expected_receipt_path or receipt["pr"] != pull_request_number:
+        raise ValueError("The canonical Pull Request Receipt path and `pr` field must match the pull request number.")
+    if receipt["classification"] != classification:
+        raise ValueError("The canonical Pull Request Receipt classification must match the pull request body.")
+
+    changed_record_paths = [path for path in changed_files if path.startswith("docs/engineering/records/")]
+    for path in changed_record_paths:
+        if not RECORD_PATH.fullmatch(path):
+            raise ValueError("Changed canonical Engineering records must use a lowercase repository-root filename.")
+        if not any(record["path"] == path for record in head_records.values()):
+            raise ValueError("Every changed canonical Engineering record must exist at the pull request head.")
+    changed_records = [record for record in head_records.values() if record["path"] in changed_record_paths]
+
     if classification == "none":
         normalized_reason = re.sub(r"[.!]+$", "", reason.strip()).lower()
         if len(reason) < 12 or normalized_reason in PLACEHOLDER_REASONS:
             raise ValueError("Engineering impact `None` requires a concrete reason.")
-        if record_types:
+        if changed_records:
             raise ValueError("A canonical Engineering record changed, so Engineering impact cannot be `None`.")
+        if receipt["richRecordRefs"]:
+            raise ValueError("Engineering impact `None` must not link rich Engineering records.")
         return classification
-    unique_types = sorted(set(record_types))
-    if not unique_types:
+
+    linked_records = []
+    for record_ref in receipt["richRecordRefs"]:
+        record = head_records.get(record_ref)
+        if record is None:
+            raise ValueError("A material Pull Request Receipt must link exact rich Engineering record revisions at the pull request head.")
+        linked_records.append(record)
+    if not linked_records:
         raise ValueError(f"Engineering impact `{classification}` requires a matching canonical record.")
-    if unique_types != [classification]:
-        raise ValueError(f"Engineering impact `{classification}` does not match record type(s): {', '.join(unique_types)}.")
+    if any(record["type"] != classification for record in linked_records):
+        raise ValueError("The pull request Engineering impact classification does not match its linked canonical records.")
+    changed_refs = {record["ref"] for record in changed_records}
+    if not changed_refs.issubset(set(receipt["richRecordRefs"])):
+        raise ValueError("A material Pull Request Receipt must link every exact rich Engineering record revision changed by the pull request.")
+    if any(record["type"] != classification for record in changed_records):
+        raise ValueError("The pull request Engineering impact classification does not match its changed canonical records.")
     return classification
-
-
-def git(*args):
-    return subprocess.check_output(["git", *args], text=True).strip()
-
-
-def record_types(paths: list[str], head: str, base: str):
-    found: dict[str, str] = {}
-    for revision in (head, base):
-        pending = [path for path in paths if path not in found]
-        if not pending:
-            break
-        result = subprocess.run(
-            ["git", "grep", "-E", r"^type:[[:space:]]*[^[:space:]]+", revision, "--", *pending],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if result.returncode not in (0, 1):
-            raise subprocess.CalledProcessError(result.returncode, result.args, result.stdout, result.stderr)
-        prefix = f"{revision}:"
-        for line in result.stdout.splitlines():
-            if not line.startswith(prefix) or ":type:" not in line:
-                continue
-            path, value = line[len(prefix):].rsplit(":type:", 1)
-            if path in pending and path not in found:
-                found[path] = value.strip()
-    missing = [path for path in paths if path not in found]
-    if missing:
-        raise ValueError(f"Changed canonical Engineering record has no type: {missing[0]}.")
-    return [found[path] for path in paths]
 
 
 def main():
@@ -95,17 +324,32 @@ def main():
     pull_request = event.get("pull_request", {})
     base = pull_request.get("base", {}).get("sha")
     head = pull_request.get("head", {}).get("sha")
-    if not base or not head:
-        raise ValueError("Pull request base and head revisions are required.")
-    changed = git("diff", "--name-only", base, head).splitlines()
-    record_paths = [path for path in changed if path.startswith("docs/engineering/records/") and path.endswith(".md")]
-    classification = validate(pull_request.get("body") or "", record_types(record_paths, head, base))
+    number = pull_request.get("number")
+    if not base or not head or not isinstance(number, int) or isinstance(number, bool) or number < 1:
+        raise ValueError("Pull request base, head, and number are required.")
+    ensure_commit(base)
+    ensure_commit(head)
+    changed = changed_files_between(base, head)
+    expected_receipt_path = f"docs/engineering/changes/pr-{number}.md"
+    receipt_paths = [path for path in changed if path.startswith("docs/engineering/changes/")]
+    receipt = None
+    if receipt_paths == [expected_receipt_path]:
+        markdown = blob_at(head, expected_receipt_path)
+        if markdown is not None:
+            receipt = parse_receipt(markdown, expected_receipt_path)
+    classification = validate(
+        pull_request.get("body") or "",
+        changed,
+        number,
+        receipt,
+        records_at_head(head),
+    )
     print(f"Engineering impact: {classification}; {len(changed)} changed file(s).")
 
 
 if __name__ == "__main__":
     try:
         main()
-    except (ValueError, subprocess.CalledProcessError) as error:
+    except (json.JSONDecodeError, OSError, ValueError) as error:
         print(error, file=sys.stderr)
         raise SystemExit(1)
