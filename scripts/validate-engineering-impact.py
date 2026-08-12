@@ -25,6 +25,9 @@ PLACEHOLDER_REASONS = {
 RECORD_REF = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*@[1-9]\d*$")
 RECORD_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
+TRUSTED_GITHUB_REMOTE = re.compile(
+    r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$"
+)
 MERGED_AT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 RECORD_PATH = re.compile(r"^docs/engineering/records/[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
 SOURCE_KINDS = {"issue", "pull-request", "commit", "release", "run", "documentation"}
@@ -266,12 +269,20 @@ def has_commit(revision: str):
     return run_git(["cat-file", "-e", f"{revision}^{{commit}}"]).returncode == 0
 
 
-def ensure_commit(revision: str):
+def trusted_head_remote(value):
+    if value is None or value == "origin":
+        return "origin"
+    if not isinstance(value, str) or not TRUSTED_GITHUB_REMOTE.fullmatch(value):
+        raise ValueError("The pull request head repository must be a trusted GitHub HTTPS remote.")
+    return value
+
+
+def ensure_commit(revision: str, remote: str = "origin"):
     if not COMMIT.fullmatch(revision):
         raise ValueError("Pull request revisions must be full commit identifiers.")
     if has_commit(revision):
         return
-    fetched = run_git(["fetch", "--no-tags", "--depth=1", "origin", revision])
+    fetched = run_git(["fetch", "--no-tags", "--depth=1", remote, revision])
     if fetched.returncode != 0 or not has_commit(revision):
         raise ValueError("Unable to load a required pull request revision from the trusted Git remote.")
 
@@ -437,8 +448,13 @@ def main():
         or repository != "interview-arc-voice"
     ):
         raise ValueError("Pull request base, head, number, title, and repository are required.")
-    ensure_commit(base)
-    ensure_commit(head)
+    ensure_commit(base, "origin")
+    ensure_commit(
+        head,
+        trusted_head_remote(
+            pull_request.get("head", {}).get("repo", {}).get("clone_url")
+        ),
+    )
     changed = changed_files_between(base, head)
     expected_receipt_path = f"docs/engineering/changes/pr-{number}.md"
     receipt_paths = [path for path in changed if path.startswith("docs/engineering/changes/")]

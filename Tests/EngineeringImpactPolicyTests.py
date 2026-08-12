@@ -3,9 +3,11 @@ import importlib.util
 import json
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "scripts" / "validate-engineering-impact.py"
@@ -209,6 +211,69 @@ class EngineeringImpactPolicyTests(unittest.TestCase):
                 "name": "Validate Engineering impact classification",
                 "run": 'python3 scripts/validate-engineering-impact.py "$GITHUB_EVENT_PATH"',
             }],
+        )
+
+    def test_fork_head_fetches_accept_only_exact_github_https_remotes(self):
+        remote = "https://github.com/example/contributor-fork.git"
+        self.assertEqual(MODULE.trusted_head_remote(None), "origin")
+        self.assertEqual(MODULE.trusted_head_remote("origin"), "origin")
+        self.assertEqual(MODULE.trusted_head_remote(remote), remote)
+        for untrusted in (
+            "git@github.com:example/contributor-fork.git",
+            "ssh://git@github.com/example/contributor-fork.git",
+            "http://github.com/example/contributor-fork.git",
+            "https://example.com/example/contributor-fork.git",
+            "https://user@github.com/example/contributor-fork.git",
+            "https://github.com/example/contributor-fork",
+            "https://github.com/example/contributor-fork.git?ref=main",
+        ):
+            with self.subTest(remote=untrusted), self.assertRaisesRegex(
+                ValueError, "trusted GitHub HTTPS"
+            ):
+                MODULE.trusted_head_remote(untrusted)
+
+        head = "2" * 40
+        fetched = subprocess.CompletedProcess(args=[], returncode=0)
+        with (
+            mock.patch.object(MODULE, "has_commit", side_effect=[False, True]),
+            mock.patch.object(MODULE, "run_git", return_value=fetched) as run_git,
+        ):
+            MODULE.ensure_commit(head, remote)
+        run_git.assert_called_once_with(
+            ["fetch", "--no-tags", "--depth=1", remote, head]
+        )
+
+    def test_fork_event_routes_head_fetch_to_exact_validated_repository(self):
+        base = "1" * 40
+        head = "2" * 40
+        head_remote = "https://github.com/contributor/interview-arc-voice.git"
+        event = {
+            "pull_request": {
+                "number": 192,
+                "title": "Adopt complete pull request receipts",
+                "body": NONE_BODY,
+                "base": {"sha": base},
+                "head": {"sha": head, "repo": {"clone_url": head_remote}},
+            },
+            "repository": {"name": "interview-arc-voice"},
+        }
+        with tempfile.TemporaryDirectory(prefix="voice-impact-event-") as directory:
+            event_path = Path(directory) / "event.json"
+            event_path.write_text(json.dumps(event), encoding="utf-8")
+            with (
+                mock.patch.object(sys, "argv", [str(SCRIPT), str(event_path)]),
+                mock.patch.object(MODULE, "ensure_commit") as ensure_commit,
+                mock.patch.object(
+                    MODULE,
+                    "changed_files_between",
+                    side_effect=ValueError("stop after fetch routing"),
+                ),
+                self.assertRaisesRegex(ValueError, "stop after fetch routing"),
+            ):
+                MODULE.main()
+        self.assertEqual(
+            ensure_commit.call_args_list,
+            [mock.call(base, "origin"), mock.call(head, head_remote)],
         )
 
     def test_only_engineering_impact_section_counts(self):
