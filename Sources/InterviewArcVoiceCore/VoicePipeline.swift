@@ -124,6 +124,14 @@ public struct VoicePipelineResult: Equatable, Sendable {
     }
 }
 
+public struct LearningVoicePipelineResult: Equatable, Sendable {
+    public let operationID: String
+    public let turnID: String
+    public let transcript: String
+    public let duplicate: Bool
+    public let transcription: ReliableTranscription
+}
+
 public actor VoicePipeline {
     private let api: InterviewArcAPIClient
     private let transcriber: any SpeechTranscribing
@@ -132,6 +140,7 @@ public actor VoicePipeline {
     private let vocabularyResolver: VocabularyResolver
     private let retryQueue: VoiceRetryQueue
     private let pendingCaptureStore: PendingVoiceCaptureStore
+    private let learningCaptureStore: LearningVoiceCaptureStore
     private let transcriptHistoryStore: LocalTranscriptHistoryStore?
     private let temporaryDirectory: URL
     private let workspaceURL: URL
@@ -144,6 +153,7 @@ public actor VoicePipeline {
         vocabularyResolver: VocabularyResolver,
         retryQueue: VoiceRetryQueue,
         pendingCaptureStore: PendingVoiceCaptureStore,
+        learningCaptureStore: LearningVoiceCaptureStore,
         transcriptHistoryStore: LocalTranscriptHistoryStore? = nil,
         temporaryDirectory: URL,
         workspaceURL: URL,
@@ -156,6 +166,7 @@ public actor VoicePipeline {
         self.vocabularyResolver = vocabularyResolver
         self.retryQueue = retryQueue
         self.pendingCaptureStore = pendingCaptureStore
+        self.learningCaptureStore = learningCaptureStore
         self.transcriptHistoryStore = transcriptHistoryStore
         self.temporaryDirectory = temporaryDirectory
         self.workspaceURL = workspaceURL
@@ -174,10 +185,9 @@ public actor VoicePipeline {
     ) async throws -> VoicePipelineResult {
         await progress(.init(component: .transcript, state: .working))
         let vocabulary = vocabularyResolver.resolve(activity.vocabularyContext)
-        let reliable = try await reliableTranscriber.transcribe(
+        let reliable = try await transcribe(
             fileURL: recordingURL,
             prompt: vocabulary.prompt,
-            temporaryDirectory: temporaryDirectory,
             audioDurationSeconds: durationSeconds,
             speechEvidence: speechEvidence,
             protectionMode: protectionMode
@@ -249,6 +259,124 @@ public actor VoicePipeline {
         )
     }
 
+    public func processLearning(
+        recordingURL: URL,
+        durationSeconds: Double,
+        session: FocusedLearningVoiceSession,
+        occurredAt: Date = Date(),
+        speechEvidence: SpeechEvidenceResult? = nil,
+        protectionMode: SpeechProtectionMode = .basic,
+        transcriptReady: @escaping @Sendable (String) async -> Bool,
+        progress: @escaping @Sendable (VoicePipelineUpdate) async -> Void = { _ in }
+    ) async throws -> LearningVoicePipelineResult {
+        guard session.state == "running",
+              session.runningSince != nil,
+              session.evidencePolicy == .transcriptOnly else {
+            throw InterviewArcAPIError(
+                statusCode: 0,
+                message: "The Learning Session is not an exact running transcript-only target.",
+                code: "learning_voice_context_stale",
+                retryable: false
+            )
+        }
+        await progress(.init(component: .transcript, state: .working))
+        let prompt = [
+            session.courseTitle,
+            session.moduleTitle,
+            Optional(session.lessonTitle),
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+        .joined(separator: ", ")
+        let reliable = try await transcribe(
+            fileURL: recordingURL,
+            prompt: String(prompt.prefix(220)),
+            audioDurationSeconds: durationSeconds,
+            speechEvidence: speechEvidence,
+            protectionMode: protectionMode
+        )
+        let identity = VoiceTranscriptIdentity(reliable.transcription.text)
+        let operationID = "learning-voice-\(UUID().uuidString.lowercased())"
+        let turnID = "learning-turn-\(UUID().uuidString.lowercased())"
+        let capture = PendingLearningVoiceCapture(
+            operationId: operationID,
+            turnId: turnID,
+            session: session,
+            transcript: identity.transcript,
+            checksum: identity.checksum,
+            audioURL: recordingURL,
+            durationSeconds: durationSeconds,
+            occurredAt: occurredAt,
+            transcription: reliable.transcription,
+            createdAt: Date()
+        )
+        try await learningCaptureStore.saveNew(capture)
+        await progress(.init(component: .transcript, state: .complete))
+        await progress(.init(component: .insertion, state: .working))
+        guard await transcriptReady(identity.transcript) else {
+            try? await learningCaptureStore.recordFailure(
+                id: operationID,
+                code: "learning_transcript_insertion_failed",
+                message: "The visible Learning Specialist editor did not accept the transcript.",
+                retryable: true
+            )
+            await progress(.init(component: .insertion, state: .needsAttention))
+            throw VoiceBridgeError.codexUnavailable(
+                "The Learning transcript is protected locally until it can be inserted."
+            )
+        }
+        try await learningCaptureStore.markInserted(id: operationID)
+        await progress(.init(component: .insertion, state: .complete))
+        return try await commitLearningCapture(
+            capture,
+            transcription: reliable
+        )
+    }
+
+    public func resumePendingLearningCapture(
+        recordingURL: URL,
+        transcriptReady: @escaping @Sendable (String) async -> Bool,
+        progress: @escaping @Sendable (VoicePipelineUpdate) async -> Void = { _ in }
+    ) async throws -> LearningVoicePipelineResult? {
+        guard let capture = try await learningCaptureStore.items().first(
+            where: {
+                $0.audioURL.standardizedFileURL
+                    == recordingURL.standardizedFileURL
+            }
+        ) else {
+            return nil
+        }
+        if capture.stage == .insertionPending {
+            await progress(.init(component: .insertion, state: .working))
+            guard await transcriptReady(capture.transcript) else {
+                try? await learningCaptureStore.recordFailure(
+                    id: capture.id,
+                    code: "learning_transcript_insertion_failed",
+                    message: "The visible Learning Specialist editor did not accept the transcript.",
+                    retryable: true
+                )
+                await progress(.init(component: .insertion, state: .needsAttention))
+                throw VoiceBridgeError.codexUnavailable(
+                    "The Learning transcript is protected locally until it can be inserted."
+                )
+            }
+            try await learningCaptureStore.markInserted(id: capture.id)
+            await progress(.init(component: .insertion, state: .complete))
+        }
+        let reliable = ReliableTranscription(
+            transcription: capture.transcription,
+            wasRetried: false,
+            engine: capture.transcription.engine,
+            model: capture.transcription.model,
+            localInferenceSeconds: capture.transcription.localInferenceSeconds,
+            localPromptTokenCount: capture.transcription.localPromptTokenCount
+        )
+        return try await commitLearningCapture(
+            capture,
+            transcription: reliable
+        )
+    }
+
     public func promoteRecoveryTranscript(
         record: LocalTranscriptRecord,
         audioURL: URL
@@ -275,7 +403,8 @@ public actor VoicePipeline {
         force: Bool = true,
         activityID: String? = nil
     ) async -> Int {
-        var completed = await reconcilePendingCaptures(
+        var completed = await retryPendingLearningAcknowledgements()
+        completed += await reconcilePendingCaptures(
             force: force,
             activityID: activityID
         )
@@ -366,6 +495,44 @@ public actor VoicePipeline {
         (try? await pendingCaptureStore.items()) ?? []
     }
 
+    public func pendingLearningCaptures() async -> [PendingLearningVoiceCapture] {
+        (try? await learningCaptureStore.items()) ?? []
+    }
+
+    public func retryPendingLearningAcknowledgements() async -> Int {
+        guard let captures = try? await learningCaptureStore.items() else {
+            return 0
+        }
+        var completed = 0
+        for capture in captures
+        where capture.stage == .acknowledgementPending
+            && capture.lastErrorRetryable != false {
+            do {
+                _ = try await api.persistLearningTranscript(capture.request)
+                try await learningCaptureStore.remove(
+                    id: capture.id,
+                    deleteAudio: true
+                )
+                completed += 1
+            } catch let error as InterviewArcAPIError {
+                try? await learningCaptureStore.recordFailure(
+                    id: capture.id,
+                    code: error.code ?? "learning_transcript_acknowledgement_failed",
+                    message: error.message,
+                    retryable: error.retryable
+                )
+            } catch {
+                try? await learningCaptureStore.recordFailure(
+                    id: capture.id,
+                    code: "learning_transcript_acknowledgement_failed",
+                    message: error.localizedDescription,
+                    retryable: true
+                )
+            }
+        }
+        return completed
+    }
+
     public func removeSettledCaptures(
         outsideWorkbenchID currentWorkbenchID: String?
     ) async {
@@ -387,7 +554,9 @@ public actor VoicePipeline {
     }
 
     public func localPendingCaptureCount() async -> Int {
-        (try? await pendingCaptureStore.items().count) ?? 0
+        let interview = (try? await pendingCaptureStore.items().count) ?? 0
+        let learning = (try? await learningCaptureStore.items().count) ?? 0
+        return interview + learning
     }
 
     public func legacyVoiceOrphans() async -> [LegacyVoiceCapture] {
@@ -1039,6 +1208,59 @@ public actor VoicePipeline {
             audioURL: item.audioURL,
             workspaceURL: workspaceURL,
             interviewArcToken: interviewArcToken
+        )
+    }
+
+    private func commitLearningCapture(
+        _ capture: PendingLearningVoiceCapture,
+        transcription: ReliableTranscription
+    ) async throws -> LearningVoicePipelineResult {
+        do {
+            let receipt = try await api.persistLearningTranscript(capture.request)
+            try await learningCaptureStore.remove(
+                id: capture.id,
+                deleteAudio: true
+            )
+            return LearningVoicePipelineResult(
+                operationID: capture.operationId,
+                turnID: capture.turnId,
+                transcript: capture.transcript,
+                duplicate: receipt.duplicate,
+                transcription: transcription
+            )
+        } catch let error as InterviewArcAPIError {
+            try? await learningCaptureStore.recordFailure(
+                id: capture.id,
+                code: error.code ?? "learning_transcript_acknowledgement_failed",
+                message: error.message,
+                retryable: error.retryable
+            )
+            throw error
+        } catch {
+            try? await learningCaptureStore.recordFailure(
+                id: capture.id,
+                code: "learning_transcript_acknowledgement_failed",
+                message: error.localizedDescription,
+                retryable: true
+            )
+            throw error
+        }
+    }
+
+    private func transcribe(
+        fileURL: URL,
+        prompt: String,
+        audioDurationSeconds: Double,
+        speechEvidence: SpeechEvidenceResult?,
+        protectionMode: SpeechProtectionMode
+    ) async throws -> ReliableTranscription {
+        try await reliableTranscriber.transcribe(
+            fileURL: fileURL,
+            prompt: prompt,
+            temporaryDirectory: temporaryDirectory,
+            audioDurationSeconds: audioDurationSeconds,
+            speechEvidence: speechEvidence,
+            protectionMode: protectionMode
         )
     }
 }

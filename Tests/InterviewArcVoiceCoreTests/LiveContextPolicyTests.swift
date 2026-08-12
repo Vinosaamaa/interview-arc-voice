@@ -204,6 +204,63 @@ import Testing
     )
 }
 
+@Test func exactLearningContextSelectsTranscriptOnlyCaptureAndAmbiguityFailsClosed() throws {
+    let payload = Data(#"""
+    {
+      "protocolVersion": 2,
+      "date": "2026-08-12",
+      "captureTarget": "learning",
+      "focusedActivity": null,
+      "focusedLearningSession": {
+        "sessionId": "session-architecture-1",
+        "scopeType": "course",
+        "courseId": "course-architecture",
+        "blueprintRevision": 3,
+        "courseTitle": "Interview Arc Architecture",
+        "moduleId": "module-runtime",
+        "moduleTitle": "Runtime",
+        "lessonId": "lesson-voice-boundary",
+        "lessonRevision": 2,
+        "lessonTitle": "Voice boundary",
+        "state": "running",
+        "transcriptRevision": 4,
+        "nextTranscriptSequence": 7,
+        "startedAt": 1786507200000,
+        "runningSince": 1786507205000,
+        "evidencePolicy": "transcript_only"
+      },
+      "timerInstrument": null,
+      "specialist": {
+        "specialty": "learning_specialist",
+        "threadId": "thread-learning",
+        "hostId": null,
+        "title": "Learning Specialist"
+      },
+      "message": null
+    }
+    """#.utf8)
+    let context = try JSONDecoder().decode(VoiceContextResponse.self, from: payload)
+    let session = try #require(context.focusedLearningSession)
+
+    #expect(
+        VoiceCaptureContextPolicy().selection(for: context)
+            == .learning(session)
+    )
+
+    let ambiguous = VoiceContextResponse(
+        protocolVersion: 2,
+        date: "2026-08-12",
+        captureTarget: .ambiguous,
+        focusedActivity: focusedActivity(id: "interview", runningSince: 1_000),
+        focusedLearningSession: session,
+        timerInstrument: nil,
+        specialist: nil,
+        message: "Pause one active target."
+    )
+
+    #expect(VoiceCaptureContextPolicy().selection(for: ambiguous) == nil)
+}
+
 @Test func normalNetworkJitterDoesNotDropAVisibleLinkedActivity() {
     let policy = CaptureContextFreshnessPolicy(maximumAge: 10)
     let now = Date(timeIntervalSince1970: 20)

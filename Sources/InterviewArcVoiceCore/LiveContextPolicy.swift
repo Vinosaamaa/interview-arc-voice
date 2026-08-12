@@ -52,6 +52,28 @@ public struct LateCaptureBindingPolicy: Sendable {
         }
         return refreshedActivity
     }
+
+    public func capture(
+        initiallyLinked: Bool,
+        recordingStartedAtMilliseconds: Int64,
+        refreshedContext: VoiceContextResponse
+    ) -> LinkedVoiceCaptureContext? {
+        guard !initiallyLinked,
+              let selection = VoiceCaptureContextPolicy().selection(
+                  for: refreshedContext
+              ) else {
+            return nil
+        }
+        let runningSince = switch selection {
+        case .interview(let activity): activity.runningSince
+        case .learning(let session): session.runningSince
+        }
+        guard let runningSince,
+              runningSince <= recordingStartedAtMilliseconds else {
+            return nil
+        }
+        return selection
+    }
 }
 
 public struct VoiceMemoExportPlan: Equatable, Sendable {

@@ -234,6 +234,45 @@ public actor InterviewArcAPIClient {
         return try await send(path: "voice/captures", method: "POST", body: encoder.encode(body))
     }
 
+    public func persistLearningTranscript(
+        _ request: LearningVoiceTranscriptRequest
+    ) async throws -> LearningVoiceTranscriptResponse {
+        let identity = VoiceTranscriptIdentity(request.transcript)
+        guard request.protocolVersion == Self.protocolVersion,
+              request.expectedTranscriptRevision >= 0,
+              request.sequence >= 0,
+              request.occurredAt > 0,
+              identity.validates(
+                  transcript: request.transcript,
+                  checksum: request.checksum
+              ) else {
+            throw InterviewArcAPIError(
+                statusCode: 0,
+                message: "The local Learning transcript identity is inconsistent.",
+                code: "local_learning_transcript_identity_mismatch",
+                retryable: false
+            )
+        }
+        let response: LearningVoiceTranscriptResponse = try await send(
+            path: "voice/learning-transcripts",
+            method: "POST",
+            body: encoder.encode(request)
+        )
+        guard response.protocolVersion == Self.protocolVersion,
+              response.evidencePolicy == .transcriptOnly,
+              response.transcriptRevision
+                == request.expectedTranscriptRevision + 1,
+              response.turnIds == [request.turnId] else {
+            throw InterviewArcAPIError(
+                statusCode: 0,
+                message: "The Learning transcript acknowledgement did not match the stable local request.",
+                code: "learning_transcript_receipt_mismatch",
+                retryable: false
+            )
+        }
+        return response
+    }
+
     public func registerIntent(_ capture: PendingVoiceCapture) async throws -> VoiceCaptureIntentResponse {
         let identity = VoiceTranscriptIdentity(capture.transcript)
         guard identity.validates(
