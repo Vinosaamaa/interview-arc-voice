@@ -13,19 +13,39 @@ Version 1 uses restricted one-line frontmatter, not general YAML. Each nonempty 
 
 ## Forward authoring protocol
 
-The implementation coordinator owns the receipt as part of the pull request. The user does not need to request a separate Journal operation.
+The implementation coordinator owns the receipt as part of the pull request.
+The user does not need to request a separate Journal operation. Follow
+[`Engineering record authorship`](../agents/issue-lifecycle.md#engineering-record-authorship):
+classify the change during issue work, author or select any exact rich record
+before review, use a draft pull request to obtain the repository-local number,
+then scaffold and commit its numbered receipt.
+Material work may add a new record or reuse an exact existing rich record whose
+reviewed cluster genuinely covers the change.
 
-1. Open or identify the pull request so its repository-local number is known.
-2. Add exactly one compact receipt at `docs/engineering/changes/pr-<number>.md`.
-3. Record a public-safe title and one factual summary paragraph of at most 280 characters.
-4. Classify a small or non-material pull request as `none` and leave `richRecordRefs` empty.
-5. For a material pull request, add the appropriate rich record or reuse an exact existing rich record that explicitly covers the same reviewed PR cluster. Put every linked `id@revision` in `richRecordRefs`; a reviewed multi-PR case study may be shared by several receipts.
-6. Let CI validate both layers. Arc's deterministic build projects them into separate receipt and rich-record collections, search indexes, backlinks, Statistics, and standalone HTML.
-7. Merge and release through the repository's normal workflow.
+After the pull request number is known, run:
 
-CI does not invent motivation, architecture, root cause, impact, or prose from a diff. The coordinator authors the factual receipt and any required rich record while it has the implementation context. After that authoring step, validation, projection, bundling, and deployment are automatic.
+```sh
+python3 scripts/new-engineering-receipt.py \
+  --pr <number> \
+  --title "<exact pull-request title>" \
+  --summary "<one public-safe factual paragraph>" \
+  --classification none
+```
 
-The canonical state is Markdown in Git. The generated JSON and standalone HTML are disposable projections, not a database, backfill workspace, or second narrative source. Engineering content is not inserted into D1, and the production reader never fetches GitHub dynamically. Arc ingests other repositories only from reviewed commit pins during build and CI.
+Run `python3 scripts/new-engineering-receipt.py --help` for complete
+non-material and material examples. The helper is non-interactive, makes no
+GitHub or network call, and refuses unsafe values or an existing target.
+
+CI does not invent motivation, architecture, root cause, impact, prose, or
+diagrams from a diff. The coordinator authors the factual receipt and any
+required rich record while it has the implementation context. After that
+authoring step, validation, projection, bundling, and deployment are automatic.
+
+The canonical state is Markdown in Git. The generated JSON and portable static
+HTML export are disposable projections, not a database, backfill workspace, or
+second narrative source. Engineering content is not inserted into D1, and the
+production reader never fetches GitHub dynamically. Arc ingests other
+repositories only from reviewed commit pins during build and CI.
 
 ## Compact receipt example
 
