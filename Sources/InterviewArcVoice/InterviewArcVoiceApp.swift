@@ -619,7 +619,7 @@ final class VoiceBridgeModel: ObservableObject {
                 recordingActive: isStartingRecording || isRecording
             )
         }
-        MiniWidgetPresentationPolicy.layout(
+        return MiniWidgetPresentationPolicy.layout(
             linkEnabled: linkToInterviewArc,
             hasActivityTimer: timerInstrument?.activity?.timer != nil,
             hasSessionTimer: timerInstrument?.session?.timer != nil,
@@ -629,7 +629,7 @@ final class VoiceBridgeModel: ObservableObject {
     }
     var canExpandMiniSessionTimer: Bool {
         guard learningTimer == nil else { return false }
-        MiniWidgetPresentationPolicy.canDiscloseSessionTimer(
+        return MiniWidgetPresentationPolicy.canDiscloseSessionTimer(
             hasActivityTimer: timerInstrument?.activity?.timer != nil,
             hasSessionTimer: timerInstrument?.session?.timer != nil
         )
