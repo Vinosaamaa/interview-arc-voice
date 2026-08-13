@@ -88,6 +88,24 @@ public enum MiniWidgetTimerSource: Equatable, Sendable {
     case session
 }
 
+public enum LearningVoiceTimerPresentationPolicy {
+    public static let allowsFinish = false
+
+    public static func miniLayout(
+        linkEnabled: Bool,
+        timer: LearningVoiceTimer?,
+        recordingActive: Bool
+    ) -> MiniWidgetLayout {
+        MiniWidgetPresentationPolicy.layout(
+            linkEnabled: linkEnabled,
+            hasActivityTimer: timer != nil,
+            hasSessionTimer: false,
+            recordingActive: recordingActive,
+            sessionTimerDisclosed: false
+        )
+    }
+}
+
 public enum MiniWidgetExpandingStopPolicy {
     // AVAudioRecorder's ordinary close-range speech commonly sits around
     // -35...-22 dB. Saturating at -22 dB gives conversational speech enough

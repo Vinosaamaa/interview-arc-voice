@@ -29,6 +29,22 @@ import Testing
             "runningSince": 1786566000000,
             "evidencePolicy": "transcript_only"
           },
+          "learningTimer": {
+            "serverNow": 1786566010000,
+            "sessionId": "quick-study-session",
+            "scopeType": "quick_study",
+            "courseId": null,
+            "courseTitle": null,
+            "moduleId": null,
+            "moduleTitle": null,
+            "lessonId": "voice-release-verification",
+            "lessonTitle": "Voice release verification",
+            "state": "running",
+            "accumulatedSeconds": 20,
+            "startedAt": 1786566000000,
+            "runningSince": 1786566000000,
+            "revision": 2
+          },
           "timerInstrument": null,
           "specialist": null,
           "message": null
@@ -41,6 +57,51 @@ import Testing
     #expect(session.scopeType == "quick_study")
     #expect(session.moduleId == nil)
     #expect(session.evidencePolicy == .transcriptOnly)
+    let timer = try #require(response.learningTimer)
+    #expect(timer.sessionId == session.sessionId)
+    #expect(timer.lessonTitle == session.lessonTitle)
+    #expect(timer.state == .running)
+    #expect(
+        timer.elapsedSeconds(
+            receivedAt: Date(timeIntervalSince1970: 100),
+            now: Date(timeIntervalSince1970: 103)
+        ) == 33
+    )
+}
+
+@Test func pausedLearningTimerFreezesAndRemainsAVisibleSingleTimer() {
+    let timer = LearningVoiceTimer(
+        serverNow: 18_000,
+        sessionId: "learning-session-1",
+        scopeType: "course",
+        courseId: "course-architecture",
+        courseTitle: "Interview Arc Architecture",
+        moduleId: "module-runtime",
+        moduleTitle: "Runtime",
+        lessonId: "lesson-voice-boundary",
+        lessonTitle: "Voice boundary",
+        state: .paused,
+        accumulatedSeconds: 91,
+        startedAt: 1_000,
+        runningSince: nil,
+        revision: 4
+    )
+
+    #expect(!timer.isRunning)
+    #expect(
+        timer.elapsedSeconds(
+            receivedAt: Date(timeIntervalSince1970: 100),
+            now: Date(timeIntervalSince1970: 400)
+        ) == 91
+    )
+    #expect(
+        LearningVoiceTimerPresentationPolicy.miniLayout(
+            linkEnabled: true,
+            timer: timer,
+            recordingActive: false
+        ) == .singleTimer
+    )
+    #expect(!LearningVoiceTimerPresentationPolicy.allowsFinish)
 }
 
 @Test func learningTranscriptUsesTheNarrowChecksumBoundServerContract() async throws {
@@ -107,6 +168,86 @@ import Testing
     #expect(object["audio"] == nil)
     #expect(object["clipId"] == nil)
     #expect(object["captureId"] == nil)
+}
+
+@Test func learningTimerControlUsesStableOperationAndRevisionIdentity() async throws {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [LearningVoiceTimerURLProtocol.self]
+    let session = URLSession(configuration: configuration)
+    let request = LearningVoiceTimerMutationRequest(
+        operationId: "learning-voice-timer-operation-1",
+        sessionId: "learning-session-1",
+        expectedRevision: 4,
+        action: .pause
+    )
+    let observedRequest = LockedBox<URLRequest?>(nil)
+    let observedBody = LockedBox<Data?>(nil)
+    LearningVoiceTimerURLProtocol.handler = { received in
+        observedRequest.set(received)
+        observedBody.set(try requestBodyData(received))
+        let response = HTTPURLResponse(
+            url: try #require(received.url),
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        return (response, Data(#"""
+        {
+          "protocolVersion": 2,
+          "status": "session_controlled",
+          "sessionId": "learning-session-1",
+          "action": "pause",
+          "state": "paused",
+          "revision": 5,
+          "accumulatedSeconds": 125,
+          "startedAt": 1786566000000,
+          "completedAt": null,
+          "duplicate": false,
+          "learningTimer": {
+            "serverNow": 1786566125000,
+            "sessionId": "learning-session-1",
+            "scopeType": "course",
+            "courseId": "course-architecture",
+            "courseTitle": "Interview Arc Architecture",
+            "moduleId": "module-runtime",
+            "moduleTitle": "Runtime",
+            "lessonId": "lesson-voice-boundary",
+            "lessonTitle": "Voice boundary",
+            "state": "paused",
+            "accumulatedSeconds": 125,
+            "startedAt": 1786566000000,
+            "runningSince": null,
+            "revision": 5
+          }
+        }
+        """#.utf8))
+    }
+    defer { LearningVoiceTimerURLProtocol.handler = nil }
+    let client = InterviewArcAPIClient(
+        baseURL: URL(string: "https://voice.example.test")!,
+        token: "test-token",
+        session: session
+    )
+
+    let receipt = try await client.controlLearningTimer(request)
+
+    #expect(receipt.sessionId == request.sessionId)
+    #expect(receipt.action == request.action)
+    #expect(receipt.revision == request.expectedRevision + 1)
+    #expect(receipt.learningTimer?.state == .paused)
+    let sent = try #require(observedRequest.value)
+    #expect(sent.url?.path == "/voice/learning-timers")
+    #expect(sent.httpMethod == "POST")
+    let body = try #require(observedBody.value)
+    let object = try #require(
+        JSONSerialization.jsonObject(with: body) as? [String: Any]
+    )
+    #expect(object["protocolVersion"] as? Int == 2)
+    #expect(object["operationId"] as? String == request.operationId)
+    #expect(object["sessionId"] as? String == request.sessionId)
+    #expect(object["expectedRevision"] as? Int == request.expectedRevision)
+    #expect(object["action"] as? String == request.action.rawValue)
+    #expect(object["authorization"] == nil)
 }
 
 @Test func learningRecoveryStoreReplaysExactIdentityAndRejectsChangedRetry() async throws {
@@ -341,6 +482,30 @@ import Testing
 }
 
 private final class LearningVoiceURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var handler:
+        (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        do {
+            let handler = try #require(Self.handler)
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
+private final class LearningVoiceTimerURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var handler:
         (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?
 

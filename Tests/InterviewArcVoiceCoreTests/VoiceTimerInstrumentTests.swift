@@ -182,6 +182,14 @@ import Testing
     #expect(FloatingWidgetWindowPolicy.timerGap == 10)
     #expect(FloatingWidgetWindowPolicy.expandedHostHeight > FloatingWidgetWindowPolicy.hostHeight)
     #expect(
+        FloatingWidgetWindowPolicy.learningExpandedHostHeight
+            > FloatingWidgetWindowPolicy.hostHeight
+    )
+    #expect(
+        FloatingWidgetWindowPolicy.learningExpandedHostHeight
+            < FloatingWidgetWindowPolicy.expandedHostHeight
+    )
+    #expect(
         FloatingWidgetWindowPolicy.expandedDrawerHostHeight
             > FloatingWidgetWindowPolicy.expandedHostHeight
     )

@@ -210,6 +210,7 @@ final class VoiceBridgeModel: ObservableObject {
     @Published var phase: Phase = .setup
     @Published var context: VoiceContextResponse?
     @Published private(set) var timerInstrument: VoiceTimerInstrument?
+    @Published private(set) var learningTimer: LearningVoiceTimer?
     @Published private(set) var timerMutationInFlight = false
     @Published private(set) var timerMutationMessage: String?
     @Published var timerPanelExpanded = false
@@ -357,6 +358,7 @@ final class VoiceBridgeModel: ObservableObject {
     private var contextRefreshRequestID = 0
     private var contextLastVerifiedAt: Date?
     private var timerInstrumentReceivedAt = Date()
+    private var pendingLearningTimerRequest: LearningVoiceTimerMutationRequest?
     private var wakeObserver: NSObjectProtocol?
     private var activationObserver: NSObjectProtocol?
     private var terminationObserver: NSObjectProtocol?
@@ -594,6 +596,9 @@ final class VoiceBridgeModel: ObservableObject {
         guard timerPanelExpanded && hasTimerInstrument else {
             return FloatingWidgetWindowPolicy.hostHeight
         }
+        if learningTimer != nil {
+            return FloatingWidgetWindowPolicy.learningExpandedHostHeight
+        }
         return finishingActivityID == nil
             && !activityPickerExpanded
             && !sessionFinishResolutionRequested
@@ -602,10 +607,19 @@ final class VoiceBridgeModel: ObservableObject {
     }
     var hasTimerInstrument: Bool {
         linkToInterviewArc
-            && (timerInstrument?.session != nil || timerInstrument?.activity != nil)
+            && (learningTimer != nil
+                || timerInstrument?.session != nil
+                || timerInstrument?.activity != nil)
     }
     var miniWidgetLayout: MiniWidgetLayout {
-        MiniWidgetPresentationPolicy.layout(
+        if learningTimer != nil {
+            return LearningVoiceTimerPresentationPolicy.miniLayout(
+                linkEnabled: linkToInterviewArc,
+                timer: learningTimer,
+                recordingActive: isStartingRecording || isRecording
+            )
+        }
+        return MiniWidgetPresentationPolicy.layout(
             linkEnabled: linkToInterviewArc,
             hasActivityTimer: timerInstrument?.activity?.timer != nil,
             hasSessionTimer: timerInstrument?.session?.timer != nil,
@@ -614,7 +628,8 @@ final class VoiceBridgeModel: ObservableObject {
         )
     }
     var canExpandMiniSessionTimer: Bool {
-        MiniWidgetPresentationPolicy.canDiscloseSessionTimer(
+        guard learningTimer == nil else { return false }
+        return MiniWidgetPresentationPolicy.canDiscloseSessionTimer(
             hasActivityTimer: timerInstrument?.activity?.timer != nil,
             hasSessionTimer: timerInstrument?.session?.timer != nil
         )
@@ -634,7 +649,8 @@ final class VoiceBridgeModel: ObservableObject {
         return timerInstrument?.sessionFinishBlockers ?? []
     }
     var compactTimerTitle: String {
-        timerInstrument?.activity?.title
+        learningTimer?.lessonTitle
+            ?? timerInstrument?.activity?.title
             ?? timerInstrument?.session?.label
             ?? floatingTitle
     }
@@ -719,6 +735,14 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func compactActivityTime(at now: Date) -> String? {
+        if let learningTimer {
+            return CompactTimerTextPolicy.activityElapsed(
+                seconds: learningTimer.elapsedSeconds(
+                    receivedAt: timerInstrumentReceivedAt,
+                    now: now
+                )
+            )
+        }
         guard let timer = timerInstrument?.activity?.timer else { return nil }
         return CompactTimerTextPolicy.activityElapsed(
             seconds: elapsedSeconds(for: timer, now: now)
@@ -733,6 +757,9 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func miniTimerText(at now: Date) -> String? {
+        if learningTimer != nil {
+            return compactActivityTime(at: now)
+        }
         switch MiniWidgetPresentationPolicy.timerSource(
             hasActivityTimer: timerInstrument?.activity?.timer != nil,
             hasSessionTimer: timerInstrument?.session?.timer != nil
@@ -751,6 +778,13 @@ final class VoiceBridgeModel: ObservableObject {
         miniSessionTimerExpanded.toggle()
     }
     private var compactLinkPresentation: CompactVoicePresentation {
+        if let learningTimer, !learningTimer.isRunning, linkToInterviewArc {
+            return CompactVoicePresentation(
+                state: .connectedIdle,
+                title: "General dictation · Learning Session paused",
+                accessibilityLabel: "Interview Arc is connected. The Learning Session is paused. Recording uses general dictation."
+            )
+        }
         let activeTitle: String?
         switch captureContextPolicy.selection(for: context) {
         case .interview(let activity):
@@ -765,8 +799,9 @@ final class VoiceBridgeModel: ObservableObject {
             activeActivityTitle: currentTargetDecision.canAttach
                 ? activeTitle
                 : nil,
-            hasOpenSession: timerInstrument?.session != nil,
-            sessionIsRunning: timerInstrument?.session?.timer.isRunning == true
+            hasOpenSession: learningTimer != nil || timerInstrument?.session != nil,
+            sessionIsRunning: learningTimer?.isRunning
+                ?? (timerInstrument?.session?.timer.isRunning == true)
         )
     }
 
@@ -955,7 +990,10 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func togglePlanner() {
-        guard linkToInterviewArc, !isRecording, !isStartingRecording else { return }
+        guard linkToInterviewArc,
+              learningTimer == nil,
+              !isRecording,
+              !isStartingRecording else { return }
         if plannerPresented {
             timerPanelExpanded = timerPanelExpandedBeforePlanner ?? false
             plannerPresented = false
@@ -1266,6 +1304,29 @@ final class VoiceBridgeModel: ObservableObject {
                     action: action
                 )
             }
+        }
+    }
+
+    func performLearningTimerAction(_ timer: LearningVoiceTimer) {
+        guard !timerMutationInFlight else { return }
+        let action: LearningVoiceTimerAction = timer.isRunning ? .pause : .resume
+        let request: LearningVoiceTimerMutationRequest
+        if let pendingLearningTimerRequest,
+           pendingLearningTimerRequest.sessionId == timer.sessionId,
+           pendingLearningTimerRequest.expectedRevision == timer.revision,
+           pendingLearningTimerRequest.action == action {
+            request = pendingLearningTimerRequest
+        } else {
+            request = LearningVoiceTimerMutationRequest(
+                operationId: "learning-voice-timer-\(UUID().uuidString.lowercased())",
+                sessionId: timer.sessionId,
+                expectedRevision: timer.revision,
+                action: action
+            )
+            pendingLearningTimerRequest = request
+        }
+        Task {
+            await runLearningTimerMutation(request)
         }
     }
 
@@ -3327,7 +3388,12 @@ final class VoiceBridgeModel: ObservableObject {
             ) else { return }
             context = contextRetentionPolicy.context(previous: context, refreshed: loaded)
             timerInstrument = loaded.timerInstrument
+            learningTimer = loaded.learningTimer
             timerInstrumentReceivedAt = Date()
+            if learningTimer != nil, plannerPresented {
+                plannerPresented = false
+                timerPanelExpandedBeforePlanner = nil
+            }
             if !hasTimerInstrument {
                 timerPanelExpanded = false
                 cancelFinishDrawer()
@@ -3351,7 +3417,7 @@ final class VoiceBridgeModel: ObservableObject {
                 if !isRecording && !isBusy {
                     contextMessage = loaded.captureTarget == .ambiguous
                         ? (loaded.message ?? "Multiple linked targets are active — using general dictation.")
-                        : "No focused activity — using general dictation."
+                        : (loaded.message ?? "No focused activity — using general dictation.")
                 }
             }
             // Focus refresh is intentionally read-only. Capture reconciliation
@@ -3406,6 +3472,33 @@ final class VoiceBridgeModel: ObservableObject {
             await refreshContext(showProgress: false)
             return true
         } catch {
+            timerMutationMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    private func runLearningTimerMutation(
+        _ request: LearningVoiceTimerMutationRequest
+    ) async -> Bool {
+        timerMutationInFlight = true
+        timerMutationMessage = nil
+        defer { timerMutationInFlight = false }
+        do {
+            let response = try await timerAPIClient().controlLearningTimer(request)
+            if let refreshed = response.learningTimer {
+                learningTimer = refreshed
+                timerInstrumentReceivedAt = Date()
+            }
+            pendingLearningTimerRequest = nil
+            await refreshContext(showProgress: false)
+            return true
+        } catch {
+            await refreshContext(showProgress: false)
+            if learningTimer?.sessionId != request.sessionId
+                || learningTimer?.revision != request.expectedRevision {
+                pendingLearningTimerRequest = nil
+            }
             timerMutationMessage = error.localizedDescription
             return false
         }

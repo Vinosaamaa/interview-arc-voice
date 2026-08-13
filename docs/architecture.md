@@ -546,6 +546,21 @@ ordinary controls without a throwaway activation click. Selection overflow is
 collapsed into an explicit `+N more` disclosure; expanding it grows only the
 selection rail while keeping destination and submit controls anchored.
 
+## Native Learning timer
+
+The Voice context projects the current Learning Session timer separately from
+the Interview timer instrument. Voice advances its elapsed count-up display
+locally from the latest server timestamp while D1 remains authoritative for
+state, accumulated time, and revision. Standard and Mini consume that same
+snapshot; they do not create a second clock or infer a duration allocation.
+
+Voice may send only explicit Pause and Resume commands for the current
+owner-private Learning timer. Each command carries a stable operation ID and
+expected revision so an exact retry is idempotent and a changed or stale retry
+fails closed. A paused Session remains visible and resumable, but it is not a
+Learning transcript target. Finish remains Learning Specialist-owned because
+it commits recap and checkpoint evidence in addition to closing the timer.
+
 ## Provider credential rejection
 
 Groq authentication rejection is a non-retryable configuration state. Voice

@@ -72,12 +72,119 @@ public struct FocusedLearningVoiceSession: Codable, Equatable, Sendable {
     }
 }
 
+public enum LearningVoiceTimerState: String, Codable, Equatable, Sendable {
+    case running
+    case paused
+}
+
+public struct LearningVoiceTimer: Codable, Equatable, Sendable {
+    public let serverNow: Int64
+    public let sessionId: String
+    public let scopeType: String
+    public let courseId: String?
+    public let courseTitle: String?
+    public let moduleId: String?
+    public let moduleTitle: String?
+    public let lessonId: String
+    public let lessonTitle: String
+    public let state: LearningVoiceTimerState
+    public let accumulatedSeconds: Int
+    public let startedAt: Int64?
+    public let runningSince: Int64?
+    public let revision: Int
+
+    public init(
+        serverNow: Int64,
+        sessionId: String,
+        scopeType: String,
+        courseId: String?,
+        courseTitle: String?,
+        moduleId: String?,
+        moduleTitle: String?,
+        lessonId: String,
+        lessonTitle: String,
+        state: LearningVoiceTimerState,
+        accumulatedSeconds: Int,
+        startedAt: Int64?,
+        runningSince: Int64?,
+        revision: Int
+    ) {
+        self.serverNow = serverNow
+        self.sessionId = sessionId
+        self.scopeType = scopeType
+        self.courseId = courseId
+        self.courseTitle = courseTitle
+        self.moduleId = moduleId
+        self.moduleTitle = moduleTitle
+        self.lessonId = lessonId
+        self.lessonTitle = lessonTitle
+        self.state = state
+        self.accumulatedSeconds = accumulatedSeconds
+        self.startedAt = startedAt
+        self.runningSince = runningSince
+        self.revision = revision
+    }
+
+    public var isRunning: Bool {
+        state == .running && runningSince != nil
+    }
+
+    public func elapsedSeconds(receivedAt: Date, now: Date) -> Int {
+        guard isRunning, let runningSince else { return accumulatedSeconds }
+        let openInterval = max(0, Int((serverNow - runningSince) / 1_000))
+        let localContinuation = max(0, Int(now.timeIntervalSince(receivedAt)))
+        return accumulatedSeconds + openInterval + localContinuation
+    }
+}
+
+public enum LearningVoiceTimerAction: String, Codable, Equatable, Sendable {
+    case pause
+    case resume
+}
+
+public struct LearningVoiceTimerMutationRequest: Codable, Equatable, Sendable {
+    public let protocolVersion: Int
+    public let operationId: String
+    public let sessionId: String
+    public let expectedRevision: Int
+    public let action: LearningVoiceTimerAction
+
+    public init(
+        protocolVersion: Int = 2,
+        operationId: String,
+        sessionId: String,
+        expectedRevision: Int,
+        action: LearningVoiceTimerAction
+    ) {
+        self.protocolVersion = protocolVersion
+        self.operationId = operationId
+        self.sessionId = sessionId
+        self.expectedRevision = expectedRevision
+        self.action = action
+    }
+}
+
+public struct LearningVoiceTimerMutationResponse: Codable, Equatable, Sendable {
+    public let protocolVersion: Int
+    public let status: String
+    public let sessionId: String
+    public let action: LearningVoiceTimerAction
+    public let state: LearningVoiceTimerState
+    public let revision: Int
+    public let accumulatedSeconds: Int
+    public let startedAt: Int64?
+    public let completedAt: Int64?
+    public let duplicate: Bool
+    public let learningTimer: LearningVoiceTimer?
+}
+
 public struct VoiceContextResponse: Codable, Equatable, Sendable {
     public let protocolVersion: Int
     public let date: String
     public let captureTarget: VoiceCaptureTarget?
     public let focusedActivity: FocusedVoiceActivity?
     public let focusedLearningSession: FocusedLearningVoiceSession?
+    public let learningTimer: LearningVoiceTimer?
     public let timerInstrument: VoiceTimerInstrument?
     public let specialist: SpecialistRoute?
     public let message: String?
@@ -88,6 +195,7 @@ public struct VoiceContextResponse: Codable, Equatable, Sendable {
         captureTarget: VoiceCaptureTarget? = nil,
         focusedActivity: FocusedVoiceActivity?,
         focusedLearningSession: FocusedLearningVoiceSession? = nil,
+        learningTimer: LearningVoiceTimer? = nil,
         timerInstrument: VoiceTimerInstrument?,
         specialist: SpecialistRoute?,
         message: String?
@@ -97,6 +205,7 @@ public struct VoiceContextResponse: Codable, Equatable, Sendable {
         self.captureTarget = captureTarget
         self.focusedActivity = focusedActivity
         self.focusedLearningSession = focusedLearningSession
+        self.learningTimer = learningTimer
         self.timerInstrument = timerInstrument
         self.specialist = specialist
         self.message = message
