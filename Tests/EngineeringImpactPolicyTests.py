@@ -193,6 +193,10 @@ class EngineeringImpactPolicyTests(unittest.TestCase):
         self.assertIn("does not need to request a separate Journal operation", protocol)
         self.assertIn("Version 1 uses restricted one-line frontmatter, not general YAML", protocol)
         self.assertIn("reuse an exact existing rich record", protocol)
+        self.assertIn("new-engineering-receipt.py --help", protocol)
+        self.assertIn("use a draft pull request to obtain the repository-local number", protocol)
+        self.assertIn("portable static", protocol)
+        self.assertIn("HTML export", protocol)
         self.assertIn("An accepted rich record is never deleted", protocol)
         self.assertIn("reviewed amendment or superseding revision", protocol)
 
