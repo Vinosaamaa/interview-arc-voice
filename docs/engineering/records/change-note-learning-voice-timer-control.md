@@ -9,8 +9,8 @@ repository: interview-arc-voice
 capabilityIds: ["arc-voice","learning-workspace"]
 createdAt: 2026-08-13
 reconstructed: false
-confidence: high
-unknowns: ["Canonical macOS tests and signed packaged-app verification remain release gates."]
+confidence: verified
+unknowns: ["Signed merged-main packaged-app verification remains a release gate."]
 modules: ["voice-context","floating-widget"]
 interfaces: ["voice-learning-timer-control"]
 seams: ["learning-session-to-native-timer"]
@@ -24,13 +24,13 @@ amends: []
 supersedes: []
 learningRefs: []
 sources: [{"label":"Arc Voice issue #197","url":"https://github.com/Vinosaamaa/interview-arc-voice/issues/197","kind":"issue"},{"label":"Arc Voice pull request #198","url":"https://github.com/Vinosaamaa/interview-arc-voice/pull/198","kind":"pull-request"},{"label":"Interview Arc pull request #318","url":"https://github.com/Vinosaamaa/interview-arc/pull/318","kind":"pull-request"}]
-verification: {"state":"not-recorded","evidenceRefs":[]}
+verification: {"state":"verified","evidenceRefs":["Tests/InterviewArcVoiceCoreTests/LearningVoiceContractTests.swift","Tests/InterviewArcVoiceCoreTests/VoiceTimerInstrumentTests.swift","run:31746209628"]}
 visibility: public-safe
 publicationEligibility: eligible
 issue: 197
 pr: 198
 release: null
-run: null
+run: 31746209628
 ---
 # Arc Voice Controls the Authoritative Learning Timer
 
