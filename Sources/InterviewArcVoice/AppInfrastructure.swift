@@ -1290,6 +1290,22 @@ struct FloatingRecorderView: View {
                             .padding(.bottom, FloatingWidgetWindowPolicy.timerGap)
                             .transition(.identity)
                     } else if renderedUpperSurface == .focus,
+                              let learningTimer = model.learningTimer {
+                        FloatingLearningTimerPanel(
+                            model: model,
+                            timer: learningTimer,
+                            contentHeight: upperSurfaceContentHeight
+                        )
+                        .frame(
+                            width: FloatingWidgetUpperSurfaceTransitionPolicy
+                                .visibleWidth(
+                                    for: .focus,
+                                    hostWidth: host.size.width
+                                )
+                        )
+                        .padding(.bottom, FloatingWidgetWindowPolicy.timerGap)
+                        .transition(.identity)
+                    } else if renderedUpperSurface == .focus,
                               let instrument = model.timerInstrument {
                         FloatingTimerInstrumentPanel(
                             model: model,
@@ -1517,6 +1533,7 @@ struct FloatingRecorderView: View {
         let hasTranscript = !model.lastTranscript.isEmpty
         let hasAudio = model.hasLastAudio
         let canPlanToday = model.linkToInterviewArc
+            && model.learningTimer == nil
             && !model.isRecording
             && !model.isBusy
         let actions = FloatingWidgetMemoActionPolicy.actions(
@@ -4142,6 +4159,144 @@ private struct FloatingTodayPlannerPanel: View {
         reduceMotion
             ? .linear(duration: 0.10)
             : .easeInOut(duration: FloatingWidgetMotionPolicy.durationSeconds)
+    }
+}
+
+private struct FloatingLearningTimerPanel: View {
+    @ObservedObject var model: VoiceBridgeModel
+    let timer: LearningVoiceTimer
+    let contentHeight: CGFloat
+
+    private var palette: VoiceWidgetPalette { model.widgetPalette }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Label("Learning Session", systemImage: "book.closed")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(palette.tealDark)
+                Spacer(minLength: 8)
+                Label(
+                    timer.isRunning ? "Running" : "Paused",
+                    systemImage: timer.isRunning
+                        ? "play.circle"
+                        : "pause.circle"
+                )
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(
+                    timer.isRunning ? palette.tealDark : palette.connectedIdle
+                )
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 38)
+            .background(
+                palette.timerSurface.opacity(palette.isDark ? 0.74 : 0.42)
+            )
+
+            Divider().overlay(palette.divider.opacity(0.65))
+
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(timer.scopeType == "quick_study" ? "QUICK STUDY" : "LESSON")
+                            .font(.system(size: 9, weight: .bold))
+                            .tracking(0.8)
+                            .foregroundStyle(palette.tealDark)
+                        Text(timer.lessonTitle)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(palette.ink)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    .frame(width: 190, alignment: .leading)
+
+                    Text(model.compactActivityTime(at: timeline.date) ?? "00:00")
+                        .font(
+                            .system(
+                                size: 13,
+                                weight: .semibold,
+                                design: .monospaced
+                            )
+                        )
+                        .monospacedDigit()
+                        .foregroundStyle(palette.tealDark)
+                        .frame(width: 104, alignment: .trailing)
+                        .accessibilityLabel("Learning elapsed time")
+
+                    Button {
+                        model.performLearningTimerAction(timer)
+                    } label: {
+                        Image(systemName: timer.isRunning ? "pause.fill" : "play.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(
+                        TimerInstrumentButtonStyle(
+                            tint: palette.teal,
+                            palette: palette
+                        )
+                    )
+                    .foregroundStyle(
+                        model.timerMutationInFlight
+                            ? palette.secondaryInk.opacity(0.45)
+                            : palette.ink
+                    )
+                    .disabled(model.timerMutationInFlight)
+                    .help(timer.isRunning ? "Pause Learning Session" : "Resume Learning Session")
+                    .accessibilityLabel(
+                        timer.isRunning ? "Pause Learning Session" : "Resume Learning Session"
+                    )
+                    .frame(width: 70, alignment: .trailing)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 72)
+            }
+
+            if let message = model.timerMutationMessage {
+                Text(message)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(palette.warning)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(palette.warning.opacity(0.07))
+            }
+        }
+        .background {
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    LinearGradient(
+                        colors: [
+                            palette.glassHighlight.opacity(
+                                palette.isDark ? 0.76 : 0.54
+                            ),
+                            palette.glass.opacity(palette.isDark ? 0.94 : 0.70),
+                            palette.timerSurface.opacity(
+                                palette.isDark ? 0.72 : 0.30
+                            ),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .clipShape(
+                        RoundedRectangle(cornerRadius: 17, style: .continuous)
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                        .stroke(
+                            palette.coolBorder.opacity(0.90),
+                            lineWidth: 0.9
+                        )
+                )
+                .shadow(color: palette.coolShadow, radius: 8, y: 3)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .frame(height: contentHeight, alignment: .bottom)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Learning Session timer")
     }
 }
 

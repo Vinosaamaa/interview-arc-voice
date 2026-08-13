@@ -118,6 +118,46 @@ public actor InterviewArcAPIClient {
         )
     }
 
+    public func controlLearningTimer(
+        _ request: LearningVoiceTimerMutationRequest
+    ) async throws -> LearningVoiceTimerMutationResponse {
+        guard request.protocolVersion == Self.protocolVersion,
+              !request.operationId.isEmpty,
+              !request.sessionId.isEmpty,
+              request.expectedRevision >= 0 else {
+            throw InterviewArcAPIError(
+                statusCode: 0,
+                message: "The local Learning timer request is inconsistent.",
+                code: "local_learning_timer_identity_mismatch",
+                retryable: false
+            )
+        }
+        let response: LearningVoiceTimerMutationResponse = try await send(
+            path: "voice/learning-timers",
+            method: "POST",
+            body: encoder.encode(request)
+        )
+        let expectedState: LearningVoiceTimerState = request.action == .pause
+            ? .paused
+            : .running
+        guard response.protocolVersion == Self.protocolVersion,
+              response.status == "session_controlled",
+              response.sessionId == request.sessionId,
+              response.action == request.action,
+              response.state == expectedState,
+              response.revision == request.expectedRevision + 1,
+              response.learningTimer?.sessionId == nil
+                || response.learningTimer?.sessionId == request.sessionId else {
+            throw InterviewArcAPIError(
+                statusCode: 0,
+                message: "The Learning timer acknowledgement did not match the stable local request.",
+                code: "learning_timer_receipt_mismatch",
+                retryable: false
+            )
+        }
+        return response
+    }
+
     public func planning(
         specialty: VoicePlanningSpecialty,
         query: VoicePlanningQuery = VoicePlanningQuery(),

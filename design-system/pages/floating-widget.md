@@ -170,6 +170,26 @@ least 58 points for the activity title.
 - Timer digits advance locally from the latest server timestamp. D1 receives
   state transitions, not one write per displayed second.
 
+### Learning Session timer
+
+- A running or uniquely resumable paused Learning Session is a first-class
+  timer source. It never masquerades as an Interview activity or session.
+- Standard compact mode shows the Lesson title and one authoritative elapsed
+  count-up clock. Its disclosure opens the existing upper frosted surface with
+  one Learning Session row and one Pause or Resume control.
+- The Learning surface has no Finish control, result drawer, activity picker,
+  or Plan Today tab. Finish remains Learning Specialist-owned because it also
+  commits recap and checkpoint evidence.
+- Mini renders the Learning clock as the existing 108-point single-timer
+  capsule. It never offers the dual Interview session/activity disclosure.
+- A paused Learning timer remains visible at its frozen value and uses the
+  connected-idle link treatment. Linked Learning capture is available only
+  while the authoritative Session is running; recording from a paused Session
+  follows the existing general-dictation fallback.
+- Pause and Resume keep one stable operation identity and expected revision
+  across an exact retry. Revision conflict, missing ownership, and ambiguous
+  paused state fail closed and refresh the authoritative context.
+
 ## Today planner
 
 - Plan Today reuses the expanded instrument's one frosted upper surface. When
