@@ -4080,7 +4080,7 @@ private struct FloatingTodayPlannerPanel: View {
         let blockedByLearning = model.planningTimerIsBlockedByLearning(
             status: status
         )
-        plannerIconButton(
+        return plannerIconButton(
             blockedByLearning
                 ? "lock.fill"
                 : status == .running ? "pause.fill" : "play.fill",
