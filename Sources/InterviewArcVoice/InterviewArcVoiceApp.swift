@@ -1414,7 +1414,9 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func togglePlanningActivityTimer(id: String, status: VoicePlanningCurrentStatus) {
-        guard !timerMutationInFlight, status != .completed else { return }
+        guard canTogglePlanningActivityTimer(id: id, status: status) else {
+            return
+        }
         let action = status == .running ? "pause" : "start"
         Task {
             let succeeded = await runTimerMutation {
