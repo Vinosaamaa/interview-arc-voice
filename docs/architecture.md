@@ -568,12 +568,14 @@ it commits recap and checkpoint evidence in addition to closing the timer.
 
 A running Learning timer is also a timer-domain exclusion boundary for Plan
 Today. Voice may still browse and mutate the Today plan, but it disables
-Interview Start and Resume until the owner explicitly pauses Learning and the
-authoritative refresh confirms the paused revision. Existing Interview Pause
-remains available if conflicting legacy state must be unwound. Voice never
-chains a Learning Pause and Interview Start into one locally assumed
-transaction, so a partial network failure cannot silently leave the wrong
-timer running.
+Interview Start and Resume until the owner explicitly pauses Learning. The
+`POST /voice/learning-timers` acknowledgement must match the requested Session
+and Pause action, report `paused`, and advance the expected revision by exactly
+one; the refreshed owner context must continue to report that Session as
+paused. Existing Interview Pause remains available if conflicting legacy state
+must be unwound. One user action issues either a Learning Pause mutation or an
+Interview Start/Resume mutation, never both, so a partial network failure
+cannot silently leave the wrong timer running.
 
 ## Provider credential rejection
 

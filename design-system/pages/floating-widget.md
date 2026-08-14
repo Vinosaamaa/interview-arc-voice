@@ -202,9 +202,13 @@ least 58 points for the activity title.
   and planning mutations do not alter that timer.
 - While Learning is running, Interview activity Start and Resume controls are
   visibly locked. The status band explains the boundary and exposes the
-  explicit Pause control; only an authoritative paused refresh re-enables
-  Interview timers. Voice never performs a fragile cross-domain chained
-  mutation or allows both timer domains to run simultaneously.
+  explicit Pause control. Voice re-enables Interview timers only after the
+  `POST /voice/learning-timers` Pause acknowledgement matches the requested
+  Session and action, reports `paused`, and advances the expected revision by
+  exactly one; the refreshed owner context must continue to report that
+  Session as paused. Voice issues either the Learning Pause mutation or the
+  Interview Start/Resume mutation from one user action, never both, and never
+  permits both timer domains to run simultaneously.
 - Standard idle may expose one quiet calendar-plus entry after existing
   previous-capture actions only when the title remains readable. Standard with
   timers keeps the compact capsule free of a Plan icon. Mini has no visible

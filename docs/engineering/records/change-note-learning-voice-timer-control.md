@@ -48,7 +48,7 @@ The first native release treated the separate Learning timer as a Plan Today exc
 
 Learning Focus now uses the same outer Focus and Plan Today presentation contract as Interview timers. Plan Today keeps a compact Learning band visible with Lesson identity, elapsed time, state, and the exact Pause or Resume control. Browsing, selection, and planning mutations remain independent from the Learning timer and survive context refresh, Mini entry, and recording hide and restore.
 
-The native planner locks Interview Start and Resume while Learning is running. The owner explicitly pauses Learning, and only the resulting authoritative paused revision re-enables Interview timers. Voice deliberately does not chain a Learning Pause and Interview Start into one locally assumed transaction; a partial transport failure therefore cannot silently select the wrong timer domain. An already-running Interview activity retains Pause as a recovery path if legacy conflicting state must be unwound.
+The native planner locks Interview Start and Resume while Learning is running. The owner explicitly pauses Learning; the `POST /voice/learning-timers` acknowledgement must match the requested Session and Pause action, report `paused`, and advance the expected revision by exactly one, and the refreshed owner context must continue to report that Session as paused before Interview timers are re-enabled. One user action issues either a Learning Pause mutation or an Interview Start/Resume mutation, never both; a partial transport failure therefore cannot silently select the wrong timer domain. An already-running Interview activity retains Pause as a recovery path if legacy conflicting state must be unwound.
 
 ## Ownership boundary
 
