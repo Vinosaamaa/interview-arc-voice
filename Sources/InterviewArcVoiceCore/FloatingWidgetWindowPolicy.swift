@@ -76,7 +76,7 @@ public enum FloatingWidgetWindowPolicy {
     public static let hostHeight: CGFloat = 56
     public static let timerGap: CGFloat = 10
     public static let expandedHostHeight: CGFloat = 340
-    public static let learningExpandedHostHeight: CGFloat = 212
+    public static let learningExpandedHostHeight: CGFloat = 244
     public static let expandedDrawerHostHeight: CGFloat = 418
     public static let plannerHostHeight: CGFloat = 648
     public static let hostVerticalInset: CGFloat = 8

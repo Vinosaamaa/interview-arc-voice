@@ -730,8 +730,17 @@ final class VoiceBridgeModel: ObservableObject {
             subjectID: id,
             status: status,
             runningSubjectID: runningID,
+            learningTimerIsRunning: learningTimer?.isRunning == true,
             mutationInFlight: timerMutationInFlight
         )
+    }
+
+    func planningTimerIsBlockedByLearning(
+        status: VoicePlanningCurrentStatus
+    ) -> Bool {
+        learningTimer?.isRunning == true
+            && status != .running
+            && status != .completed
     }
 
     func compactActivityTime(at now: Date) -> String? {
@@ -990,10 +999,12 @@ final class VoiceBridgeModel: ObservableObject {
     }
 
     func togglePlanner() {
-        guard linkToInterviewArc,
-              learningTimer == nil,
-              !isRecording,
-              !isStartingRecording else { return }
+        guard VoicePlannerEntryPolicy.canPresentPlanner(
+            linkEnabled: linkToInterviewArc,
+            hasLearningTimer: learningTimer != nil,
+            isRecording: isRecording,
+            isStartingRecording: isStartingRecording
+        ) else { return }
         if plannerPresented {
             timerPanelExpanded = timerPanelExpandedBeforePlanner ?? false
             plannerPresented = false
@@ -3390,10 +3401,6 @@ final class VoiceBridgeModel: ObservableObject {
             timerInstrument = loaded.timerInstrument
             learningTimer = loaded.learningTimer
             timerInstrumentReceivedAt = Date()
-            if learningTimer != nil, plannerPresented {
-                plannerPresented = false
-                timerPanelExpandedBeforePlanner = nil
-            }
             if !hasTimerInstrument {
                 timerPanelExpanded = false
                 cancelFinishDrawer()

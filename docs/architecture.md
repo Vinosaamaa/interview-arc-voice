@@ -337,6 +337,11 @@ surfaces; opening Plan Today activates the accessory app for TextField input,
 and closing it restores the previously foreground application.
 Focus and Plan Today are exclusive presentations of one top surface. Recording
 hides and restores the exact disclosure without delaying microphone startup.
+Learning uses that same presentation state: its timer does not suppress the
+planner or cause a context refresh to dismiss it. While planning, Voice renders
+one read-only Learning identity and clock from the current context plus the
+existing exact Pause or Resume command. Planning mutations remain independent
+of Learning timer mutations.
 
 Background-audio lowering is one recording-scoped session rather than one
 device write. Voice records the pre-capture route signature before acquiring
@@ -560,6 +565,15 @@ expected revision so an exact retry is idempotent and a changed or stale retry
 fails closed. A paused Session remains visible and resumable, but it is not a
 Learning transcript target. Finish remains Learning Specialist-owned because
 it commits recap and checkpoint evidence in addition to closing the timer.
+
+A running Learning timer is also a timer-domain exclusion boundary for Plan
+Today. Voice may still browse and mutate the Today plan, but it disables
+Interview Start and Resume until the owner explicitly pauses Learning and the
+authoritative refresh confirms the paused revision. Existing Interview Pause
+remains available if conflicting legacy state must be unwound. Voice never
+chains a Learning Pause and Interview Start into one locally assumed
+transaction, so a partial network failure cannot silently leave the wrong
+timer running.
 
 ## Provider credential rejection
 

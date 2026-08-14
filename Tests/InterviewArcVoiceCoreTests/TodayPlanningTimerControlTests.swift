@@ -33,3 +33,34 @@ import Testing
         mutationInFlight: true
     ))
 }
+
+@Test func runningLearningTimerBlocksInterviewStartUntilLearningIsPaused() {
+    #expect(!VoicePlanningTimerControlPolicy.isEnabled(
+        subjectID: "interview-a",
+        status: .upcoming,
+        runningSubjectID: nil,
+        learningTimerIsRunning: true,
+        mutationInFlight: false
+    ))
+    #expect(!VoicePlanningTimerControlPolicy.isEnabled(
+        subjectID: "interview-a",
+        status: .paused,
+        runningSubjectID: nil,
+        learningTimerIsRunning: true,
+        mutationInFlight: false
+    ))
+    #expect(VoicePlanningTimerControlPolicy.isEnabled(
+        subjectID: "interview-a",
+        status: .upcoming,
+        runningSubjectID: nil,
+        learningTimerIsRunning: false,
+        mutationInFlight: false
+    ))
+    #expect(VoicePlanningTimerControlPolicy.isEnabled(
+        subjectID: "interview-a",
+        status: .running,
+        runningSubjectID: "interview-a",
+        learningTimerIsRunning: true,
+        mutationInFlight: false
+    ))
+}
