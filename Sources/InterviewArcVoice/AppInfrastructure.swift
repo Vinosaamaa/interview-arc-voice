@@ -1532,8 +1532,12 @@ struct FloatingRecorderView: View {
     ) -> some View {
         let hasTranscript = !model.lastTranscript.isEmpty
         let hasAudio = model.hasLastAudio
-        let canPlanToday = model.linkToInterviewArc
-            && model.learningTimer == nil
+        let canPlanToday = VoicePlannerEntryPolicy.canPresentPlanner(
+            linkEnabled: model.linkToInterviewArc,
+            hasLearningTimer: model.learningTimer != nil,
+            isRecording: model.isRecording,
+            isStartingRecording: model.isStartingRecording
+        )
             && !model.isRecording
             && !model.isBusy
         let actions = FloatingWidgetMemoActionPolicy.actions(
@@ -2267,6 +2271,13 @@ private struct FloatingTodayPlannerPanel: View {
         VStack(spacing: 0) {
             header
             Divider().overlay(palette.divider.opacity(0.65))
+            if let learningTimer = model.learningTimer {
+                FloatingLearningPlannerStatusBand(
+                    model: model,
+                    timer: learningTimer
+                )
+                Divider().overlay(palette.divider.opacity(0.65))
+            }
             surfaceTabs
 
             Group {
@@ -4066,9 +4077,16 @@ private struct FloatingTodayPlannerPanel: View {
         title: String,
         status: VoicePlanningCurrentStatus
     ) -> some View {
-        plannerIconButton(
-            status == .running ? "pause.fill" : "play.fill",
-            label: status == .running ? "Pause \(title)" : "Start \(title)",
+        let blockedByLearning = model.planningTimerIsBlockedByLearning(
+            status: status
+        )
+        return plannerIconButton(
+            blockedByLearning
+                ? "lock.fill"
+                : status == .running ? "pause.fill" : "play.fill",
+            label: blockedByLearning
+                ? "Pause Learning Session before starting \(title)"
+                : status == .running ? "Pause \(title)" : "Start \(title)",
             enabled: model.canTogglePlanningActivityTimer(
                 id: id,
                 status: status
@@ -4162,6 +4180,130 @@ private struct FloatingTodayPlannerPanel: View {
     }
 }
 
+private struct FloatingUpperSurfaceTabButton: View {
+    let title: String
+    let symbol: String
+    let selected: Bool
+    let palette: VoiceWidgetPalette
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .frame(maxWidth: .infinity)
+                .frame(height: 28)
+                .foregroundStyle(
+                    selected ? palette.tealDark : palette.secondaryInk
+                )
+                .contentShape(Rectangle())
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(selected ? palette.tealDark : Color.clear)
+                        .frame(height: 2)
+                        .padding(.horizontal, 8)
+                }
+        }
+        .buttonStyle(PlannerPressButtonStyle())
+        .voiceHoverFeedback(cornerRadius: 9, tint: palette.teal)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+private struct FloatingLearningPlannerStatusBand: View {
+    @ObservedObject var model: VoiceBridgeModel
+    let timer: LearningVoiceTimer
+
+    private var palette: VoiceWidgetPalette { model.widgetPalette }
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+            HStack(spacing: 10) {
+                Image(systemName: "book.closed")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.tealDark)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(palette.teal.opacity(palette.isDark ? 0.20 : 0.09))
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(timer.lessonTitle)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(palette.ink)
+                        .lineLimit(1)
+                    Text(statusMessage)
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundStyle(
+                            model.timerMutationMessage == nil
+                                ? palette.secondaryInk
+                                : palette.warning
+                        )
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(model.compactActivityTime(at: timeline.date) ?? "00:00")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(palette.tealDark)
+                    .frame(width: 66, alignment: .trailing)
+                    .accessibilityLabel("Learning elapsed time")
+
+                Button {
+                    model.performLearningTimerAction(timer)
+                } label: {
+                    Label(
+                        timer.isRunning ? "Pause" : "Resume",
+                        systemImage: timer.isRunning ? "pause.fill" : "play.fill"
+                    )
+                    .font(.system(size: 9, weight: .bold))
+                    .frame(width: 74, height: 28)
+                }
+                .buttonStyle(
+                    TimerInstrumentButtonStyle(
+                        tint: palette.teal,
+                        palette: palette,
+                        selected: timer.isRunning
+                    )
+                )
+                .foregroundStyle(
+                    model.timerMutationInFlight
+                        ? palette.secondaryInk.opacity(0.45)
+                        : palette.ink
+                )
+                .disabled(model.timerMutationInFlight)
+                .help(
+                    timer.isRunning
+                        ? "Pause Learning Session before starting interview work"
+                        : "Resume Learning Session"
+                )
+                .accessibilityLabel(
+                    timer.isRunning
+                        ? "Pause Learning Session"
+                        : "Resume Learning Session"
+                )
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 52)
+            .background(
+                palette.timerSurface.opacity(palette.isDark ? 0.68 : 0.40)
+            )
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Learning Session while planning")
+    }
+
+    private var statusMessage: String {
+        if let message = model.timerMutationMessage { return message }
+        return timer.isRunning
+            ? "Running · pause before starting interview work"
+            : "Paused · interview timers are available"
+    }
+}
+
 private struct FloatingLearningTimerPanel: View {
     @ObservedObject var model: VoiceBridgeModel
     let timer: LearningVoiceTimer
@@ -4171,6 +4313,24 @@ private struct FloatingLearningTimerPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                FloatingUpperSurfaceTabButton(
+                    title: "Focus",
+                    symbol: "timer",
+                    selected: true,
+                    palette: palette
+                ) {}
+                FloatingUpperSurfaceTabButton(
+                    title: "Plan today",
+                    symbol: "calendar.badge.plus",
+                    selected: false,
+                    palette: palette,
+                    action: model.showPlanner
+                )
+            }
+
+            Divider().overlay(palette.divider.opacity(0.65))
+
             HStack(spacing: 8) {
                 Label("Learning Session", systemImage: "book.closed")
                     .font(.system(size: 10, weight: .bold))
@@ -4480,24 +4640,13 @@ private struct FloatingTimerInstrumentPanel: View {
         selected: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: symbol)
-                .font(.system(size: 10, weight: .bold))
-                .frame(maxWidth: .infinity)
-                .frame(height: 28)
-                .foregroundStyle(selected ? palette.tealDark : palette.secondaryInk)
-                .contentShape(Rectangle())
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(selected ? palette.tealDark : Color.clear)
-                        .frame(height: 2)
-                        .padding(.horizontal, 8)
-                }
-        }
-        .buttonStyle(PlannerPressButtonStyle())
-        .voiceHoverFeedback(cornerRadius: 9, tint: palette.teal)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        FloatingUpperSurfaceTabButton(
+            title: title,
+            symbol: symbol,
+            selected: selected,
+            palette: palette,
+            action: action
+        )
     }
 
     private var drawerAnimation: Animation {

@@ -142,6 +142,19 @@ public enum VoiceUpperSurfacePolicy {
 }
 
 public enum VoicePlannerEntryPolicy {
+    public static func canPresentPlanner(
+        linkEnabled: Bool,
+        hasLearningTimer: Bool,
+        isRecording: Bool,
+        isStartingRecording: Bool
+    ) -> Bool {
+        // Learning is a timer source, not a planner exclusion. Keep the input
+        // explicit so future timer integrations cannot silently restore the
+        // released learning-only guard.
+        _ = hasLearningTimer
+        return linkEnabled && !isRecording && !isStartingRecording
+    }
+
     public static func showsStandardEntry(
         linkEnabled: Bool,
         hasTimerInstrument: Bool,
@@ -458,9 +471,11 @@ public enum VoicePlanningTimerControlPolicy {
         subjectID: String,
         status: VoicePlanningCurrentStatus,
         runningSubjectID: String?,
+        learningTimerIsRunning: Bool = false,
         mutationInFlight: Bool
     ) -> Bool {
         guard status != .completed, !mutationInFlight else { return false }
+        if learningTimerIsRunning, status != .running { return false }
         return runningSubjectID == nil || runningSubjectID == subjectID
     }
 }

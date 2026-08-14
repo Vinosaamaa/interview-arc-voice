@@ -254,3 +254,39 @@ func standardPlannerEntryDoesNotDisappearWhenPreviousMemoActionsExist() {
         )
     )
 }
+
+@Test
+func learningTimerDoesNotBlockPlanTodayPresentation() {
+    #expect(
+        VoicePlannerEntryPolicy.canPresentPlanner(
+            linkEnabled: true,
+            hasLearningTimer: true,
+            isRecording: false,
+            isStartingRecording: false
+        )
+    )
+    #expect(
+        !VoicePlannerEntryPolicy.canPresentPlanner(
+            linkEnabled: true,
+            hasLearningTimer: true,
+            isRecording: true,
+            isStartingRecording: false
+        )
+    )
+    #expect(
+        !VoicePlannerEntryPolicy.canPresentPlanner(
+            linkEnabled: true,
+            hasLearningTimer: true,
+            isRecording: false,
+            isStartingRecording: true
+        )
+    )
+    #expect(
+        !VoicePlannerEntryPolicy.canPresentPlanner(
+            linkEnabled: false,
+            hasLearningTimer: true,
+            isRecording: false,
+            isStartingRecording: false
+        )
+    )
+}

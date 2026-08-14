@@ -177,8 +177,9 @@ least 58 points for the activity title.
 - Standard compact mode shows the Lesson title and one authoritative elapsed
   count-up clock. Its disclosure opens the existing upper frosted surface with
   one Learning Session row and one Pause or Resume control.
-- The Learning surface has no Finish control, result drawer, activity picker,
-  or Plan Today tab. Finish remains Learning Specialist-owned because it also
+- The Learning Focus surface uses the same outer `Focus` / `Plan today`
+  switcher as Interview timers. It has no Finish control, result drawer, or
+  activity picker. Finish remains Learning Specialist-owned because it also
   commits recap and checkpoint evidence.
 - Mini renders the Learning clock as the existing 108-point single-timer
   capsule. It never offers the dual Interview session/activity disclosure.
@@ -195,6 +196,19 @@ least 58 points for the activity title.
 - Plan Today reuses the expanded instrument's one frosted upper surface. When
   timers exist, `Focus` and `Plan today` are mutually exclusive tabs in that
   surface; they never stack and switching never mutates either timer.
+- A running or paused Learning Session does not disable or dismiss Plan Today.
+  The planner keeps one compact Learning status band visible with Lesson
+  identity, authoritative elapsed time, state, and Pause or Resume. Browsing
+  and planning mutations do not alter that timer.
+- While Learning is running, Interview activity Start and Resume controls are
+  visibly locked. The status band explains the boundary and exposes the
+  explicit Pause control. Voice re-enables Interview timers only after the
+  `POST /voice/learning-timers` Pause acknowledgement matches the requested
+  Session and action, reports `paused`, and advances the expected revision by
+  exactly one; the refreshed owner context must continue to report that
+  Session as paused. Voice issues either the Learning Pause mutation or the
+  Interview Start/Resume mutation from one user action, never both, and never
+  permits both timer domains to run simultaneously.
 - Standard idle may expose one quiet calendar-plus entry after existing
   previous-capture actions only when the title remains readable. Standard with
   timers keeps the compact capsule free of a Plan icon. Mini has no visible
