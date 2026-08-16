@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   actions: read
+  issues: read
 
 jobs:
   test-and-package:
@@ -24,6 +25,8 @@ jobs:
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
       - name: Validate Engineering impact classification
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python3 scripts/validate-engineering-impact.py "$GITHUB_EVENT_PATH"
       - name: Validate and package
         uses: ./.github/actions/package-voice
