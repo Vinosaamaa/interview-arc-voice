@@ -23,12 +23,12 @@ capabilities: ["bounded-historical-publication","residual-link-authorization"]
 amends: []
 supersedes: []
 learningRefs: []
-sources: [{"label":"Voice historical backfill issue #200","url":"https://github.com/Vinosaamaa/interview-arc-voice/issues/200","kind":"issue"}]
+sources: [{"label":"Voice historical backfill issue #200","url":"https://github.com/Vinosaamaa/interview-arc-voice/issues/200","kind":"issue"},{"label":"Voice pull request #212","url":"https://github.com/Vinosaamaa/interview-arc-voice/pull/212","kind":"pull-request"}]
 verification: {"state":"verified","evidenceRefs":["issue:200","parser:passed"]}
 visibility: public-safe
 publicationEligibility: eligible
 issue: 200
-pr: null
+pr: 212
 release: null
 run: null
 ---
