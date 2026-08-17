@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "repository": "interview-arc-voice",
+  "pullRequest": 216,
+  "privacyAuthorizationUrl": "https://github.com/Vinosaamaa/interview-arc-voice/issues/200#issuecomment-5310181719",
+  "receiptPaths": [
+    "docs/engineering/changes/pr-183.md",
+    "docs/engineering/changes/pr-191.md"
+  ],
+  "recordRefs": [
+    "postmortem-recovered-transcript-checksum-mismatch@1",
+    "capability-dossier-voice-capture-reliability@1"
+  ],
+  "addedRecordRefs": [
+    "postmortem-recovered-transcript-checksum-mismatch@1"
+  ]
+}
