@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "repository": "interview-arc-voice",
+  "pullRequest": 218,
+  "privacyAuthorizationUrl": "https://github.com/Vinosaamaa/interview-arc-voice/issues/200#issuecomment-5310181719",
+  "receiptPaths": [
+    "docs/engineering/changes/pr-21.md",
+    "docs/engineering/changes/pr-22.md",
+    "docs/engineering/changes/pr-23.md",
+    "docs/engineering/changes/pr-25.md",
+    "docs/engineering/changes/pr-26.md",
+    "docs/engineering/changes/pr-28.md",
+    "docs/engineering/changes/pr-29.md",
+    "docs/engineering/changes/pr-30.md",
+    "docs/engineering/changes/pr-36.md",
+    "docs/engineering/changes/pr-42.md",
+    "docs/engineering/changes/pr-44.md",
+    "docs/engineering/changes/pr-45.md",
+    "docs/engineering/changes/pr-46.md",
+    "docs/engineering/changes/pr-48.md",
+    "docs/engineering/changes/pr-49.md",
+    "docs/engineering/changes/pr-50.md",
+    "docs/engineering/changes/pr-51.md"
+  ],
+  "recordRefs": [
+    "feature-retrospective-voice-floating-timer-instrument@1",
+    "postmortem-keychain-readiness-regression@1"
+  ],
+  "addedRecordRefs": []
+}
