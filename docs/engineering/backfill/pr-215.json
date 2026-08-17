@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "repository": "interview-arc-voice",
+  "pullRequest": 215,
+  "privacyAuthorizationUrl": "https://github.com/Vinosaamaa/interview-arc-voice/issues/200#issuecomment-5310181719",
+  "receiptPaths": [
+    "docs/engineering/changes/pr-108.md",
+    "docs/engineering/changes/pr-111.md",
+    "docs/engineering/changes/pr-132.md",
+    "docs/engineering/changes/pr-136.md",
+    "docs/engineering/changes/pr-153.md",
+    "docs/engineering/changes/pr-156.md",
+    "docs/engineering/changes/pr-168.md",
+    "docs/engineering/changes/pr-171.md"
+  ],
+  "recordRefs": [
+    "feature-retrospective-voice-issue-106@1",
+    "postmortem-successful-transcript-audio-evidence-loss@1",
+    "feature-retrospective-voice-issue-129@1",
+    "postmortem-partial-transcript-delivery@1",
+    "change-note-voice-issue-150@1",
+    "postmortem-codex-cli-envelope-routing@1",
+    "postmortem-artifact-executable-mode-loss@1",
+    "postmortem-native-voice-delivery-recovery@1"
+  ],
+  "addedRecordRefs": [
+    "feature-retrospective-voice-issue-106@1",
+    "postmortem-successful-transcript-audio-evidence-loss@1",
+    "feature-retrospective-voice-issue-129@1",
+    "postmortem-partial-transcript-delivery@1",
+    "change-note-voice-issue-150@1",
+    "postmortem-codex-cli-envelope-routing@1",
+    "postmortem-artifact-executable-mode-loss@1",
+    "postmortem-native-voice-delivery-recovery@1"
+  ]
+}
