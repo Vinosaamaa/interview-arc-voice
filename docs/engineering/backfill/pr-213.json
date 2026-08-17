@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "repository": "interview-arc-voice",
+  "pullRequest": 213,
+  "privacyAuthorizationUrl": "https://github.com/Vinosaamaa/interview-arc-voice/issues/200#issuecomment-5310181719",
+  "receiptPaths": [
+    "docs/engineering/changes/pr-1.md",
+    "docs/engineering/changes/pr-8.md",
+    "docs/engineering/changes/pr-9.md",
+    "docs/engineering/changes/pr-10.md",
+    "docs/engineering/changes/pr-11.md",
+    "docs/engineering/changes/pr-24.md",
+    "docs/engineering/changes/pr-27.md",
+    "docs/engineering/changes/pr-40.md"
+  ],
+  "recordRefs": [
+    "change-note-voice-pr-1@1",
+    "postmortem-universal-dictation-insertion@1",
+    "postmortem-long-dictation-transcript-integrity@1",
+    "postmortem-linked-dictation-integrity-and-latency@1",
+    "postmortem-header-only-recording-regression@1",
+    "postmortem-keychain-readiness-regression@1",
+    "feature-retrospective-voice-floating-timer-instrument@1",
+    "postmortem-false-transcription-from-non-speech@1"
+  ],
+  "addedRecordRefs": [
+    "change-note-voice-pr-1@1",
+    "postmortem-universal-dictation-insertion@1",
+    "postmortem-long-dictation-transcript-integrity@1",
+    "postmortem-linked-dictation-integrity-and-latency@1",
+    "postmortem-header-only-recording-regression@1",
+    "postmortem-keychain-readiness-regression@1",
+    "feature-retrospective-voice-floating-timer-instrument@1",
+    "postmortem-false-transcription-from-non-speech@1"
+  ]
+}
