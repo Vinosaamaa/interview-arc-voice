@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "repository": "interview-arc-voice",
+  "pullRequest": 219,
+  "privacyAuthorizationUrl": "https://github.com/Vinosaamaa/interview-arc-voice/issues/200#issuecomment-5310181719",
+  "receiptPaths": [
+    "docs/engineering/changes/pr-55.md",
+    "docs/engineering/changes/pr-57.md",
+    "docs/engineering/changes/pr-62.md",
+    "docs/engineering/changes/pr-65.md",
+    "docs/engineering/changes/pr-66.md",
+    "docs/engineering/changes/pr-67.md",
+    "docs/engineering/changes/pr-71.md",
+    "docs/engineering/changes/pr-74.md",
+    "docs/engineering/changes/pr-77.md",
+    "docs/engineering/changes/pr-79.md",
+    "docs/engineering/changes/pr-80.md",
+    "docs/engineering/changes/pr-82.md",
+    "docs/engineering/changes/pr-83.md",
+    "docs/engineering/changes/pr-84.md"
+  ],
+  "recordRefs": [
+    "feature-retrospective-voice-floating-timer-instrument@1",
+    "postmortem-bluetooth-profile-volume-restoration@1",
+    "postmortem-intermittent-silent-input-stream@1",
+    "postmortem-keychain-readiness-regression@1",
+    "postmortem-live-sync-polling-and-capture-retry-storm@1",
+    "change-note-voice-career-focus-timers@1",
+    "postmortem-false-transcription-from-non-speech@1"
+  ],
+  "addedRecordRefs": []
+}
