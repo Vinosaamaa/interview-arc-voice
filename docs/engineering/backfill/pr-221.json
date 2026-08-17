@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "repository": "interview-arc-voice",
+  "pullRequest": 221,
+  "privacyAuthorizationUrl": "https://github.com/Vinosaamaa/interview-arc-voice/issues/200#issuecomment-5310181719",
+  "receiptPaths": [
+    "docs/engineering/changes/pr-113.md",
+    "docs/engineering/changes/pr-114.md",
+    "docs/engineering/changes/pr-115.md",
+    "docs/engineering/changes/pr-116.md",
+    "docs/engineering/changes/pr-117.md",
+    "docs/engineering/changes/pr-118.md",
+    "docs/engineering/changes/pr-119.md",
+    "docs/engineering/changes/pr-120.md",
+    "docs/engineering/changes/pr-121.md",
+    "docs/engineering/changes/pr-122.md",
+    "docs/engineering/changes/pr-124.md",
+    "docs/engineering/changes/pr-125.md",
+    "docs/engineering/changes/pr-126.md",
+    "docs/engineering/changes/pr-127.md",
+    "docs/engineering/changes/pr-128.md",
+    "docs/engineering/changes/pr-131.md",
+    "docs/engineering/changes/pr-133.md",
+    "docs/engineering/changes/pr-135.md"
+  ],
+  "recordRefs": [
+    "feature-retrospective-voice-issue-106@1",
+    "change-note-voice-mini-widget@1",
+    "postmortem-false-transcription-from-non-speech@1",
+    "postmortem-keychain-readiness-regression@1",
+    "postmortem-invalid-groq-credential-retry-loop@1"
+  ],
+  "addedRecordRefs": []
+}
