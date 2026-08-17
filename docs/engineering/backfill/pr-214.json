@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "repository": "interview-arc-voice",
+  "pullRequest": 214,
+  "privacyAuthorizationUrl": "https://github.com/Vinosaamaa/interview-arc-voice/issues/200#issuecomment-5310181719",
+  "receiptPaths": [
+    "docs/engineering/changes/pr-53.md",
+    "docs/engineering/changes/pr-56.md",
+    "docs/engineering/changes/pr-61.md",
+    "docs/engineering/changes/pr-70.md",
+    "docs/engineering/changes/pr-73.md",
+    "docs/engineering/changes/pr-76.md",
+    "docs/engineering/changes/pr-89.md",
+    "docs/engineering/changes/pr-98.md"
+  ],
+  "recordRefs": [
+    "postmortem-recovery-popover-geometry-regression@1",
+    "postmortem-bluetooth-profile-volume-restoration@1",
+    "postmortem-intermittent-silent-input-stream@1",
+    "postmortem-live-sync-polling-and-capture-retry-storm@1",
+    "postmortem-missed-voice-decision-invalidation@1",
+    "change-note-voice-career-focus-timers@1",
+    "postmortem-invalid-groq-credential-retry-loop@1",
+    "change-note-voice-mini-widget@1"
+  ],
+  "addedRecordRefs": [
+    "postmortem-recovery-popover-geometry-regression@1",
+    "postmortem-bluetooth-profile-volume-restoration@1",
+    "postmortem-intermittent-silent-input-stream@1",
+    "postmortem-live-sync-polling-and-capture-retry-storm@1",
+    "postmortem-missed-voice-decision-invalidation@1",
+    "change-note-voice-career-focus-timers@1",
+    "postmortem-invalid-groq-credential-retry-loop@1",
+    "change-note-voice-mini-widget@1"
+  ]
+}
