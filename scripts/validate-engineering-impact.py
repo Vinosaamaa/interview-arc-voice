@@ -30,7 +30,19 @@ TRUSTED_GITHUB_REMOTE = re.compile(
 )
 MERGED_AT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 RECORD_PATH = re.compile(r"^docs/engineering/records/[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
+RECEIPT_PATH = re.compile(r"^docs/engineering/changes/pr-[1-9]\d*\.md$")
+REPOSITORY_FULL_NAME = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+HISTORICAL_AUTHORIZATION_URL = re.compile(
+    r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(issues|pull)/[1-9]\d*#issuecomment-[1-9]\d*$"
+)
 SOURCE_KINDS = {"issue", "pull-request", "commit", "release", "run", "documentation"}
+HISTORICAL_AUTHORIZATION = (
+    "I authorize publication of this bounded historical Engineering backfill batch under the residual-link policy."
+)
+HISTORICAL_SCHEMA = json.loads(
+    (Path(__file__).resolve().parents[1] / "docs" / "contracts" / "engineering-historical-backfill-batch.schema.json")
+    .read_text(encoding="utf-8")
+)
 CONFIDENCE_VALUES = {"verified", "high", "medium", "low", "unknown"}
 MAX_STRING_LIST_ITEMS = 32
 MAX_STRING_ITEM_LENGTH = 512
@@ -230,6 +242,7 @@ def parse_receipt(markdown: str, path: str):
     validate_receipt_body(body, title)
     return {
         "path": path,
+        "repository": fields["repository"],
         "pr": pull_request_number,
         "title": title,
         "classification": classification,
@@ -252,7 +265,12 @@ def parse_record(markdown: str):
         or record_type not in CLASSIFICATION_VALUES - {"none"}
     ):
         raise ValueError("A canonical Engineering record has invalid identity frontmatter.")
-    return {"id": record_id, "type": record_type, "ref": f"{record_id}@{revision}"}
+    return {
+        "id": record_id,
+        "type": record_type,
+        "ref": f"{record_id}@{revision}",
+        "reconstructed": fields.get("reconstructed"),
+    }
 
 
 def run_git(args, *, text=True, input_data=None):
@@ -426,6 +444,168 @@ def validate(
     return classification
 
 
+def equal_string_sets(left, right):
+    return (
+        isinstance(left, list)
+        and isinstance(right, list)
+        and len(left) == len(set(left))
+        and len(right) == len(set(right))
+        and sorted(left) == sorted(right)
+    )
+
+
+def bounded_record_refs(value, property_schema):
+    return (
+        isinstance(value, list)
+        and len(value) <= property_schema["maxItems"]
+        and len(value) == len(set(value))
+        and all(
+            isinstance(reference, str)
+            and len(reference) <= property_schema["items"]["maxLength"]
+            and RECORD_REF.fullmatch(reference)
+            for reference in value
+        )
+    )
+
+
+def parse_historical_batch_manifest(markdown: str):
+    try:
+        manifest = json.loads(markdown)
+    except json.JSONDecodeError as error:
+        raise ValueError("The historical batch manifest must be valid JSON.") from error
+    assert_historical_manifest_shape(manifest)
+    return manifest
+
+
+def assert_historical_manifest_shape(manifest):
+    properties = HISTORICAL_SCHEMA["properties"]
+    if not isinstance(manifest, dict) or set(manifest) != set(HISTORICAL_SCHEMA["required"]):
+        raise ValueError("The historical batch manifest has unsupported or missing fields.")
+    receipt_paths = manifest.get("receiptPaths")
+    if (
+        manifest.get("schemaVersion") != 1
+        or not isinstance(manifest.get("repository"), str)
+        or not re.fullmatch(properties["repository"]["pattern"], manifest["repository"])
+        or type(manifest.get("pullRequest")) is not int
+        or manifest["pullRequest"] < 1
+        or not isinstance(manifest.get("privacyAuthorizationUrl"), str)
+        or len(manifest["privacyAuthorizationUrl"]) > properties["privacyAuthorizationUrl"]["maxLength"]
+        or not HISTORICAL_AUTHORIZATION_URL.fullmatch(manifest["privacyAuthorizationUrl"])
+        or not isinstance(receipt_paths, list)
+        or not properties["receiptPaths"]["minItems"] <= len(receipt_paths) <= properties["receiptPaths"]["maxItems"]
+        or len(receipt_paths) != len(set(receipt_paths))
+        or any(
+            not isinstance(path, str)
+            or len(path) > properties["receiptPaths"]["items"]["maxLength"]
+            or not RECEIPT_PATH.fullmatch(path)
+            for path in receipt_paths
+        )
+        or not bounded_record_refs(manifest.get("recordRefs"), properties["recordRefs"])
+        or not bounded_record_refs(manifest.get("addedRecordRefs"), properties["addedRecordRefs"])
+    ):
+        raise ValueError("The historical batch manifest has invalid bounded fields.")
+
+
+def load_authorization_comment(repository_full_name: str, comment_id: str):
+    result = subprocess.run(
+        ["gh", "api", f"repos/{repository_full_name}/issues/comments/{comment_id}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise ValueError("Unable to verify the historical batch privacy authorization comment.")
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise ValueError("The historical batch privacy authorization response is invalid.") from error
+
+
+def verify_historical_authorization(manifest, repository_full_name: str, load_comment=None):
+    loader = load_comment or load_authorization_comment
+    match = re.search(r"#issuecomment-([1-9]\d*)$", manifest["privacyAuthorizationUrl"])
+    if not match:
+        raise ValueError("The historical batch privacy authorization comment URL is invalid.")
+    comment = loader(repository_full_name, match.group(1))
+    if (
+        comment.get("html_url") != manifest["privacyAuthorizationUrl"]
+        or comment.get("author_association") != "OWNER"
+        or (comment.get("body") or "").strip() != HISTORICAL_AUTHORIZATION
+    ):
+        raise ValueError("The historical batch requires an exact repository-owner privacy authorization comment.")
+
+
+def validate_historical_batch(
+    *,
+    manifest,
+    manifest_path: str,
+    pull_request_number: int,
+    repository: str,
+    repository_full_name: str,
+    changed_files: list[str],
+    historical_receipts: list[dict],
+    changed_records: list[dict],
+    head_records: dict,
+    base_existing_paths: list[str],
+):
+    expected_manifest_path = f"docs/engineering/backfill/pr-{pull_request_number}.json"
+    if (
+        manifest["repository"] != repository
+        or manifest["pullRequest"] != pull_request_number
+        or manifest_path != expected_manifest_path
+        or not REPOSITORY_FULL_NAME.fullmatch(repository_full_name)
+        or not manifest["privacyAuthorizationUrl"].startswith(f"https://github.com/{repository_full_name}/")
+    ):
+        raise ValueError("A historical batch manifest must match the current repository and pull request.")
+    if f"docs/engineering/changes/pr-{pull_request_number}.md" in manifest["receiptPaths"]:
+        raise ValueError("A historical batch manifest must not claim the current pull request's forward receipt.")
+    if not equal_string_sets(manifest["receiptPaths"], [receipt["path"] for receipt in historical_receipts]):
+        raise ValueError("The historical batch manifest must enumerate its reconstructed receipts exactly.")
+    referenced = sorted({ref for receipt in historical_receipts for ref in receipt["richRecordRefs"]})
+    if not equal_string_sets(manifest["recordRefs"], referenced):
+        raise ValueError("The historical batch manifest must enumerate exactly the rich records referenced by reconstructed receipts.")
+    added_refs = [record["ref"] for record in changed_records]
+    if not equal_string_sets(manifest["addedRecordRefs"], added_refs):
+        raise ValueError("The historical batch manifest must enumerate the changed reconstructed receipts and rich records exactly.")
+    if any(record.get("reconstructed") is not True for record in changed_records):
+        raise ValueError("Historical rich records must set reconstructed true.")
+    if any(record["ref"] not in referenced for record in changed_records):
+        raise ValueError("Every rich record added by a historical batch must exist at head and be linked by a reconstructed receipt.")
+    for receipt in historical_receipts:
+        path_match = RECEIPT_PATH.fullmatch(receipt["path"])
+        if (
+            not path_match
+            or receipt["pr"] != int(receipt["path"].rsplit("-", 1)[1].removesuffix(".md"))
+            or receipt["pr"] == pull_request_number
+            or receipt.get("repository") != repository
+            or receipt.get("reconstructed") is not True
+        ):
+            raise ValueError("Every historical receipt must be reconstructed, repository-owned, and match its numbered path.")
+        if receipt["classification"] == "none":
+            if receipt["richRecordRefs"]:
+                raise ValueError("A historical `none` receipt must not link rich Engineering records.")
+            continue
+        if not receipt["richRecordRefs"] or any(
+            (record := head_records.get(reference)) is None or record["type"] != receipt["classification"]
+            for reference in receipt["richRecordRefs"]
+        ):
+            raise ValueError("Every material historical receipt must link exact matching rich record revisions at the pull request head.")
+    allowed = [
+        f"docs/engineering/changes/pr-{pull_request_number}.md",
+        manifest_path,
+        *manifest["receiptPaths"],
+        *[record_path_for_ref(reference) for reference in manifest["addedRecordRefs"]],
+    ]
+    if not equal_string_sets(allowed, changed_files):
+        raise ValueError("A historical publication pull request may contain only its forward receipt, batch manifest, and declared historical documents.")
+    if base_existing_paths:
+        raise ValueError("Historical batch documents are add-only; accepted receipts and records cannot be modified or deleted.")
+    return {
+        "historicalReceiptCount": len(historical_receipts),
+        "historicalRecordCount": len(changed_records),
+    }
+
+
 def main():
     event_path = Path(sys.argv[1] if len(sys.argv) > 1 else "")
     if not event_path.is_file():
@@ -437,6 +617,7 @@ def main():
     number = pull_request.get("number")
     title = pull_request.get("title")
     repository = event.get("repository", {}).get("name") or pull_request.get("base", {}).get("repo", {}).get("name")
+    repository_full_name = event.get("repository", {}).get("full_name")
     if (
         not base
         or not head
@@ -457,22 +638,84 @@ def main():
     )
     changed = changed_files_between(base, head)
     expected_receipt_path = f"docs/engineering/changes/pr-{number}.md"
-    receipt_paths = [path for path in changed if path.startswith("docs/engineering/changes/")]
-    receipt = None
-    if receipt_paths == [expected_receipt_path]:
-        [markdown] = blobs_at(head, [expected_receipt_path])
-        if markdown is not None:
-            receipt = parse_receipt(markdown, expected_receipt_path)
+    expected_manifest_path = f"docs/engineering/backfill/pr-{number}.json"
+    receipt_paths = [path for path in changed if path.startswith("docs/engineering/changes/") and path.endswith(".md")]
+    manifest_paths = [path for path in changed if path.startswith("docs/engineering/backfill/") and path.endswith(".json")]
     changed_record_paths = [path for path in changed if path.startswith("docs/engineering/records/")]
-    linked_refs = receipt["richRecordRefs"] if receipt else []
+    historical_mode = len(receipt_paths) > 1 or len(manifest_paths) > 0
+
+    receipt = None
+    if expected_receipt_path in changed:
+        [receipt_markdown] = blobs_at(head, [expected_receipt_path])
+        if receipt_markdown is not None:
+            receipt = parse_receipt(receipt_markdown, expected_receipt_path)
+
+    historical_receipts = []
+    manifest = None
+    if historical_mode:
+        if not isinstance(repository_full_name, str) or not REPOSITORY_FULL_NAME.fullmatch(repository_full_name) or not repository_full_name.endswith(f"/{repository}"):
+            raise ValueError("A historical publication pull request requires the exact owning repository full name.")
+        if manifest_paths != [expected_manifest_path]:
+            raise ValueError("A historical publication pull request must change its one numbered batch manifest.")
+        [manifest_markdown] = blobs_at(head, [expected_manifest_path])
+        if manifest_markdown is None:
+            raise ValueError("The historical batch manifest must exist at the pull request head.")
+        manifest = parse_historical_batch_manifest(manifest_markdown)
+        verify_historical_authorization(manifest, repository_full_name)
+        historical_markdown = blobs_at(head, manifest["receiptPaths"])
+        historical_receipts = []
+        for path, markdown in zip(manifest["receiptPaths"], historical_markdown):
+            if markdown is None:
+                raise ValueError("Every declared historical receipt must exist at the pull request head.")
+            historical_receipts.append(parse_receipt(markdown, path))
+
+    linked_refs = list(dict.fromkeys([
+        *(receipt["richRecordRefs"] if receipt else []),
+        *[reference for entry in historical_receipts for reference in entry["richRecordRefs"]],
+    ]))
+    head_records = records_for_validation(head, changed_record_paths, linked_refs)
+    historical_paths = (
+        {expected_manifest_path, *manifest["receiptPaths"], *changed_record_paths}
+        if historical_mode
+        else set()
+    )
+    forward_changed = [path for path in changed if path not in historical_paths]
     classification = validate(
         pull_request.get("body") or "",
-        changed,
+        forward_changed,
         number,
         receipt,
-        records_for_validation(head, changed_record_paths, linked_refs),
+        records_for_validation(
+            head,
+            [] if historical_mode else changed_record_paths,
+            receipt["richRecordRefs"] if receipt else [],
+        ),
         title,
     )
+    if historical_mode:
+        historical_document_paths = [*manifest["receiptPaths"], *changed_record_paths]
+        base_documents = blobs_at(base, historical_document_paths) if historical_document_paths else []
+        base_existing_paths = [
+            path for path, markdown in zip(historical_document_paths, base_documents) if markdown is not None
+        ]
+        historical_result = validate_historical_batch(
+            manifest=manifest,
+            manifest_path=expected_manifest_path,
+            pull_request_number=number,
+            repository=repository,
+            repository_full_name=repository_full_name,
+            changed_files=changed,
+            historical_receipts=historical_receipts,
+            changed_records=[record for record in head_records.values() if record["path"] in changed_record_paths],
+            head_records=head_records,
+            base_existing_paths=base_existing_paths,
+        )
+        print(
+            f"Engineering impact: {classification}; historical batch: "
+            f"{historical_result['historicalReceiptCount']} receipt(s), "
+            f"{historical_result['historicalRecordCount']} rich record(s)."
+        )
+        return
     print(f"Engineering impact: {classification}; {len(changed)} changed file(s).")
 
 

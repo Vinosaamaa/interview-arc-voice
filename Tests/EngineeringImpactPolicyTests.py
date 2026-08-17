@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -13,6 +14,7 @@ ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "scripts" / "validate-engineering-impact.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 SCHEMA = ROOT / "docs" / "contracts" / "engineering-pull-request-receipt.schema.json"
+HISTORICAL_SCHEMA = ROOT / "docs" / "contracts" / "engineering-historical-backfill-batch.schema.json"
 PROTOCOL = ROOT / "docs" / "engineering" / "pull-request-history.md"
 SPEC = importlib.util.spec_from_file_location("engineering_impact", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -75,6 +77,7 @@ def receipt_markdown(
     evidence_refs=None,
     title: str = "Adopt complete pull request receipts",
     summary: str = "Adds the versioned compact receipt contract and enforces one numbered receipt in the required Voice pull-request workflow.",
+    reconstructed: bool = False,
 ):
     refs = [] if refs is None else refs
     unknowns = [] if unknowns is None else unknowns
@@ -91,7 +94,7 @@ pr: {pr}
 title: {title}
 classification: {classification}
 richRecordRefs: {json.dumps(refs, separators=(',', ':'))}
-reconstructed: false
+reconstructed: {json.dumps(reconstructed)}
 confidence: verified
 unknowns: {json.dumps(unknowns, separators=(',', ':'))}
 headCommit: null
@@ -115,8 +118,12 @@ def run_validator(
     number: int,
     body: str,
     title: str = "Adopt complete pull request receipts",
+    full_name: str | None = None,
 ):
     event_path = cwd / "event.json"
+    repository = {"name": "interview-arc-voice"}
+    if full_name:
+        repository["full_name"] = full_name
     event_path.write_text(
         json.dumps(
             {
@@ -127,7 +134,7 @@ def run_validator(
                     "base": {"sha": base},
                     "head": {"sha": head},
                 },
-                "repository": {"name": "interview-arc-voice"},
+                "repository": repository,
             }
         ),
         encoding="utf-8",
@@ -199,6 +206,18 @@ class EngineeringImpactPolicyTests(unittest.TestCase):
         self.assertIn("HTML export", protocol)
         self.assertIn("An accepted rich record is never deleted", protocol)
         self.assertIn("reviewed amendment or superseding revision", protocol)
+        historical_schema = json.loads(HISTORICAL_SCHEMA.read_text(encoding="utf-8"))
+        self.assertEqual(
+            historical_schema["$id"],
+            "urn:interview-arc:contracts:engineering-historical-backfill-batch:1",
+        )
+        self.assertEqual(historical_schema["properties"]["receiptPaths"]["maxItems"], 20)
+        self.assertEqual(historical_schema["properties"]["addedRecordRefs"]["maxItems"], 8)
+        self.assertIn("engineering-historical-backfill-batch.schema.json", protocol)
+        self.assertIn(
+            "I authorize publication of this bounded historical Engineering backfill batch under the residual-link policy.",
+            protocol,
+        )
 
     def test_validator_runs_inside_existing_required_package_job(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -580,6 +599,173 @@ type: capability-dossier
         for label, markdown in cases.items():
             with self.subTest(label=label), self.assertRaises(ValueError):
                 MODULE.parse_receipt(markdown, "docs/engineering/changes/pr-192.md")
+
+    def test_historical_batch_requires_owner_authorization_and_is_add_only(self):
+        authorization_url = (
+            "https://github.com/Vinosaamaa/interview-arc-voice/issues/200#issuecomment-5310181719"
+        )
+        comment = {
+            "html_url": authorization_url,
+            "author_association": "OWNER",
+            "body": MODULE.HISTORICAL_AUTHORIZATION,
+        }
+        title = "Publish one Voice historical Engineering receipt"
+        body = """## Engineering impact
+
+- [x] None — reason: This publication adds authorized historical evidence without changing Voice product runtime behavior.
+"""
+        with tempfile.TemporaryDirectory(prefix="voice-historical-") as directory:
+            cwd = Path(directory)
+            base = initialize_repository(cwd)
+            write(
+                cwd,
+                "docs/engineering/changes/pr-7.md",
+                receipt_markdown(
+                    pr=7,
+                    title="Preserve one historical Voice change",
+                    summary="Records one reconstructed Voice pull request without changing product runtime behavior.",
+                    reconstructed=True,
+                ),
+            )
+            write(
+                cwd,
+                "docs/engineering/changes/pr-192.md",
+                receipt_markdown(
+                    title=title,
+                    summary="Published one authorized, add-only historical Engineering batch without changing Voice product runtime behavior.",
+                ),
+            )
+            write(
+                cwd,
+                "docs/engineering/backfill/pr-192.json",
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "repository": "interview-arc-voice",
+                        "pullRequest": 192,
+                        "privacyAuthorizationUrl": authorization_url,
+                        "receiptPaths": ["docs/engineering/changes/pr-7.md"],
+                        "recordRefs": [],
+                        "addedRecordRefs": [],
+                    },
+                    indent=2,
+                )
+                + "\n",
+            )
+            git(cwd, "add", ".")
+            git(cwd, "commit", "--quiet", "-m", "historical batch")
+            head = git(cwd, "rev-parse", "HEAD")
+            event_path = cwd / "event.json"
+            event_path.write_text(
+                json.dumps(
+                    {
+                        "pull_request": {
+                            "number": 192,
+                            "title": title,
+                            "body": body,
+                            "base": {"sha": base},
+                            "head": {"sha": head},
+                        },
+                        "repository": {
+                            "name": "interview-arc-voice",
+                            "full_name": "Vinosaamaa/interview-arc-voice",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            original = Path.cwd()
+            try:
+                os.chdir(cwd)
+                with (
+                    mock.patch.object(sys, "argv", [str(SCRIPT), str(event_path)]),
+                    mock.patch.object(MODULE, "load_authorization_comment", return_value=comment),
+                ):
+                    MODULE.main()
+                with (
+                    mock.patch.object(sys, "argv", [str(SCRIPT), str(event_path)]),
+                    mock.patch.object(
+                        MODULE,
+                        "load_authorization_comment",
+                        return_value={**comment, "author_association": "CONTRIBUTOR"},
+                    ),
+                    self.assertRaisesRegex(ValueError, "owner privacy authorization"),
+                ):
+                    MODULE.main()
+            finally:
+                os.chdir(original)
+
+            git(cwd, "reset", "--hard", base)
+            write(cwd, "docs/engineering/changes/pr-7.md", receipt_markdown(pr=7, reconstructed=True, title="Preserve one historical Voice change", summary="Records one reconstructed Voice pull request without changing product runtime behavior."))
+            git(cwd, "add", ".")
+            git(cwd, "commit", "--quiet", "-m", "accepted historical receipt")
+            accepted = git(cwd, "rev-parse", "HEAD")
+            write(
+                cwd,
+                "docs/engineering/changes/pr-7.md",
+                receipt_markdown(
+                    pr=7,
+                    title="Preserve one historical Voice change",
+                    summary="Modified an already accepted reconstructed receipt.",
+                    reconstructed=True,
+                ),
+            )
+            write(
+                cwd,
+                "docs/engineering/changes/pr-192.md",
+                receipt_markdown(
+                    title=title,
+                    summary="Published one authorized, add-only historical Engineering batch without changing Voice product runtime behavior.",
+                ),
+            )
+            write(
+                cwd,
+                "docs/engineering/backfill/pr-192.json",
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "repository": "interview-arc-voice",
+                        "pullRequest": 192,
+                        "privacyAuthorizationUrl": authorization_url,
+                        "receiptPaths": ["docs/engineering/changes/pr-7.md"],
+                        "recordRefs": [],
+                        "addedRecordRefs": [],
+                    },
+                    indent=2,
+                )
+                + "\n",
+            )
+            git(cwd, "add", ".")
+            git(cwd, "commit", "--quiet", "-m", "mutate accepted history")
+            mutated = git(cwd, "rev-parse", "HEAD")
+            event_path.write_text(
+                json.dumps(
+                    {
+                        "pull_request": {
+                            "number": 192,
+                            "title": title,
+                            "body": body,
+                            "base": {"sha": accepted},
+                            "head": {"sha": mutated},
+                        },
+                        "repository": {
+                            "name": "interview-arc-voice",
+                            "full_name": "Vinosaamaa/interview-arc-voice",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            try:
+                os.chdir(cwd)
+                with (
+                    mock.patch.object(sys, "argv", [str(SCRIPT), str(event_path)]),
+                    mock.patch.object(MODULE, "load_authorization_comment", return_value=comment),
+                    self.assertRaisesRegex(ValueError, "add-only"),
+                ):
+                    MODULE.main()
+            finally:
+                os.chdir(original)
 
 
 if __name__ == "__main__":
