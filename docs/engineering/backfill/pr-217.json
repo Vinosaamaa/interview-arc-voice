@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "repository": "interview-arc-voice",
+  "pullRequest": 217,
+  "privacyAuthorizationUrl": "https://github.com/Vinosaamaa/interview-arc-voice/issues/200#issuecomment-5310181719",
+  "receiptPaths": [
+    "docs/engineering/changes/pr-12.md",
+    "docs/engineering/changes/pr-13.md",
+    "docs/engineering/changes/pr-14.md",
+    "docs/engineering/changes/pr-15.md",
+    "docs/engineering/changes/pr-16.md",
+    "docs/engineering/changes/pr-17.md",
+    "docs/engineering/changes/pr-18.md",
+    "docs/engineering/changes/pr-19.md",
+    "docs/engineering/changes/pr-2.md",
+    "docs/engineering/changes/pr-20.md",
+    "docs/engineering/changes/pr-3.md",
+    "docs/engineering/changes/pr-4.md",
+    "docs/engineering/changes/pr-5.md",
+    "docs/engineering/changes/pr-6.md",
+    "docs/engineering/changes/pr-7.md"
+  ],
+  "recordRefs": [
+    "postmortem-header-only-recording-regression@1",
+    "postmortem-linked-dictation-integrity-and-latency@1",
+    "postmortem-universal-dictation-insertion@1"
+  ],
+  "addedRecordRefs": []
+}
