@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "repository": "interview-arc-voice",
+  "pullRequest": 223,
+  "privacyAuthorizationUrl": "https://github.com/Vinosaamaa/interview-arc-voice/issues/200#issuecomment-5310181719",
+  "receiptPaths": [
+    "docs/engineering/changes/pr-165.md",
+    "docs/engineering/changes/pr-166.md",
+    "docs/engineering/changes/pr-167.md",
+    "docs/engineering/changes/pr-170.md",
+    "docs/engineering/changes/pr-175.md",
+    "docs/engineering/changes/pr-176.md",
+    "docs/engineering/changes/pr-177.md",
+    "docs/engineering/changes/pr-180.md",
+    "docs/engineering/changes/pr-186.md",
+    "docs/engineering/changes/pr-187.md"
+  ],
+  "recordRefs": [
+    "postmortem-false-transcription-from-non-speech@1",
+    "postmortem-invalid-groq-credential-retry-loop@1",
+    "feature-retrospective-voice-floating-timer-instrument@1",
+    "postmortem-bluetooth-profile-volume-restoration@1",
+    "postmortem-native-voice-delivery-recovery@1",
+    "postmortem-codex-cli-envelope-routing@1",
+    "postmortem-partial-transcript-delivery@1",
+    "postmortem-intermittent-silent-input-stream@1"
+  ],
+  "addedRecordRefs": []
+}
