@@ -9,6 +9,20 @@ Every non-emergency product change starts with an issue in the repository that
 owns the behavior. Repository routing, PR linkage, signed-package verification,
 resolution records, and postmortem requirements are defined there.
 
+## Issue Worktrees
+
+Create Voice worktrees only under
+`$HOME/Projects/interview-prep-support/worktrees` and name them
+`voice-<issue>-<slug>`. Before creating or resuming work, inspect
+`git worktree list --porcelain`, reuse the registered issue worktree, and honor
+any Git lock reason. Never implement in the primary/shared checkout or create a
+duplicate worktree.
+
+The owner removes a worktree only after verifying the exact tested PR head,
+merge, released `main`, cleanliness, and absence of unpublished work. Use
+`git worktree remove <exact-path>` without `--force`; never recursively delete
+a registered worktree.
+
 Before changing any visible interface, read and follow:
 
 1. `design-system/AGENTS.md`
