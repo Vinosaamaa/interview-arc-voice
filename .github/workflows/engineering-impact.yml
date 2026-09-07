@@ -1,0 +1,29 @@
+name: Engineering impact
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: engineering-impact-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  engineering-impact:
+    name: Engineering impact
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Test Engineering impact policy
+        run: python3 Tests/EngineeringImpactPolicyTests.py
+      - name: Validate Engineering impact and receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/validate-engineering-impact.py "$GITHUB_EVENT_PATH"

@@ -219,22 +219,24 @@ class EngineeringImpactPolicyTests(unittest.TestCase):
             protocol,
         )
 
-    def test_validator_runs_inside_existing_required_package_job(self):
-        workflow = WORKFLOW.read_text(encoding="utf-8")
-        pull_request_trigger = yaml_mapping_block(workflow.splitlines(), "pull_request", 2)
-        self.assertIn("    types: [opened, synchronize, reopened, edited]", pull_request_trigger)
-        validation_steps = [
-            step
-            for step in workflow_steps(workflow, "test-and-package")
-            if step.get("name") == "Validate Engineering impact classification"
-        ]
-        self.assertEqual(
-            validation_steps,
-            [{
-                "name": "Validate Engineering impact classification",
-                "run": 'python3 scripts/validate-engineering-impact.py "$GITHUB_EVENT_PATH"',
-            }],
-        )
+    def test_metadata_edits_run_independent_gate_without_packaging(self):
+        package = WORKFLOW.read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/engineering-impact.yml").read_text(encoding="utf-8")
+        trigger = yaml_mapping_block(workflow.splitlines(), "pull_request", 2)
+        self.assertIn("    types: [opened, synchronize, reopened, edited, ready_for_review]", trigger)
+        package_trigger = yaml_mapping_block(package.splitlines(), "pull_request", 2)
+        self.assertIn("    types: [opened, synchronize, reopened]", package_trigger)
+        self.assertNotIn("validate-engineering-impact.py", package)
+        self.assertIn("    name: Engineering impact", workflow)
+        self.assertIn("    runs-on: ubuntu-latest", workflow)
+        self.assertIn("          fetch-depth: 0", workflow)
+        self.assertIn("          GH_TOKEN: ${{ github.token }}", workflow)
+        validation_steps = [step for step in workflow_steps(workflow, "engineering-impact")
+                            if step.get("name") == "Validate Engineering impact and receipt"]
+        self.assertEqual(validation_steps, [{
+            "name": "Validate Engineering impact and receipt",
+            "run": 'python3 scripts/validate-engineering-impact.py "$GITHUB_EVENT_PATH"',
+        }])
 
     def test_fork_head_fetches_accept_only_exact_github_https_remotes(self):
         remote = "https://github.com/example/contributor-fork.git"
