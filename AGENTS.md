@@ -62,8 +62,6 @@ replace it with “allow all applications” or store the user's password.
 
 ## Hosted CI efficiency
 
-- For every implementation turn, follow the canonical live-execution-ledger
-  requirements in `docs/agents/issue-lifecycle.md`.
 - Do not use full hosted package builds as an intermediate edit/test loop.
   Batch source changes and request the complete PR workflow once the change is
   ready for independent verification.
@@ -73,9 +71,7 @@ replace it with “allow all applications” or store the user's password.
   immutable Git tree equals merged `main`; any tree difference rebuilds merged
   `main`. Never infer equivalence from PR number, branch name, or merge strategy
   alone. Follow `docs/artifact-promotion.md`.
-- Record every hosted run, runtime, conclusion, artifact, and known metered
-  usage in the implementation ledger. Do not retry infrastructure failures
-  blindly.
+- Do not retry infrastructure failures blindly.
 
 ## Public-safe repository content
 
